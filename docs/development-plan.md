@@ -1,6 +1,6 @@
 # DecisionDoc AI — 완성을 위한 기능 개발 계획 (Development Plan)
 
-> 기준일: **2026-07-27** (저장소 점검 [docs/inspection-20260630.md](./inspection-20260630.md), M4 CSP nonce 완료, H124 no-cost local verification과 최근 확인한 CI/CD success 기준)
+> 기준일: **2026-07-27** (저장소 점검 [docs/inspection-20260630.md](./inspection-20260630.md), M4 CSP nonce 완료, H125 no-cost local verification과 최근 확인한 CI/CD success 기준)
 > 원칙: AGENTS.md 정직성 규칙 준수 — 모든 정량 수치는 재현 커맨드를 병기하고, 검증되지 않은 성과·운영 표현은 사용하지 않는다.
 > 상위 방향 문서: [product_direction.md](./product_direction.md) · [product_execution_plan.md](./product_execution_plan.md) · [roadmap.md](./roadmap.md)
 
@@ -12,13 +12,13 @@
 
 | 축 | 현재 | 완성 기준 |
 |----|------|-----------|
-| **기능 검증** | H124 no-cost gate: focused API 포함 `21 passed`, adjacent `387 passed`, combined union `404 passed`, full non-live `4,470 passed, 1 skipped, 4 deselected` (2026-07-27) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
+| **기능 검증** | H125 no-cost gate: H125 focused `7 passed`, H124+H125 UI `13 passed`, adjacent `387 passed`, combined union `411 passed`, full non-live `4,477 passed, 1 skipped, 4 deselected` (2026-07-27) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
 | **아키텍처 위생** | ✅ 달성 (2026-07-14: 829줄 상수 모듈을 604줄 facade + 314줄 foundation으로 분리하고 800줄 guard 추가 → 초과 0개). CI advisory Ruff E/F/W와 Bandit medium/high 0건 기준 유지 | 전 모듈 800줄 이하 (전역 코딩 가이드), 계층 간 의존 방향 일관 |
 | **운영 준비성** | Docker/SAM 설정 존재, CSP nonce 부채 해소, GitHub Actions CI/CD success 증적 존재. 단, staging deploy/smoke는 설정 부재로 skip되어 배포 접근성은 미검증 | 배포 절차 재검증 + post-deploy smoke 증적 |
 
 ```bash
 # 재현: 테스트 베이스라인
-pytest tests/ -m "not live" -q     # 2026-07-27 H124: 4470 passed, 1 skipped, 4 deselected
+pytest tests/ -m "not live" -q     # 2026-07-27 H125: 4477 passed, 1 skipped, 4 deselected
 
 # 재현: CI advisory lint/security 베이스라인
 ruff check app/ --select=E,F,W --ignore=E501
@@ -85,6 +85,31 @@ authoritative=solid, record binding=dashed, derived=dotted line style로
 포함한 focused `21 passed`, adjacent authorization/workflow `387 passed`,
 combined union `404 passed`, full non-live `4,470 passed, 1 skipped,
 4 deselected`다.
+
+### H125 Guided Decision Review
+
+Project detail의 existing decision, Evidence Map, review, document record를
+Decision → Evidence → Review → Documents 순서의 읽기 전용 검토 navigator로
+묶는다. 하나의 overall state와 recommended next check만 표시하며 status는
+`not_observed`, `needs_attention`, `in_review`, `observed`로 제한한다.
+`decision_evidence_map.v1`의 exact top-level/nested shape, coverage invariant,
+bounded graph, fingerprint와 여섯 false authority flag가 모두 유효할 때만
+panel을 렌더링한다. Map이 없거나 malformed, authority-drifted이면 다른
+project payload에서 evidence state를 재구성하지 않고 숨긴다.
+
+Stage control은 기존 section으로 scroll/focus만 수행한다. 승인, export,
+provider, bid submission, legal/contractual action을 호출하지 않는다.
+Accepted review는 acceptance record 관측일 뿐 current freshness가 아니며,
+document는 canonical review/Council/provenance status 중 하나 이상이
+관측되고 모두 `current`일 때만 current로 표시한다. Council payload가
+독립 요청에서 빠져도 map의 stale/conflict diagnostic은 Decision
+precedence를 유지한다. Luna independent review의 malformed map, document
+freshness, Council diagnostic, NO_GO copy, informational diagnostic severity,
+loading-path 회귀를 모두 보완했다.
+
+2026-07-27 no-cost fresh gate는 H125 focused `7 passed`, H124+H125 static/E2E
+`13 passed`, adjacent authorization/workflow `387 passed`, combined union
+`411 passed`, full non-live `4,477 passed, 1 skipped, 4 deselected`다.
 
 ---
 

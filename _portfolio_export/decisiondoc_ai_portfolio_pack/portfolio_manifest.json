@@ -15,8 +15,8 @@
     },
     {
       "path": "README.md",
-      "sha256": "510fda592298a5795d756c68f7c486c0ffbeffcf841340379f5e0a87aa872597",
-      "size_bytes": 79257
+      "sha256": "5c4b23028fed215b6481bb92cfdf7dae9eea1d1d2956c4b9963a592fcf9682cd",
+      "size_bytes": 79875
     },
     {
       "path": "docs/architecture.md",
@@ -40,8 +40,8 @@
     },
     {
       "path": "docs/development-plan.md",
-      "sha256": "60b08501e5c2e2296fbc96ba79dc32c237d0f81424dfb29b656f3d17fdf1a62f",
-      "size_bytes": 45061
+      "sha256": "64abd1458d339d67750c781d1c9ede04217c0d05b06b2782713501a7b9e049b1",
+      "size_bytes": 46678
     },
     {
       "path": "docs/evidence-checklist.md",
@@ -100,8 +100,8 @@
     },
     {
       "path": "docs/roadmap.md",
-      "sha256": "5f53c641c5bac7a4cb700fc46b65fe1f8c51241c3925c632b6c3ba1d45f9c091",
-      "size_bytes": 147873
+      "sha256": "d73d24417676f6fd9dc5878fba18493d8f3950c4e3e832685161e9a96901aebb",
+      "size_bytes": 149882
     },
     {
       "path": "docs/samples/bundle_quality_evidence/current/human_review.html",

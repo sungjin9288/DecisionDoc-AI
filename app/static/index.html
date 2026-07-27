@@ -1301,6 +1301,108 @@
     .decision-council-binding-alert strong {
       color: #7f1d1d;
     }
+    .guided-decision-review {
+      margin: 18px 0;
+      padding: 18px 0;
+      border-top: 1px solid var(--border, #e5e7eb);
+      border-bottom: 1px solid var(--border, #e5e7eb);
+    }
+    .guided-decision-review-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+    }
+    .guided-decision-review h4,
+    .guided-decision-review h5 {
+      margin: 0;
+      color: var(--text, #111827);
+    }
+    .guided-decision-review h4 { font-size: 1rem; font-weight: 800; }
+    .guided-decision-review h5 { font-size: 0.88rem; }
+    .guided-decision-review-copy,
+    .guided-decision-review-meta,
+    .guided-decision-review-boundary,
+    .guided-decision-review-steps p {
+      color: var(--muted, #6b7280);
+      font-size: 0.8rem;
+      line-height: 1.55;
+    }
+    .guided-decision-review-copy { margin: 5px 0 0; max-width: 720px; }
+    .guided-decision-review-boundary {
+      flex: 0 0 auto;
+      margin: 0;
+      padding: 5px 8px;
+      border: 1px solid #9ca3af;
+      border-radius: 4px;
+      color: #374151;
+      background: #f9fafb;
+      font-size: 0.72rem;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .guided-decision-review-summary {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px 16px;
+      margin: 14px 0;
+      padding: 12px;
+      border: 1px solid var(--border, #e5e7eb);
+      border-radius: 8px;
+      background: var(--surface, #fff);
+    }
+    .guided-decision-review-summary p,
+    .guided-decision-review-meta { margin: 0; }
+    .guided-decision-review-summary strong { color: var(--text, #111827); }
+    .guided-decision-review-meta { grid-column: 1 / -1; font-size: 0.72rem; }
+    .guided-decision-review-steps {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .guided-decision-review-step {
+      display: grid;
+      align-content: start;
+      gap: 8px;
+      min-width: 0;
+      padding: 12px;
+      border: 1px solid var(--border, #e5e7eb);
+      border-radius: 8px;
+      background: var(--surface, #fff);
+    }
+    .guided-decision-review-step[data-guided-review-status="needs_attention"] { border-left: 3px solid #dc2626; }
+    .guided-decision-review-step[data-guided-review-status="in_review"] { border-left: 3px solid #d97706; }
+    .guided-decision-review-step[data-guided-review-status="observed"] { border-left: 3px solid #0f766e; }
+    .guided-decision-review-step[data-guided-review-status="not_observed"] { border-left: 3px solid #6b7280; }
+    .guided-decision-review-status {
+      color: var(--text, #111827);
+      font-size: 0.76rem;
+      font-weight: 800;
+    }
+    .guided-decision-review-steps p { margin: 0; min-height: 3.7em; }
+    .guided-decision-review-steps button {
+      width: 100%;
+      min-height: 36px;
+      padding: 6px 10px;
+      border: 1px solid var(--border, #e5e7eb);
+      border-radius: 4px;
+      background: transparent;
+      color: var(--text, #111827);
+      cursor: pointer;
+      font: inherit;
+      font-size: 0.78rem;
+      font-weight: 700;
+    }
+    .guided-decision-review-steps button:hover { background: #f3f4f6; }
+    .guided-decision-review-announcement {
+      min-height: 1.2em;
+      margin-top: 10px;
+      color: var(--muted, #6b7280);
+      font-size: 0.76rem;
+    }
     .decision-evidence-map {
       margin: 18px 0;
       padding: 18px 0;
@@ -3329,6 +3431,11 @@
       .decision-council-actions button { width: 100%; }
       .decision-evidence-head { align-items: stretch; flex-direction: column; }
       .decision-evidence-readonly { align-self: flex-start; }
+      .guided-decision-review-head { align-items: stretch; flex-direction: column; }
+      .guided-decision-review-boundary { align-self: flex-start; white-space: normal; }
+      .guided-decision-review-summary,
+      .guided-decision-review-steps { grid-template-columns: 1fr; }
+      .guided-decision-review-steps button { width: 100%; }
       .decision-evidence-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .decision-evidence-metric:nth-child(2) { border-right: 0; }
       .decision-evidence-metric:nth-child(-n + 2) { border-bottom: 1px solid var(--border, #e5e7eb); }
@@ -24682,6 +24789,544 @@
     }
   }
 
+  const GUIDED_DECISION_REVIEW_AUTHORITY_KEYS = [
+    'mutation',
+    'approval',
+    'export_execution',
+    'provider_call',
+    'bid_submission',
+    'legal_contractual_commitment',
+  ];
+
+  const GUIDED_DECISION_REVIEW_FALSE_EXPORT_FIELD = [
+    'actual',
+    'export',
+    'observed',
+  ].join('_');
+
+  const GUIDED_DECISION_REVIEW_FIELDS = {
+    map: [
+      'contract_version',
+      'generated_at',
+      'project_id',
+      'bundle_type',
+      'read_only',
+      'snapshot_atomic',
+      'projection_fingerprint',
+      'source_revisions',
+      'nodes',
+      'edges',
+      'coverage',
+      'diagnostics',
+      'limits',
+      'truncated',
+      'proposal_blueprint',
+      'authority',
+    ],
+    sourceRevision: ['source_kind', 'source_id', 'revision', 'content_sha256'],
+    node: [
+      'node_id',
+      'node_type',
+      'label',
+      'status',
+      'summary',
+      'updated_at',
+      'relation_count',
+      'evidence_level',
+      'coverage_status',
+      'diagnostic_codes',
+      GUIDED_DECISION_REVIEW_FALSE_EXPORT_FIELD,
+    ],
+    edge: ['edge_id', 'relation_type', 'source_node_id', 'target_node_id', 'status', 'provenance'],
+    provenance: [
+      'source_kind',
+      'source_id',
+      'source_revision',
+      'field_path',
+      'content_sha256',
+      'evidence_level',
+    ],
+    coverage: ['total', 'explicit', 'candidate', 'missing', 'unverifiable', 'items'],
+    coverageItem: ['requirement_node_id', 'status', 'summary', 'evidence_refs'],
+    diagnostic: ['code', 'severity', 'message', 'node_ids', 'next_action'],
+    limits: ['max_nodes', 'max_edges'],
+    blueprint: [
+      'status',
+      'report_workflow_id',
+      'workflow_status',
+      'narrative_arc',
+      'source_refs',
+      'slides',
+      'open_questions',
+      'risk_notes',
+      GUIDED_DECISION_REVIEW_FALSE_EXPORT_FIELD,
+    ],
+    slide: [
+      'slide_id',
+      'title',
+      'status',
+      'source_refs',
+      'reference_refs',
+      'required_evidence',
+      'data_needs',
+    ],
+  };
+
+  const GUIDED_DECISION_REVIEW_NODE_TYPES = [
+    'source',
+    'claim',
+    'requirement',
+    'alternative',
+    'risk',
+    'recommendation',
+    'document',
+    'review',
+    'approval',
+    'export',
+  ];
+
+  const GUIDED_DECISION_REVIEW_COVERAGE_STATUSES = [
+    'explicit',
+    'candidate',
+    'missing',
+    'unverifiable',
+  ];
+
+  const GUIDED_DECISION_REVIEW_EVIDENCE_LEVELS = [
+    'authoritative',
+    'record_binding',
+    'derived',
+  ];
+
+  const GUIDED_DECISION_REVIEW_STAGE_TARGETS = {
+    Decision: 'project-decision-area',
+    Evidence: 'decision-evidence-map',
+    Review: 'project-review-workspace',
+    Documents: 'project-documents-heading',
+  };
+
+  const GUIDED_DECISION_REVIEW_STATUS_LABELS = {
+    not_observed: 'Not observed',
+    needs_attention: 'Needs attention',
+    in_review: 'In review',
+    observed: 'Observed',
+  };
+
+  function hasGuidedDecisionReviewFields(value, fields) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const keys = Object.keys(value);
+    return (
+      keys.length === fields.length
+      && fields.every(field => Object.prototype.hasOwnProperty.call(value, field))
+    );
+  }
+
+  function isGuidedDecisionReviewText(value, { allowEmpty = false } = {}) {
+    return typeof value === 'string' && (allowEmpty || value.length > 0);
+  }
+
+  function isGuidedDecisionReviewTextList(value) {
+    return Array.isArray(value) && value.every(item => typeof item === 'string');
+  }
+
+  function isGuidedDecisionReviewCount(value) {
+    return Number.isInteger(value) && value >= 0;
+  }
+
+  function isGuidedDecisionReviewSha256(value) {
+    return typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+  }
+
+  function isGuidedDecisionReviewSourceRevision(source) {
+    return (
+      hasGuidedDecisionReviewFields(source, GUIDED_DECISION_REVIEW_FIELDS.sourceRevision)
+      && isGuidedDecisionReviewText(source.source_kind)
+      && isGuidedDecisionReviewText(source.source_id)
+      && isGuidedDecisionReviewText(source.revision, { allowEmpty: true })
+      && isGuidedDecisionReviewSha256(source.content_sha256)
+    );
+  }
+
+  function isGuidedDecisionReviewNode(node) {
+    return (
+      hasGuidedDecisionReviewFields(node, GUIDED_DECISION_REVIEW_FIELDS.node)
+      && isGuidedDecisionReviewText(node.node_id)
+      && GUIDED_DECISION_REVIEW_NODE_TYPES.includes(node.node_type)
+      && isGuidedDecisionReviewText(node.label)
+      && isGuidedDecisionReviewText(node.status)
+      && isGuidedDecisionReviewText(node.summary, { allowEmpty: true })
+      && isGuidedDecisionReviewText(node.updated_at, { allowEmpty: true })
+      && isGuidedDecisionReviewCount(node.relation_count)
+      && GUIDED_DECISION_REVIEW_EVIDENCE_LEVELS.includes(node.evidence_level)
+      && (
+        node.coverage_status === null
+        || GUIDED_DECISION_REVIEW_COVERAGE_STATUSES.includes(node.coverage_status)
+      )
+      && isGuidedDecisionReviewTextList(node.diagnostic_codes)
+      && node[GUIDED_DECISION_REVIEW_FALSE_EXPORT_FIELD] === false
+    );
+  }
+
+  function isGuidedDecisionReviewProvenance(provenance) {
+    return (
+      hasGuidedDecisionReviewFields(provenance, GUIDED_DECISION_REVIEW_FIELDS.provenance)
+      && isGuidedDecisionReviewText(provenance.source_kind)
+      && isGuidedDecisionReviewText(provenance.source_id)
+      && isGuidedDecisionReviewText(provenance.source_revision, { allowEmpty: true })
+      && isGuidedDecisionReviewText(provenance.field_path)
+      && isGuidedDecisionReviewSha256(provenance.content_sha256)
+      && GUIDED_DECISION_REVIEW_EVIDENCE_LEVELS.includes(provenance.evidence_level)
+    );
+  }
+
+  function isGuidedDecisionReviewEdge(edge) {
+    return (
+      hasGuidedDecisionReviewFields(edge, GUIDED_DECISION_REVIEW_FIELDS.edge)
+      && isGuidedDecisionReviewText(edge.edge_id)
+      && isGuidedDecisionReviewText(edge.relation_type)
+      && isGuidedDecisionReviewText(edge.source_node_id)
+      && isGuidedDecisionReviewText(edge.target_node_id)
+      && isGuidedDecisionReviewText(edge.status)
+      && isGuidedDecisionReviewProvenance(edge.provenance)
+    );
+  }
+
+  function isGuidedDecisionReviewCoverageItem(item) {
+    return (
+      hasGuidedDecisionReviewFields(item, GUIDED_DECISION_REVIEW_FIELDS.coverageItem)
+      && isGuidedDecisionReviewText(item.requirement_node_id)
+      && GUIDED_DECISION_REVIEW_COVERAGE_STATUSES.includes(item.status)
+      && isGuidedDecisionReviewText(item.summary, { allowEmpty: true })
+      && isGuidedDecisionReviewTextList(item.evidence_refs)
+    );
+  }
+
+  function isGuidedDecisionReviewCoverage(coverage) {
+    if (!hasGuidedDecisionReviewFields(coverage, GUIDED_DECISION_REVIEW_FIELDS.coverage)) return false;
+    const counts = [
+      coverage.explicit,
+      coverage.candidate,
+      coverage.missing,
+      coverage.unverifiable,
+    ];
+    return (
+      isGuidedDecisionReviewCount(coverage.total)
+      && counts.every(isGuidedDecisionReviewCount)
+      && counts.reduce((total, count) => total + count, 0) === coverage.total
+      && Array.isArray(coverage.items)
+      && coverage.items.length === coverage.total
+      && coverage.items.every(isGuidedDecisionReviewCoverageItem)
+    );
+  }
+
+  function isGuidedDecisionReviewDiagnostic(diagnostic) {
+    return (
+      hasGuidedDecisionReviewFields(diagnostic, GUIDED_DECISION_REVIEW_FIELDS.diagnostic)
+      && isGuidedDecisionReviewText(diagnostic.code)
+      && ['info', 'warning', 'error'].includes(diagnostic.severity)
+      && isGuidedDecisionReviewText(diagnostic.message)
+      && isGuidedDecisionReviewTextList(diagnostic.node_ids)
+      && isGuidedDecisionReviewText(diagnostic.next_action, { allowEmpty: true })
+    );
+  }
+
+  function isGuidedDecisionReviewLimits(limits) {
+    return (
+      hasGuidedDecisionReviewFields(limits, GUIDED_DECISION_REVIEW_FIELDS.limits)
+      && Number.isInteger(limits.max_nodes)
+      && limits.max_nodes > 0
+      && Number.isInteger(limits.max_edges)
+      && limits.max_edges > 0
+    );
+  }
+
+  function isGuidedDecisionReviewSlide(slide) {
+    return (
+      hasGuidedDecisionReviewFields(slide, GUIDED_DECISION_REVIEW_FIELDS.slide)
+      && isGuidedDecisionReviewText(slide.slide_id)
+      && isGuidedDecisionReviewText(slide.title, { allowEmpty: true })
+      && isGuidedDecisionReviewText(slide.status, { allowEmpty: true })
+      && isGuidedDecisionReviewTextList(slide.source_refs)
+      && isGuidedDecisionReviewTextList(slide.reference_refs)
+      && isGuidedDecisionReviewTextList(slide.required_evidence)
+      && isGuidedDecisionReviewTextList(slide.data_needs)
+    );
+  }
+
+  function isGuidedDecisionReviewBlueprint(blueprint) {
+    return (
+      hasGuidedDecisionReviewFields(blueprint, GUIDED_DECISION_REVIEW_FIELDS.blueprint)
+      && isGuidedDecisionReviewText(blueprint.status)
+      && (
+        blueprint.report_workflow_id === null
+        || isGuidedDecisionReviewText(blueprint.report_workflow_id)
+      )
+      && isGuidedDecisionReviewText(blueprint.workflow_status, { allowEmpty: true })
+      && isGuidedDecisionReviewTextList(blueprint.narrative_arc)
+      && isGuidedDecisionReviewTextList(blueprint.source_refs)
+      && Array.isArray(blueprint.slides)
+      && blueprint.slides.every(isGuidedDecisionReviewSlide)
+      && isGuidedDecisionReviewTextList(blueprint.open_questions)
+      && isGuidedDecisionReviewTextList(blueprint.risk_notes)
+      && blueprint[GUIDED_DECISION_REVIEW_FALSE_EXPORT_FIELD] === false
+    );
+  }
+
+  function isGuidedDecisionReviewMap(map, projectId) {
+    const authority = map?.authority;
+    if (
+      !hasGuidedDecisionReviewFields(map, GUIDED_DECISION_REVIEW_FIELDS.map)
+      || !Array.isArray(map.nodes)
+      || !Array.isArray(map.edges)
+    ) return false;
+    const nodeIds = new Set(map.nodes.map(node => node?.node_id));
+    const edgeIds = new Set(map.edges.map(edge => edge?.edge_id));
+    return (
+      map.contract_version === 'decision_evidence_map.v1'
+      && isGuidedDecisionReviewText(map.generated_at)
+      && isGuidedDecisionReviewText(map.project_id)
+      && map.project_id === projectId
+      && isGuidedDecisionReviewText(map.bundle_type)
+      && map.read_only === true
+      && map.snapshot_atomic === false
+      && isGuidedDecisionReviewSha256(map.projection_fingerprint)
+      && Array.isArray(map.source_revisions)
+      && map.source_revisions.every(isGuidedDecisionReviewSourceRevision)
+      && Array.isArray(map.nodes)
+      && map.nodes.every(isGuidedDecisionReviewNode)
+      && nodeIds.size === map.nodes.length
+      && Array.isArray(map.edges)
+      && map.edges.every(isGuidedDecisionReviewEdge)
+      && edgeIds.size === map.edges.length
+      && map.edges.every(edge => (
+        nodeIds.has(edge.source_node_id) && nodeIds.has(edge.target_node_id)
+      ))
+      && isGuidedDecisionReviewCoverage(map.coverage)
+      && Array.isArray(map.diagnostics)
+      && map.diagnostics.every(isGuidedDecisionReviewDiagnostic)
+      && isGuidedDecisionReviewLimits(map.limits)
+      && map.nodes.length <= map.limits.max_nodes
+      && map.edges.length <= map.limits.max_edges
+      && typeof map.truncated === 'boolean'
+      && isGuidedDecisionReviewBlueprint(map.proposal_blueprint)
+      && authority
+      && typeof authority === 'object'
+      && !Array.isArray(authority)
+      && Object.keys(authority).length === GUIDED_DECISION_REVIEW_AUTHORITY_KEYS.length
+      && GUIDED_DECISION_REVIEW_AUTHORITY_KEYS.every(key => authority[key] === false)
+    );
+  }
+
+  function getGuidedDecisionReviewLatestReview(reviews) {
+    return [...(Array.isArray(reviews) ? reviews : [])].sort((left, right) => {
+      const preparedAt = String(right?.prepared_at || '').localeCompare(String(left?.prepared_at || ''));
+      if (preparedAt) return preparedAt;
+      return String(right?.packet_sha256 || '').localeCompare(String(left?.packet_sha256 || ''));
+    })[0] || null;
+  }
+
+  function getGuidedDecisionReviewLatestDocument(docs, bundleType) {
+    return [...(Array.isArray(docs) ? docs : [])]
+      .filter(doc => doc?.bundle_id === bundleType)
+      .sort((left, right) => {
+        const generatedAt = String(right?.generated_at || '').localeCompare(String(left?.generated_at || ''));
+        if (generatedAt) return generatedAt;
+        return String(right?.doc_id || '').localeCompare(String(left?.doc_id || ''));
+      })[0] || null;
+  }
+
+  function getGuidedDecisionReviewDocumentFreshness(doc, councilSession) {
+    const statuses = [
+      getProcurementReviewDocumentStatusMeta(doc)?.status,
+      getDecisionCouncilDocumentStatusMeta(doc, councilSession)?.status,
+      doc?.provenance_status,
+      doc?.source_provenance_status,
+    ]
+      .map(value => String(value || '').trim())
+      .filter(Boolean);
+    return {
+      current: statuses.length > 0 && statuses.every(status => status === 'current'),
+      statuses,
+    };
+  }
+
+  function getGuidedDecisionReviewDiagnostics(map) {
+    return (map?.diagnostics || []).filter(diagnostic => (
+      diagnostic?.code !== 'export_evidence_not_observed'
+      || diagnostic?.severity !== 'info'
+    ));
+  }
+
+  function hasGuidedDecisionReviewCouncilConflict(councilSession, decision) {
+    const sourceRecommendation = String(councilSession?.source_procurement_recommendation_value || '');
+    const currentRecommendation = String(
+      councilSession?.current_procurement_recommendation_value || decision?.recommendation?.value || '',
+    );
+    return (
+      ['mixed', 'contested'].includes(String(councilSession?.consensus?.alignment || ''))
+      || (sourceRecommendation && currentRecommendation && sourceRecommendation !== currentRecommendation)
+    );
+  }
+
+  function deriveGuidedDecisionReview(decision, reviews, councilSession, docs, map) {
+    const diagnostics = getGuidedDecisionReviewDiagnostics(map);
+    const errorDiagnostics = diagnostics.filter(item => item?.severity === 'error');
+    const warningDiagnostics = diagnostics.filter(item => item?.severity === 'warning');
+    const coverage = map?.coverage || {};
+    const missingCoverage = Number(coverage.missing || 0);
+    const candidateCoverage = Number(coverage.candidate || 0);
+    const unverifiableCoverage = Number(coverage.unverifiable || 0);
+    const hasOpportunity = Boolean(decision?.opportunity);
+    const hasRecommendation = Boolean(decision?.recommendation?.value);
+    const blockingHardFilters = getProcurementBlockingHardFilterCount(decision);
+    const missingDecisionData = Array.isArray(decision?.missing_data) ? decision.missing_data.length : 0;
+    const recommendationValue = String(decision?.recommendation?.value || '');
+    const noGoWithoutOverride = needsProcurementOverrideReason(decision);
+    const diagnosticCodes = new Set(diagnostics.map(diagnostic => diagnostic?.code));
+    const councilStale = (
+      councilSession?.current_procurement_binding_status === 'stale'
+      || diagnosticCodes.has('council_binding_stale')
+    );
+    const councilConflict = (
+      hasGuidedDecisionReviewCouncilConflict(councilSession, decision)
+      || diagnosticCodes.has('recommendation_council_conflict')
+    );
+    const latestReview = getGuidedDecisionReviewLatestReview(reviews);
+    const latestReviewDecision = String(latestReview?.decision || '');
+    const latestReviewPending = latestReview?.review_status === 'pending';
+    const latestReviewObservation = latestReviewPending
+      ? 'pending'
+        : latestReviewDecision === 'accepted'
+          ? 'acceptance record observed; current freshness not established'
+          : latestReviewDecision || latestReview?.review_status || 'observed';
+    const latestDocument = getGuidedDecisionReviewLatestDocument(docs, map.bundle_type);
+    const documentFreshness = latestDocument
+      ? getGuidedDecisionReviewDocumentFreshness(latestDocument, councilSession)
+      : null;
+    const documentNeedsAttention = Boolean(latestDocument && !documentFreshness?.current);
+    const noGoObservation = recommendationValue !== 'NO_GO'
+      ? 'NO_GO not applicable'
+      : noGoWithoutOverride
+        ? 'NO_GO exception record not observed'
+        : 'NO_GO exception record observed';
+
+    const stages = {
+      Decision: {
+        status: !hasOpportunity || !hasRecommendation
+          ? 'not_observed'
+          : (blockingHardFilters || missingDecisionData || missingCoverage || noGoWithoutOverride || councilStale || councilConflict)
+            ? 'needs_attention'
+            : 'observed',
+        evidence: !hasOpportunity || !hasRecommendation
+          ? 'Opportunity or recommendation not observed.'
+          : `${blockingHardFilters} blocking filter, ${missingDecisionData + missingCoverage} missing item, ${noGoObservation}.`,
+      },
+      Evidence: {
+        status: (
+          errorDiagnostics.length
+          || map.truncated
+          || missingCoverage
+          || warningDiagnostics.length
+          || candidateCoverage
+          || unverifiableCoverage
+        )
+          ? 'needs_attention'
+          : map.nodes.length ? 'observed' : 'not_observed',
+        evidence: `${errorDiagnostics.length} error, ${warningDiagnostics.length} warning, ${missingCoverage} missing, ${candidateCoverage} candidate, ${unverifiableCoverage} unverifiable${map.truncated ? ', projection truncated' : ''}.`,
+      },
+      Review: {
+        status: !latestReview
+          ? 'not_observed'
+          : latestReviewDecision === 'rejected' || latestReviewDecision === 'changes_requested'
+            ? 'needs_attention'
+            : latestReviewPending ? 'in_review' : 'observed',
+        evidence: !latestReview
+          ? 'No authorized review record observed.'
+          : `Latest record: ${latestReviewObservation} · prepared ${formatProcurementActivityTime(latestReview.prepared_at, 'not recorded')}.`,
+      },
+      Documents: {
+        status: !latestDocument ? 'not_observed' : documentNeedsAttention ? 'needs_attention' : 'observed',
+        evidence: !latestDocument
+          ? `No ${map.bundle_type} document observed.`
+          : documentFreshness.current
+            ? `${latestDocument.title || latestDocument.doc_id || map.bundle_type} · current document provenance observed.`
+            : `${latestDocument.title || latestDocument.doc_id || map.bundle_type} · ${documentFreshness.statuses.length ? `document status requires review: ${documentFreshness.statuses.join(', ')}` : 'current document provenance not observed'}.`,
+      },
+    };
+
+    const next = (() => {
+      if (map.truncated || errorDiagnostics.length) return { stage: 'Evidence', copy: 'Inspect the bounded projection or error diagnostics.' };
+      if (!hasOpportunity || !hasRecommendation) return { stage: 'Decision', copy: 'Inspect the missing opportunity or recommendation.' };
+      if (blockingHardFilters || missingDecisionData || missingCoverage || noGoWithoutOverride) return { stage: 'Decision', copy: 'Inspect the decision blockers and missing evidence.' };
+      if (councilStale || councilConflict) return { stage: 'Decision', copy: 'Inspect the Council binding or recommendation conflict.' };
+      if (latestReviewDecision === 'rejected' || latestReviewDecision === 'changes_requested') return { stage: 'Review', copy: 'Inspect the latest review outcome.' };
+      if (latestReviewPending) return { stage: 'Review', copy: 'Inspect the pending review record.' };
+      if (!latestReview) return { stage: 'Review', copy: 'Inspect the missing review record.' };
+      if (!latestDocument || documentNeedsAttention) return { stage: 'Documents', copy: 'Inspect the target bundle document and its provenance.' };
+      if (warningDiagnostics.length || candidateCoverage || unverifiableCoverage) return { stage: 'Evidence', copy: 'Inspect warning diagnostics and non-explicit coverage.' };
+      return { stage: 'Evidence', copy: 'Inspect the evidence overview.' };
+    })();
+
+    const overallState = next.stage === 'Review' && latestReviewPending
+      ? 'Review in progress'
+      : next.stage === 'Evidence' && next.copy === 'Inspect the evidence overview.'
+        ? 'No blocking signal observed'
+        : 'Needs review';
+
+    return { stages, next, overallState };
+  }
+
+  function renderGuidedDecisionReview(project, decision, reviews, councilSession, docs, map) {
+    if (!isGuidedDecisionReviewMap(map, project?.project_id)) return '';
+    const review = deriveGuidedDecisionReview(decision, reviews, councilSession, docs, map);
+    const fingerprint = map.projection_fingerprint.slice(0, 16);
+    const stages = Object.entries(review.stages).map(([name, stage]) => `
+      <li class="guided-decision-review-step" data-guided-review-stage="${name}" data-guided-review-status="${stage.status}">
+        <h5>${name}</h5>
+        <div class="guided-decision-review-status">${GUIDED_DECISION_REVIEW_STATUS_LABELS[stage.status]}</div>
+        <p>${escapeHtml(stage.evidence)}</p>
+        <button type="button" data-guided-decision-review-stage="${name}" data-guided-decision-review-target="${GUIDED_DECISION_REVIEW_STAGE_TARGETS[name]}">Inspect ${name}</button>
+      </li>`).join('');
+    return `
+      <section id="guided-decision-review" class="guided-decision-review" aria-labelledby="guided-decision-review-title">
+        <div class="guided-decision-review-head">
+          <div>
+            <h4 id="guided-decision-review-title">Guided Decision Review</h4>
+            <p class="guided-decision-review-copy">Current project records are grouped for review navigation only. Statuses describe observed records, not current authority or operational readiness.</p>
+          </div>
+          <p class="guided-decision-review-boundary">READ ONLY · NON-ATOMIC · NO APPROVAL/EXPORT/PROVIDER EXECUTION</p>
+        </div>
+        <div class="guided-decision-review-summary">
+          <p><strong>Overall state:</strong> ${escapeHtml(review.overallState)}</p>
+          <p><strong>Recommended next check:</strong> ${escapeHtml(review.next.stage)} · ${escapeHtml(review.next.copy)}</p>
+          <p class="guided-decision-review-meta">bundle_type: ${escapeHtml(map.bundle_type)} · fingerprint: ${escapeHtml(fingerprint)}…</p>
+        </div>
+        <ol class="guided-decision-review-steps" aria-label="Guided decision review stages">
+          ${stages}
+        </ol>
+        <div id="guided-decision-review-announcement" class="guided-decision-review-announcement" aria-live="polite"></div>
+      </section>`;
+  }
+
+  function focusGuidedDecisionReviewTarget(targetId, stageName) {
+    const target = document.getElementById(targetId);
+    if (!target) return;
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    target.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' });
+    target.focus({ preventScroll: true });
+    const announcement = document.getElementById('guided-decision-review-announcement');
+    if (announcement) announcement.textContent = `Moved to ${stageName}.`;
+  }
+
+  function wireGuidedDecisionReviewActions(root) {
+    root.querySelectorAll('[data-guided-decision-review-target]').forEach(button => {
+      button.addEventListener('click', () => focusGuidedDecisionReviewTarget(
+        button.dataset.guidedDecisionReviewTarget || '',
+        button.dataset.guidedDecisionReviewStage || 'review section',
+      ));
+    });
+  }
+
   const DECISION_EVIDENCE_NODE_LABELS = {
     source: 'Source',
     claim: 'Claim',
@@ -25306,7 +25951,7 @@
     if (!map) return '';
     const state = normalizeDecisionEvidenceState(map);
     return `
-      <section id="decision-evidence-map" class="decision-evidence-map${state.presentationMode ? ' presentation-mode' : ''}" aria-label="Decision Evidence Map">
+      <section id="decision-evidence-map" class="decision-evidence-map${state.presentationMode ? ' presentation-mode' : ''}" aria-label="Decision Evidence Map" tabindex="-1">
         ${renderDecisionEvidenceMapContent(map)}
       </section>`;
   }
@@ -25618,6 +26263,7 @@
         </div>
         ${p.description ? `<p class="muted-text" style="margin:0;">${p.description}</p>` : ''}
       </div>
+      ${procurementEnabled ? renderGuidedDecisionReview(p, procurementDecision, procurementReviews, decisionCouncilSession, docs, decisionEvidenceMap) : ''}
       <div class="bundle-breakdown">${_renderBundleBreakdown(docs)}</div>
       <div class="project-import-panel">
         <div class="project-import-header">
@@ -25665,7 +26311,7 @@
         <div id="voice-brief-import-status" class="project-import-status" aria-live="polite"></div>
       </div>
       ${procurementEnabled ? `
-      <div class="project-import-panel">
+      <div id="project-decision-area" class="project-import-panel" tabindex="-1">
         <div class="project-import-header">
           <div>
             <h4 class="project-import-title">🏛️ Public Procurement Go/No-Go Copilot</h4>
@@ -25699,7 +26345,7 @@
             ${canExportReviewPacket ? '' : 'disabled'}
           >검토 패킷 ZIP</button>
           <p class="procurement-review-export-note">현재 project decision과 evidence를 portable ZIP으로 묶습니다. 이 내보내기는 운영 승인, 입찰 제출, provider 호출을 수행하지 않습니다.</p>
-          ${renderProjectProcurementReviewWorkspace(p.project_id, procurementReviews)}
+          <div id="project-review-workspace" tabindex="-1">${renderProjectProcurementReviewWorkspace(p.project_id, procurementReviews)}</div>
         </div>
         <div id="project-procurement-download-fallback" style="display:none;"></div>
         <div id="project-procurement-status" class="project-import-status" aria-live="polite"></div>
@@ -25713,7 +26359,7 @@
       </div>
       ${renderDecisionEvidenceMapPanel(decisionEvidenceMap)}
       ` : ''}
-      <h4 style="margin:16px 0 8px;font-weight:700;">📄 문서 목록 (${docs.length}건)</h4>
+      <h4 id="project-documents-heading" tabindex="-1" style="margin:16px 0 8px;font-weight:700;">📄 문서 목록 (${docs.length}건)</h4>
       ${docs.length === 0 ? `
         <div class="empty-state"><p>문서가 없습니다. 문서 생성 시 이 프로젝트를 선택하면 자동으로 추가됩니다.</p></div>` : `
       <div class="doc-list">
@@ -25795,6 +26441,7 @@
 	    wireProjectDetailActions(container, p.project_id);
 	    wireMeetingRecordingActions(container, p.project_id);
 	    wireProcurementRoleActions(container);
+	    wireGuidedDecisionReviewActions(container);
 	    const decisionEvidenceRoot = container.querySelector('#decision-evidence-map');
 	    if (decisionEvidenceRoot) wireDecisionEvidenceMapActions(decisionEvidenceRoot);
 	  }

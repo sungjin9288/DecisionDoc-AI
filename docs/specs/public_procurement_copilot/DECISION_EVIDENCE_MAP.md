@@ -187,6 +187,14 @@ coverage; requirement proof remains governed by the exact coverage rules above.
 The UI repeats the read-only and non-atomic boundary. It has no mutation,
 approval, export, provider, or submission control.
 
+Project detail also renders [Guided Decision Review](./GUIDED_DECISION_REVIEW.md)
+only after validating the complete v1 response shape, coverage totals, bounded
+graph references, fingerprint, and exact false authority object. The guide
+derives conservative Decision, Evidence, Review, and Documents observations
+from the already-loaded records and only scrolls/focuses the matching existing
+section. It does not add a request or reconstruct missing evidence from another
+payload.
+
 ## Verification
 
 No-cost verification:
@@ -222,7 +230,22 @@ No-cost verification:
 # Combined focused + adjacent: 404 passed (2026-07-27)
 # Run the union of the two file lists above.
 
-# Full non-live: 4470 passed, 1 skipped, 4 deselected (2026-07-27)
+# H124 historical full non-live: 4470 passed, 1 skipped, 4 deselected (2026-07-27)
+.venv/bin/pytest -q tests/ -m "not live"
+
+# H125 Guided Review focused: 7 passed (2026-07-27)
+.venv/bin/pytest -q \
+  tests/test_guided_decision_review_ui_static.py \
+  tests/e2e/test_guided_decision_review.py
+
+# H124 + H125 static/E2E: 13 passed (2026-07-27)
+.venv/bin/pytest -q \
+  tests/test_guided_decision_review_ui_static.py \
+  tests/e2e/test_guided_decision_review.py \
+  tests/test_decision_evidence_ui_static.py \
+  tests/e2e/test_decision_evidence_map.py
+
+# H125 current full non-live: 4477 passed, 1 skipped, 4 deselected (2026-07-27)
 .venv/bin/pytest -q tests/ -m "not live"
 ```
 

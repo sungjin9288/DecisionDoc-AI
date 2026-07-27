@@ -3,7 +3,7 @@
 ## Current milestone
 Milestone 6 completed
 
-## Post-milestone Decision Evidence Map and H124 Evidence Neighborhood Explorer completion
+## Post-milestone Decision Evidence Map, H124 Explorer, and H125 Guided Review completion
 
 - `decision_evidence_map.v1` is now a deterministic, bounded, read-only project
   projection across procurement decisions, Decision Council, project documents,
@@ -22,6 +22,16 @@ Milestone 6 completed
   Provenance line styles are non-color cues, not proof or approval. Gaps,
   lineage, and source-visibility filters always show their filtered count and
   never add execution control. The map remains non-atomic and read-only.
+- H125 adds Guided Decision Review above the existing project detail. It renders
+  only for an exact, internally consistent `decision_evidence_map.v1` response
+  with six false authority flags. It presents Decision, Evidence, Review, and
+  Documents as observed record states plus one recommended next check. Controls
+  only scroll to and focus an existing section. Missing or malformed maps,
+  authority drift, unknown document freshness, stale/conflicting Council
+  diagnostics, rejected/changes-requested review, and missing/stale target
+  documents remain fail-closed review signals. Accepted review is not current
+  freshness, and the panel creates no approval, export, provider, bid, legal, or
+  contractual authority.
 - Generation and final report workflow promotion preserve validated canonical
   `requirement:` references on project documents. Only an exact persisted
   reference can produce `explicit` reference coverage; fuzzy or legacy text
@@ -47,6 +57,14 @@ Milestone 6 completed
   and Chromium only; they did not call a provider API, AWS, G2B, dataset
   upload, training, promotion, production service, bid submission, legal
   approval, or contractual endpoint.
+- Fresh H125 no-cost verification on 2026-07-27: H125 static/E2E `7 passed`,
+  H124+H125 static/E2E `13 passed`, adjacent authorization/workflow
+  `387 passed`, combined union `411 passed`, and full non-live
+  `4477 passed, 1 skipped, 4 deselected`. Luna's malformed-map, document
+  freshness, Council diagnostic, NO_GO wording, informational diagnostic, and
+  loading-path findings were resolved. These gates remained local/mock only and
+  did not execute provider, AWS, G2B, upload, training, promotion, production,
+  bid, legal, or contractual actions.
 
 ## Post-milestone project knowledge cross-worker authority completion
 
