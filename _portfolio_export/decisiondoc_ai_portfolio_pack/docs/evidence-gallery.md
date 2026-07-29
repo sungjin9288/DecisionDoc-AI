@@ -5,6 +5,7 @@
 | 파일 | 설명 | 상태 |
 |---|---|---|
 | `evidence/screenshots/web-ui-home.png` | 로컬 FastAPI static PWA root 화면. 2026-07-08 기준 로그인 폼 렌더링 확인 | 검증 완료 |
+| `evidence/screenshots/guided-review-demo-01-project-created.png` through `guided-review-demo-05-disposition.png` | local mock app shell에서 project 생성, Guided Review, H126 handoff, unchanged H127 recheck, H128 disposition 순서로 캡처 | 검증 완료 |
 
 ## 2. API Responses
 
@@ -30,6 +31,7 @@
 | `evidence/cli-logs/playwright_console.log` | Playwright console warning/error 확인 로그. warning 이상 0건 | 검증 완료 |
 | `evidence/cli-logs/playwright_requests.log` | Playwright network request 확인 로그 | 검증 완료 |
 | `evidence/cli-logs/ui_csp_nonce_check.log` | 로컬 UI 응답의 CSP nonce, `unsafe-inline` 부재, inline handler 0개 확인 로그 | 검증 완료 |
+| `evidence/cli-logs/guided_review_h126_h128_demo.json` | H126-H128 repeatable local mock capture의 artifact hash/size binding, page-memory, non-persistence, external-action exclusion receipt | local capture verified; portfolio pack included |
 
 ## 3-1. Reproducible Local Evidence Commands
 

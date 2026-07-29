@@ -70,6 +70,7 @@ Report Quality receiver inspection은 ZIP 무결성만 확인하지 않는다. �
 | Static PWA CSP boundary | `evidence/cli-logs/ui_csp_nonce_check.log` |
 | Playwright console check | `evidence/cli-logs/playwright_console.log` |
 | Post-login UI flow | `python3 scripts/capture_ui_flow_evidence.py` -> `evidence/cli-logs/ui_flow_evidence.json`, `evidence/screenshots/ui-flow-01-after-login.png`, `evidence/screenshots/ui-flow-02-generate-ready.png`, `evidence/screenshots/ui-flow-03-results.png`, `evidence/screenshots/ui-flow-04-export-complete.png` |
+| Guided Review local mock demo | `python3 scripts/capture_guided_decision_review_demo_evidence.py` -> `evidence/cli-logs/guided_review_h126_h128_demo.json`, five `evidence/screenshots/guided-review-demo-*.png` files; H126/H127/H128 only, no persistence or external execution |
 | Portfolio pack integrity | `python3 scripts/manage_portfolio_pack.py sync --prune`, `check`, `package`, `verify-zip` |
 
 ## 4. 아직 설명하면 안 되는 범위

@@ -126,6 +126,25 @@ Milestone 6 completed
   receipt, prove prior server issuance of the submitted H127 source, make
   sequential reads atomic, or execute provider, AWS, G2B, upload, training,
   promotion, deployment, service resume, bid, legal, or contractual actions.
+- H126-H128 local demo evidence on 2026-07-29: the repeatable local
+  `capture_guided_decision_review_demo_evidence.py` flow uses an ephemeral
+  mock/local FastAPI server and the real browser shell to create a project,
+  populate local Decision/Evidence through the locked procurement-store fixture,
+  render Guided Review, and download H126, unchanged H127, and
+  `acknowledged_unchanged` H128 receipts. Its five screenshots plus sanitized
+  H126/H127/H128 JSON artifacts have exact allowlisted filename, size, and
+  SHA-256 receipt bindings; the local validator independently reruns the
+  canonical Pydantic/service chain. The receipt records page-memory-only,
+  non-persistent, recheck-required boundaries, Review/Documents `not_observed`
+  because no review/document is persisted, and ten excluded external actions.
+  It restores the caller environment and does not create an H129 registry,
+  invoke a provider, G2B, AWS, upload, training, promotion, service resume,
+  bid, legal, or contractual action. Focused Guided Review verification passed
+  `42` tests and the full non-live suite passed `4512 passed, 1 skipped,
+  4 deselected`. The tracked portfolio pack includes the receipt, three JSON
+  bodies, and five screenshots; sync/check/package/verify-zip passed with 95
+  source files and 96 ZIP entries. Run artifacts are UUID/timestamp specific
+  and hash-bound; byte-identical output across runs is not claimed.
 
 ## Post-milestone project knowledge cross-worker authority completion
 

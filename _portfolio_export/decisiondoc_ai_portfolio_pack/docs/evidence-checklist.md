@@ -145,6 +145,7 @@
 | M2/M6 runner-owned proof receipt | 재현 가능 | `run_stage_procurement_smoke.py`와 `run_deployed_smoke.py`의 `--proof-receipt`; preflight blocked, 실제 smoke passed/failed, secret-free checker 계약 |
 | Completion readiness proof runbook | 재현 가능 | `docs/completion-readiness-runbook.md` |
 | Local post-login UI flow evidence | 재현 가능 | `python3 scripts/capture_ui_flow_evidence.py` |
+| H126-H128 Guided Review local mock demo | 재현 가능 | `python3 scripts/capture_guided_decision_review_demo_evidence.py` -> receipt, sanitized H126/H127/H128 JSON in `evidence/cli-logs/`, five SHA-256-bound `guided-review-demo-*.png` screenshots; `--check-only`로 browser 없이 재검증 |
 
 위 local evidence contract 검증은 repo 밖 `/tmp` receipt를 사용한다. Provider API, AWS runtime, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않는다.
 

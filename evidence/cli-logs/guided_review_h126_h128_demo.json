@@ -1,0 +1,113 @@
+{
+  "browser_boundary": {
+    "authority": {
+      "approval": false,
+      "bid_submission": false,
+      "export_execution": false,
+      "legal_contractual_commitment": false,
+      "mutation": false,
+      "provider_call": false
+    },
+    "disposition_receipt_persisted": false,
+    "handoff_persisted": false,
+    "operational_approval": false,
+    "page_memory_only": true,
+    "recheck_persisted": false,
+    "requires_recheck_before_reliance": true,
+    "reviewer_identity_bound": false,
+    "snapshot_atomic": false
+  },
+  "browser_http_errors": [],
+  "contracts": {
+    "decision_evidence_map": "decision_evidence_map.v1",
+    "disposition": "guided-decision-review-disposition-receipt.v1",
+    "disposition_sha256": "2f2713545e0f62a9621339da339257b414e004dc83f808a11f70400f83c2b199",
+    "handoff": "guided-decision-review-handoff.v1",
+    "handoff_sha256": "7eb0cee7367f34bec4b3f039e6a271f203586c877381f17e1278aa6bb5dab047",
+    "recheck": "guided-decision-review-recheck-receipt.v1",
+    "recheck_sha256": "0104acd1f87c00e6a425535b5dd627fc740ab3f43644f5cd3c321a7ad1879d5d",
+    "recheck_status": "unchanged",
+    "review_disposition": "acknowledged_unchanged"
+  },
+  "downloaded_receipts": {
+    "disposition": {
+      "filename": "guided-review-demo-h128-acknowledged-unchanged-disposition.json",
+      "sha256": "2f2713545e0f62a9621339da339257b414e004dc83f808a11f70400f83c2b199",
+      "size_bytes": 4308
+    },
+    "handoff": {
+      "filename": "guided-review-demo-h126-handoff.json",
+      "sha256": "7eb0cee7367f34bec4b3f039e6a271f203586c877381f17e1278aa6bb5dab047",
+      "size_bytes": 1179
+    },
+    "recheck": {
+      "filename": "guided-review-demo-h127-unchanged-recheck.json",
+      "sha256": "0104acd1f87c00e6a425535b5dd627fc740ab3f43644f5cd3c321a7ad1879d5d",
+      "size_bytes": 3282
+    }
+  },
+  "excluded_external_actions": {
+    "aws_runtime_execution": false,
+    "bid_submission": false,
+    "contractual_commitment": false,
+    "dataset_upload": false,
+    "g2b_live_api_execution": false,
+    "legal_approval": false,
+    "model_promotion": false,
+    "production_service_resume": false,
+    "provider_api_execution": false,
+    "training_execution": false
+  },
+  "local_environment": {
+    "credentials_recorded": false,
+    "provider": "mock",
+    "remote_url_used": false,
+    "server": "ephemeral",
+    "storage": "temporary"
+  },
+  "schema_version": "decisiondoc.guided_review_local_demo.v1",
+  "scope": "repeatable local mock browser capture for H126-H128 Guided Decision Review",
+  "screenshots": {
+    "disposition": {
+      "filename": "guided-review-demo-05-disposition.png",
+      "sha256": "31b6ecff4beae11077c804166f63ff9ae86f7783ddafb610fe1fe4915ed1968c",
+      "size_bytes": 186173
+    },
+    "guided_review": {
+      "filename": "guided-review-demo-02-guided-review.png",
+      "sha256": "7ff0e63a7a006a5ef83bd65fc220335eebd1b2a809eddff01441de3d1ee1a871",
+      "size_bytes": 182788
+    },
+    "handoff": {
+      "filename": "guided-review-demo-03-handoff.png",
+      "sha256": "39c0f13777af3a5e27af15a88561837ca5d1ff81a130b0e8bebd7ee5b8fa3a58",
+      "size_bytes": 185583
+    },
+    "project_created": {
+      "filename": "guided-review-demo-01-project-created.png",
+      "sha256": "8053c5a1fe1bc6bb5c600fd04cfd2bac12731426c4f7b6ee9ec072698c147b3a",
+      "size_bytes": 339898
+    },
+    "unchanged_recheck": {
+      "filename": "guided-review-demo-04-unchanged-recheck.png",
+      "sha256": "8e42466567020376b92e06d37b96d1299f3fd0da8a700c43db322ecefa0913e9",
+      "size_bytes": 186459
+    }
+  },
+  "stage_observations": {
+    "Decision": "needs_attention",
+    "Documents": "not_observed",
+    "Evidence": "needs_attention",
+    "Review": "not_observed"
+  },
+  "status": "passed",
+  "steps": [
+    "project_created",
+    "decision_evidence_map_loaded",
+    "guided_review_rendered",
+    "handoff_downloaded",
+    "unchanged_recheck_downloaded",
+    "acknowledged_unchanged_disposition_downloaded"
+  ],
+  "unobserved_stage_reason": "Review and Documents remain not_observed because the local capture creates no persisted procurement review or project document."
+}

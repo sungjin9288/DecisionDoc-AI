@@ -126,6 +126,40 @@ A `changed` H127 receipt can still issue `new_handoff_required` or
 `review_deferred` after the old H126 source is discarded. It cannot issue
 `acknowledged_unchanged`.
 
+## Local mock browser demo
+
+The following local-only capture starts an ephemeral FastAPI server with the
+mock provider and temporary storage. It uses the actual app shell to create a
+project, load its Decision Evidence Map, render Guided Review, and download the
+H126 handoff, an unchanged H127 recheck, and the H128
+`acknowledged_unchanged` receipt.
+
+```bash
+python3 scripts/capture_guided_decision_review_demo_evidence.py
+
+python3 scripts/capture_guided_decision_review_demo_evidence.py --check-only
+```
+
+It writes five screenshots to `evidence/screenshots/`, the secret-free
+`decisiondoc.guided_review_local_demo.v1` receipt to
+`evidence/cli-logs/guided_review_h126_h128_demo.json`, and sanitized H126,
+H127, and H128 JSON bodies beside that receipt. Each saved body and screenshot
+has an exact allowlisted basename, size, and SHA-256 binding in the receipt.
+The persisted-receipt validator rereads those local artifacts and independently
+rechecks the canonical H126/H127/H128 Pydantic and service chain without
+starting a browser. An artifact-directory flock serializes the complete capture
+so concurrent runs cannot mix outputs. The capture snapshots and restores
+`os.environ`; its summary receipt records no credentials, tokens, project
+identifier, or server URL. The downloaded canonical contract bodies retain
+their local fixture `project_id` for exact binding. The flow does not add H129
+persistence or authority.
+
+The repeatable local fixture uses the locked `ProcurementDecisionStore.upsert`
+path to populate Decision and Evidence without a G2B/provider call. It does not
+persist a procurement review or project document, so Review and Documents remain
+`not_observed`; the receipt states that boundary rather than simulating a later
+authority-bearing workflow.
+
 ## Audit and limitations
 
 Successful requests record `procurement.guided_review_disposition` with only

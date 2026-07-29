@@ -21,6 +21,7 @@
 | Auth/generation/storage tests | targeted pytest | `evidence/cli-logs/pytest_generate_auth_storage.log` |
 | Static PWA screen | Playwright screenshot and snapshot | `evidence/screenshots/web-ui-home.png`, `evidence/cli-logs/playwright_snapshot.log` |
 | Post-login local UI flow | local mock browser capture | `evidence/cli-logs/ui_flow_evidence.json`, `evidence/screenshots/ui-flow-01-after-login.png` through `ui-flow-04-export-complete.png` |
+| H126-H128 Guided Review demo | repeatable local mock browser creates a project, populates Decision/Evidence through a local fixture, and downloads H126/H127/H128 review-only receipts; Review/Documents are intentionally not observed | `evidence/cli-logs/guided_review_h126_h128_demo.json`, `guided-review-demo-h126-handoff.json`, `guided-review-demo-h127-unchanged-recheck.json`, `guided-review-demo-h128-acknowledged-unchanged-disposition.json`, and `evidence/screenshots/guided-review-demo-01-project-created.png` through `guided-review-demo-05-disposition.png` |
 | Static PWA CSP boundary | local HTTP header/body check | `evidence/cli-logs/ui_csp_nonce_check.log` |
 | Browser console | local Playwright console capture | `evidence/cli-logs/playwright_console.log` |
 | Input and generated samples | sanitized local artifacts | `evidence/input-samples/`, `evidence/generated-samples/` |

@@ -15,8 +15,8 @@
     },
     {
       "path": "README.md",
-      "sha256": "6beacf27de6a967e89cbec47b731e6cf3ec24c4413739668d7b4cbbbc98497b7",
-      "size_bytes": 81483
+      "sha256": "011922b2db61e71192285f240148be4075d0a3abdc1e026b8fc293791a1c404d",
+      "size_bytes": 81527
     },
     {
       "path": "docs/architecture.md",
@@ -35,23 +35,23 @@
     },
     {
       "path": "docs/contribution-note.md",
-      "sha256": "67e57c896810c2a7c1af1e836693d124346bbbb4c20e4eab3b4a70010fb79ff5",
-      "size_bytes": 30685
+      "sha256": "befff1e079284ed1ce4bca969e6977f0140f7c106d5198165aeb6487173d1ca0",
+      "size_bytes": 30963
     },
     {
       "path": "docs/development-plan.md",
-      "sha256": "ff4fa5abaa133d37cc5ce1b3a61b7aea865aa48034a29dcd2a606b83ddd473ed",
-      "size_bytes": 51748
+      "sha256": "355a087ac979466abb727dc6ccf23ac54320f6c1471fe6ed73cfb5537fe960d4",
+      "size_bytes": 51727
     },
     {
       "path": "docs/evidence-checklist.md",
-      "sha256": "e12ba89e853a9b47e84bd2ecd8e956ecc4037d25e1b5ee7a1ad364613e70e0d4",
-      "size_bytes": 69035
+      "sha256": "07c99baca9ac0be08407d3c501a715ecd45e8736bbd0b20caa362cadbfba2a11",
+      "size_bytes": 69332
     },
     {
       "path": "docs/evidence-gallery.md",
-      "sha256": "786558a14ffad1a52750eb79416379fec7c61e4e2b3a9158186ea54dd76cec3f",
-      "size_bytes": 9929
+      "sha256": "6479c4a36a4052e9b0389ad4b3999b2232013834dc877fb5fecd651557610d4f",
+      "size_bytes": 10439
     },
     {
       "path": "docs/implementation-evidence.md",
@@ -259,6 +259,26 @@
       "size_bytes": 49
     },
     {
+      "path": "evidence/cli-logs/guided-review-demo-h126-handoff.json",
+      "sha256": "7eb0cee7367f34bec4b3f039e6a271f203586c877381f17e1278aa6bb5dab047",
+      "size_bytes": 1179
+    },
+    {
+      "path": "evidence/cli-logs/guided-review-demo-h127-unchanged-recheck.json",
+      "sha256": "0104acd1f87c00e6a425535b5dd627fc740ab3f43644f5cd3c321a7ad1879d5d",
+      "size_bytes": 3282
+    },
+    {
+      "path": "evidence/cli-logs/guided-review-demo-h128-acknowledged-unchanged-disposition.json",
+      "sha256": "2f2713545e0f62a9621339da339257b414e004dc83f808a11f70400f83c2b199",
+      "size_bytes": 4308
+    },
+    {
+      "path": "evidence/cli-logs/guided_review_h126_h128_demo.json",
+      "sha256": "0e1a8f534e22647c3900e59f5c05b085eb597595679bf4954b58e039365143e6",
+      "size_bytes": 4119
+    },
+    {
       "path": "evidence/cli-logs/playwright_console.log",
       "sha256": "4663a5e171d0cfb1086b47efc834e5c15fe7f288ed0a7ceb552ceb4751290864",
       "size_bytes": 95
@@ -305,8 +325,8 @@
     },
     {
       "path": "evidence/evidence_manifest.md",
-      "sha256": "e4a2f4278a89f695125c82f8c75cafcbf6dd0cd4cbee44ca448d062af88c7b98",
-      "size_bytes": 3588
+      "sha256": "b4961ec233140b328cb6b48bc78911e1314ea026faffdfc4df988c9c702552a5",
+      "size_bytes": 4155
     },
     {
       "path": "evidence/execution-logs/document_generation_api_capture.log",
@@ -382,6 +402,31 @@
       "path": "evidence/output-artifacts/export_onepager.md",
       "sha256": "f15b0ce3dd62003dce8764697094441acdf3d052c4744bd52fb7fe4703ce0e3e",
       "size_bytes": 464
+    },
+    {
+      "path": "evidence/screenshots/guided-review-demo-01-project-created.png",
+      "sha256": "8053c5a1fe1bc6bb5c600fd04cfd2bac12731426c4f7b6ee9ec072698c147b3a",
+      "size_bytes": 339898
+    },
+    {
+      "path": "evidence/screenshots/guided-review-demo-02-guided-review.png",
+      "sha256": "7ff0e63a7a006a5ef83bd65fc220335eebd1b2a809eddff01441de3d1ee1a871",
+      "size_bytes": 182788
+    },
+    {
+      "path": "evidence/screenshots/guided-review-demo-03-handoff.png",
+      "sha256": "39c0f13777af3a5e27af15a88561837ca5d1ff81a130b0e8bebd7ee5b8fa3a58",
+      "size_bytes": 185583
+    },
+    {
+      "path": "evidence/screenshots/guided-review-demo-04-unchanged-recheck.png",
+      "sha256": "8e42466567020376b92e06d37b96d1299f3fd0da8a700c43db322ecefa0913e9",
+      "size_bytes": 186459
+    },
+    {
+      "path": "evidence/screenshots/guided-review-demo-05-disposition.png",
+      "sha256": "31b6ecff4beae11077c804166f63ff9ae86f7783ddafb610fe1fe4915ed1968c",
+      "size_bytes": 186173
     },
     {
       "path": "evidence/screenshots/ui-flow-01-after-login.png",
