@@ -156,6 +156,13 @@ from app.schemas.decision_evidence import (
     DecisionEvidenceProposalSlide,
     DecisionEvidenceProvenance,
     DecisionEvidenceSourceRevision,
+    GuidedDecisionReviewDispositionReceipt,
+    GuidedDecisionReviewDispositionRequest,
+    GuidedDecisionReviewHandoffResponse,
+    GuidedDecisionReviewNextCheck,
+    GuidedDecisionReviewRecheckReceipt,
+    GuidedDecisionReviewRecheckRequest,
+    GuidedDecisionReviewStage,
 )
 
 __all__ = [
@@ -284,4 +291,11 @@ __all__ = [
     "DecisionEvidenceProposalSlide",
     "DecisionEvidenceProvenance",
     "DecisionEvidenceSourceRevision",
+    "GuidedDecisionReviewDispositionReceipt",
+    "GuidedDecisionReviewDispositionRequest",
+    "GuidedDecisionReviewHandoffResponse",
+    "GuidedDecisionReviewNextCheck",
+    "GuidedDecisionReviewRecheckReceipt",
+    "GuidedDecisionReviewRecheckRequest",
+    "GuidedDecisionReviewStage",
 ]

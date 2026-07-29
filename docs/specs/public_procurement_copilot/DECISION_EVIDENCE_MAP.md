@@ -195,6 +195,27 @@ from the already-loaded records and only scrolls/focuses the matching existing
 section. It does not add a request or reconstruct missing evidence from another
 payload.
 
+An explicitly requested
+[Guided Decision Review Handoff](./GUIDED_DECISION_REVIEW_HANDOFF.md) packages
+those four observations as canonical review-only JSON. The response binds exact
+bytes and the source projection fingerprint, but remains non-atomic,
+non-persisted, and recheck-required. It does not upgrade the map, reference
+coverage, document status, or review record into proof or operational authority.
+
+[Guided Decision Review Handoff Recheck](./GUIDED_DECISION_REVIEW_RECHECK.md)
+compares a browser-verified source handoff with a fresh H126 observation. It
+excludes only the new source timestamp from the semantic fingerprint and
+returns `unchanged` or `changed` in an exact-hash canonical receipt. The receipt
+is read-only, non-atomic, non-persisted, and does not prove prior issuance,
+future currentness, or approval.
+
+[Guided Decision Review Disposition](./GUIDED_DECISION_REVIEW_DISPOSITION.md)
+binds an allowlisted disposition to one exact browser-verified H127 receipt.
+The status/disposition matrix is fail-closed, the browser source remains in
+page memory, and the canonical binding includes the current handoff and semantic
+fingerprint. It does not persist the receipt, identify a reviewer, or create
+approval, mutation, export, provider, bid, legal, or contractual authority.
+
 ## Verification
 
 No-cost verification:
@@ -246,6 +267,59 @@ No-cost verification:
   tests/e2e/test_decision_evidence_map.py
 
 # H125 current full non-live: 4477 passed, 1 skipped, 4 deselected (2026-07-27)
+.venv/bin/pytest -q tests/ -m "not live"
+
+# H123-H126 map and guided review integration: 38 passed (2026-07-28)
+.venv/bin/pytest -q \
+  tests/test_guided_decision_review_handoff.py \
+  tests/test_guided_decision_review_handoff_ui_static.py \
+  tests/test_guided_decision_review_ui_static.py \
+  tests/test_decision_evidence_service.py \
+  tests/test_decision_evidence_api.py \
+  tests/test_decision_evidence_ui_static.py \
+  tests/e2e/test_guided_decision_review.py \
+  tests/e2e/test_decision_evidence_map.py
+
+# H126 historical full non-live: 4487 passed, 1 skipped, 4 deselected (2026-07-28)
+.venv/bin/pytest -q tests/ -m "not live"
+
+# H123-H127 map and guided review integration: 46 passed (2026-07-28)
+.venv/bin/pytest -q \
+  tests/test_guided_decision_review_handoff.py \
+  tests/test_guided_decision_review_handoff_ui_static.py \
+  tests/test_guided_decision_review_ui_static.py \
+  tests/test_decision_evidence_service.py \
+  tests/test_decision_evidence_api.py \
+  tests/test_decision_evidence_ui_static.py \
+  tests/e2e/test_guided_decision_review.py \
+  tests/e2e/test_decision_evidence_map.py
+
+# H127 historical full non-live: 4495 passed, 1 skipped, 4 deselected (2026-07-28)
+.venv/bin/pytest -q tests/ -m "not live"
+
+# H123-H128 map and guided review integration: 60 passed (2026-07-29)
+.venv/bin/pytest -q \
+  tests/test_guided_decision_review_handoff.py \
+  tests/test_guided_decision_review_handoff_ui_static.py \
+  tests/test_guided_decision_review_ui_static.py \
+  tests/test_decision_evidence_service.py \
+  tests/test_decision_evidence_api.py \
+  tests/test_decision_evidence_ui_static.py \
+  tests/e2e/test_guided_decision_review.py \
+  tests/e2e/test_decision_evidence_map.py
+
+# H128 authorization/audit/security/infrastructure expansion: 488 passed
+.venv/bin/pytest -q \
+  tests/test_guided_decision_review_handoff.py \
+  tests/test_decision_evidence_api.py \
+  tests/test_procurement_review_authorization.py \
+  tests/test_project_management.py \
+  tests/test_audit.py \
+  tests/test_audit_store_integrity.py \
+  tests/test_infrastructure.py \
+  tests/test_security.py
+
+# H128 current full non-live: 4509 passed, 1 skipped, 4 deselected (2026-07-29)
 .venv/bin/pytest -q tests/ -m "not live"
 ```
 

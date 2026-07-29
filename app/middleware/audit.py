@@ -57,6 +57,18 @@ AUDIT_RULES: dict[tuple[str, str], str] = {
     ("POST", "/projects/{id}/procurement/review-packet"): "procurement.review_packet_export",
     ("GET", "/procurement/reviews"): "procurement.review_inbox_view",
     ("GET", "/projects/{id}/decision-evidence-map"): "procurement.review_evidence_map_view",
+    (
+        "GET",
+        "/projects/{id}/guided-decision-review-handoff",
+    ): "procurement.guided_review_handoff_download",
+    (
+        "POST",
+        "/projects/{id}/guided-decision-review-handoff/recheck",
+    ): "procurement.guided_review_handoff_recheck",
+    (
+        "POST",
+        "/projects/{id}/guided-decision-review-handoff/review-disposition",
+    ): "procurement.guided_review_disposition",
     ("POST", "/projects/{id}/procurement/reviews/{id}/complete"): "procurement.review_completed",
     ("GET", "/projects/{id}/procurement/reviews/{id}/packet"): "procurement.review_packet_download",
     ("GET", "/projects/{id}/procurement/reviews/{id}/reviewed-package"): "procurement.reviewed_package_download",

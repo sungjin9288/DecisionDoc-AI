@@ -3,7 +3,7 @@
 ## Current milestone
 Milestone 6 completed
 
-## Post-milestone Decision Evidence Map, H124 Explorer, and H125 Guided Review completion
+## Post-milestone Decision Evidence Map and H124-H128 guided review completion
 
 - `decision_evidence_map.v1` is now a deterministic, bounded, read-only project
   projection across procurement decisions, Decision Council, project documents,
@@ -32,6 +32,37 @@ Milestone 6 completed
   documents remain fail-closed review signals. Accepted review is not current
   freshness, and the panel creates no approval, export, provider, bid, legal, or
   contractual authority.
+- H126 adds an explicit review-only handoff download to the Guided Decision
+  Review. The tenant/session-bound route derives
+  `guided-decision-review-handoff.v1` from the authorized current Evidence Map
+  and project records, serializes canonical JSON, and binds exact bytes and the
+  projection fingerprint in response headers. The browser verifies the body
+  SHA-256, safe attachment headers, current tenant/user/auth revision/project
+  scope, exact four-stage observation, and all false authority flags before
+  download. The handoff is `read_only=true`, `snapshot_atomic=false`,
+  `requires_recheck_before_reliance=true`, and `handoff_persisted=false`;
+  malformed or drifted responses are blocked and no workflow state is created.
+- H127 adds the session-bound
+  `POST /projects/{project_id}/guided-decision-review-handoff/recheck` comparison
+  route. The submitted source must satisfy the strict H126 contract, exact
+  canonical hash, route-project binding, and current bundle binding. The server
+  derives a fresh H126 observation and compares canonical semantic fingerprints
+  after excluding only `source_generated_at`. The exact-hash
+  `guided-decision-review-recheck-receipt.v1` reports `unchanged` or `changed`
+  while keeping review-only, read-only, non-atomic, recheck-required,
+  non-persisted, and all six false authority fields fixed. The browser accepts
+  only its page-memory source from a verified H126 response; scope drift or a
+  `changed` receipt discards the source and requires a fresh load and handoff.
+- H128 adds the session-bound
+  `POST /projects/{project_id}/guided-decision-review-handoff/review-disposition`
+  route. It reparses one exact H127 receipt and binds `unchanged` only to
+  `acknowledged_unchanged|review_deferred`, and `changed` only to
+  `new_handoff_required|review_deferred`. The canonical binding covers the
+  source receipt hash, current handoff/fingerprint hashes, status, and
+  disposition. The browser uses only its verified page-memory receipt and
+  rejects body, header, scope, matrix, or authority drift. The result is
+  review-only, non-atomic, recheck-required, non-persisted, does not bind
+  reviewer identity, and creates no approval or execution authority.
 - Generation and final report workflow promotion preserve validated canonical
   `requirement:` references on project documents. Only an exact persisted
   reference can produce `explicit` reference coverage; fuzzy or legacy text
@@ -65,6 +96,36 @@ Milestone 6 completed
   loading-path findings were resolved. These gates remained local/mock only and
   did not execute provider, AWS, G2B, upload, training, promotion, production,
   bid, legal, or contractual actions.
+- Fresh H126 focused verification on 2026-07-28: H126
+  service/API/static/Chromium `15 passed`, and the H123-H126 map/guided-review
+  integration gate `38 passed`. The broader project/map regression run passed
+  `149` tests after separating reusable document provenance serialization from
+  unrelated project-detail meeting-recording assembly. The authorization,
+  audit, security, and infrastructure expansion passed `477` tests, and the
+  full non-live suite passed `4487 passed, 1 skipped, 4 deselected`. These
+  checks used local/mock state and did not execute provider, AWS, G2B, upload,
+  training, promotion, deployment, service resume, bid, legal, or contractual
+  actions.
+- Fresh H127 focused verification on 2026-07-28: H126/H127
+  service/API/static/Chromium `23 passed`, and the H123-H127 map/guided-review
+  integration gate `46 passed`. The authorization, audit, security, and
+  infrastructure expansion passed `481` tests, and the full non-live suite
+  passed `4495 passed, 1 skipped, 4 deselected`. These local/mock and Chromium
+  checks do not prove prior server issuance of an arbitrary submitted source,
+  make sequential reads atomic, or execute provider, AWS, G2B, upload, training,
+  promotion, deployment, service resume, bid, legal, or contractual actions.
+- Fresh H128 no-cost verification on 2026-07-29: H126-H128
+  service/API/static/Chromium `37 passed`, H123-H128 map/guided-review
+  integration `60 passed`, and authorization/audit/security/infrastructure
+  expansion `488 passed`. Luna review and Terra remediation closed nested
+  fixed-field default restoration, POST bundle allowlist bypass, auth/tenant
+  and cross-tab invalidation page-memory retention, and service direct-call
+  field-set loss. Final Luna review reported no findings. These local/mock and
+  Chromium checks culminated in full non-live `4509 passed, 1 skipped,
+  4 deselected`. They do not bind a reviewer identity, persist a disposition
+  receipt, prove prior server issuance of the submitted H127 source, make
+  sequential reads atomic, or execute provider, AWS, G2B, upload, training,
+  promotion, deployment, service resume, bid, legal, or contractual actions.
 
 ## Post-milestone project knowledge cross-worker authority completion
 

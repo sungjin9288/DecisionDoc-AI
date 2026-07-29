@@ -1,6 +1,6 @@
 # DecisionDoc AI — 완성을 위한 기능 개발 계획 (Development Plan)
 
-> 기준일: **2026-07-27** (저장소 점검 [docs/inspection-20260630.md](./inspection-20260630.md), M4 CSP nonce 완료, H125 no-cost local verification과 최근 확인한 CI/CD success 기준)
+> 기준일: **2026-07-29** (저장소 점검 [docs/inspection-20260630.md](./inspection-20260630.md), M4 CSP nonce 완료, H128 focused no-cost local verification과 최근 확인한 CI/CD success 기준)
 > 원칙: AGENTS.md 정직성 규칙 준수 — 모든 정량 수치는 재현 커맨드를 병기하고, 검증되지 않은 성과·운영 표현은 사용하지 않는다.
 > 상위 방향 문서: [product_direction.md](./product_direction.md) · [product_execution_plan.md](./product_execution_plan.md) · [roadmap.md](./roadmap.md)
 
@@ -12,13 +12,13 @@
 
 | 축 | 현재 | 완성 기준 |
 |----|------|-----------|
-| **기능 검증** | H125 no-cost gate: H125 focused `7 passed`, H124+H125 UI `13 passed`, adjacent `387 passed`, combined union `411 passed`, full non-live `4,477 passed, 1 skipped, 4 deselected` (2026-07-27) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
+| **기능 검증** | H128 no-cost gate: H126-H128 focused `37 passed`, H123-H128 integration `60 passed`, authorization/audit/security/infrastructure expansion `488 passed`, full non-live `4,509 passed, 1 skipped, 4 deselected` (2026-07-29) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
 | **아키텍처 위생** | ✅ 달성 (2026-07-14: 829줄 상수 모듈을 604줄 facade + 314줄 foundation으로 분리하고 800줄 guard 추가 → 초과 0개). CI advisory Ruff E/F/W와 Bandit medium/high 0건 기준 유지 | 전 모듈 800줄 이하 (전역 코딩 가이드), 계층 간 의존 방향 일관 |
 | **운영 준비성** | Docker/SAM 설정 존재, CSP nonce 부채 해소, GitHub Actions CI/CD success 증적 존재. 단, staging deploy/smoke는 설정 부재로 skip되어 배포 접근성은 미검증 | 배포 절차 재검증 + post-deploy smoke 증적 |
 
 ```bash
 # 재현: 테스트 베이스라인
-pytest tests/ -m "not live" -q     # 2026-07-27 H125: 4477 passed, 1 skipped, 4 deselected
+pytest tests/ -m "not live" -q     # 2026-07-29 H128: 4509 passed, 1 skipped, 4 deselected
 
 # 재현: CI advisory lint/security 베이스라인
 ruff check app/ --select=E,F,W --ignore=E501
@@ -111,6 +111,87 @@ loading-path 회귀를 모두 보완했다.
 `13 passed`, adjacent authorization/workflow `387 passed`, combined union
 `411 passed`, full non-live `4,477 passed, 1 skipped, 4 deselected`다.
 
+### H126 Guided Decision Review Handoff
+
+현재 Guided Decision Review의 four-stage observation을 current
+session-bound admin 또는 exact stable v2 assignee가 canonical JSON attachment로
+내려받을 수 있다. Route는 authorized `decision_evidence_map.v1` context와
+project document provenance를 다시 관측하고
+`guided-decision-review-handoff.v1`을 만든다. Exact body SHA-256과 source
+projection fingerprint를 response header에 결속하고 `no-store`, `nosniff`,
+attachment disposition을 고정한다.
+
+Browser는 body hash, contract/source version, tenant/user/auth revision/project
+load scope, project/bundle/fingerprint, non-empty fresh-route source timestamp,
+exact four-stage status, overall/next check와 six false authority fields를
+현재 panel과 다시 대조한 뒤 download한다. Route가 projection을 새로
+계산하므로 source timestamp는 화면 map과 달라질 수 있고 semantic binding은
+timestamp equality가 아니라 exact fingerprint equality를 사용한다.
+Handoff는 저장하지 않으며
+`read_only=true`, `snapshot_atomic=false`,
+`requires_recheck_before_reliance=true`, `handoff_persisted=false`다. 따라서
+download hash는 exact bytes만 증명하며 currentness, atomic snapshot, proof,
+approval, export/provider/bid/legal authority를 만들지 않는다.
+
+2026-07-28 no-cost focused gate는 H126 service/API/static/Chromium
+`15 passed`, H123-H126 map/guided-review integration `38 passed`, reusable
+document provenance serializer를 포함한 project/map regression `149 passed`,
+authorization/audit/security/infrastructure expansion `477 passed`다. 전체
+non-live는 `4,487 passed, 1 skipped, 4 deselected`다.
+
+### H127 Guided Decision Review Handoff Recheck
+
+Browser가 H126 response의 exact body hash, safe headers, contract, current map과
+tenant/user/auth/project scope를 검증한 경우에만 source handoff를 page memory에
+보존하고 recheck를 활성화한다. Session-bound read-only POST route는 strict H126
+source와 canonical SHA-256, route project와 current bundle binding을 확인한 뒤
+같은 service path로 fresh H126 observation을 만든다.
+
+`guided-decision-review-recheck-receipt.v1`은 source/current handoff와 각 exact
+hash, `source_generated_at`만 제외한 두 semantic fingerprint, expected
+`unchanged|changed` status를 canonical JSON으로 결속한다. Receipt와 audit은
+review-only/read-only/non-atomic/recheck-required/non-persisted 경계와 six false
+authority를 유지한다. `changed`는 정상 비교 결과이며 browser는 receipt를
+검증·다운로드한 뒤 old source를 폐기하고 fresh project load/handoff를
+요구한다. Client-supplied source는 prior server issuance를 증명하지 않고
+`unchanged`도 future currentness나 atomic snapshot을 보장하지 않는다.
+
+2026-07-28 no-cost gate는 H126/H127 service/API/static/Chromium `23 passed`,
+H123-H127 map/guided-review integration `46 passed`, authorization/audit/
+security/infrastructure expansion `481 passed`, full non-live `4,495 passed,
+1 skipped, 4 deselected`다. Provider, AWS, G2B, dataset upload, training,
+promotion, deployment와 service resume은 실행하지 않았다.
+
+### H128 Guided Decision Review Disposition
+
+Browser가 exact body/header/contract/scope를 검증한 H127 receipt만 page memory에
+보존하고 allowlisted disposition을 선택할 수 있다. Session-bound read-only
+POST route는 strict H127 receipt, canonical receipt hash, route project/current
+bundle, current handoff/fingerprint, expected status를 다시 검증한다.
+
+`guided-decision-review-disposition-receipt.v1`은 source receipt hash, current
+handoff/fingerprint hash, `unchanged|changed` status와 disposition을 canonical
+binding으로 결속한다. `unchanged`에는
+`acknowledged_unchanged|review_deferred`, `changed`에는
+`new_handoff_required|review_deferred`만 허용한다. Receipt는 review-only,
+read-only, non-atomic, recheck-required, non-persisted이며 reviewer identity,
+approval, mutation, export, provider, bid 또는 legal/contractual authority를
+만들지 않는다.
+
+Luna review에서 nested fixed-field 누락이 Pydantic default로 복원되던 문제,
+POST bundle allowlist 우회, auth/tenant invalidation 뒤 page-memory source가
+남던 문제를 찾았다. Terra remediation은 raw request의 명시 필드 검증,
+schema-level bundle allowlist, 중앙 source cleanup으로 세 경계를 닫았다.
+재검토에서 cross-tab auth event의 cleanup 우회와 pre-parsed service receipt의
+field-set 소실을 추가로 찾아 같은 validator와 cleanup 경로로 보완했고, final
+Luna review는 findings 없이 종료됐다.
+
+2026-07-29 no-cost gate는 H126-H128 service/API/static/Chromium `37 passed`,
+H123-H128 map/guided-review integration `60 passed`, authorization/audit/
+security/infrastructure expansion `488 passed`, full non-live `4,509 passed,
+1 skipped, 4 deselected`다. Provider, AWS, G2B, dataset upload, training,
+promotion, deployment와 service resume은 실행하지 않았다.
+
 ---
 
 ## 2. 현재 아키텍처 (실측 기반)
@@ -119,10 +200,10 @@ loading-path 회귀를 모두 보완했다.
 
 ```bash
 python3 scripts/count_readme_metrics.py --field router_files      # → 23 (top-level 라우터 파일)
-python3 scripts/count_readme_metrics.py --field service_files     # → 46 (서비스)
+python3 scripts/count_readme_metrics.py --field service_files     # → 47 (서비스)
 python3 scripts/count_readme_metrics.py --field storage_files     # → 50 (top-level storage modules)
 python3 scripts/count_readme_metrics.py --field middleware_files  # → 12 (미들웨어)
-python3 scripts/count_readme_metrics.py --field route_decorators  # → 286 (라우트)
+python3 scripts/count_readme_metrics.py --field route_decorators  # → 289 (라우트)
 ```
 
 ```text
@@ -137,14 +218,14 @@ FastAPI (app/main.py — create_app(), 모듈 레벨 side-effect 없음)
   │     audit context helpers: document_ops_audit / auth_session_retention_audit
   │       / procurement_review_audit
   │
-  ├─ Routers (23 top-level files, 라우트 286):
+  ├─ Routers (23 top-level files, 라우트 289):
   │     generate / approvals / projects / knowledge / report_workflows
   │     auth / sso / admin / audit / billing / dashboard / history
   │     eval / finetune / local_llm / g2b / document_ops_agent
   │     templates / styles / messages / notifications / events / health
   │
   ▼
-Services (46) — 도메인 오케스트레이션
+Services (47) — 도메인 오케스트레이션
   ├─ generation_service ─ 핵심 파이프라인:
   │     요청 → 캐시 → Provider.generate_bundle() → 스키마 검증
   │        → Stabilizer → Storage 저장 → Jinja2 렌더 → Lint → 반환

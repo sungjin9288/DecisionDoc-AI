@@ -61,20 +61,28 @@ def test_concurrent_health_checks():
 
 
 def test_no_memory_leak_on_repeated_requests():
-    """Repeated requests don't significantly grow memory."""
+    """Steady-state repeated requests don't significantly grow memory."""
     try:
         import psutil
         import os
         process = psutil.Process(os.getpid())
-        mem_before = process.memory_info().rss / 1024 / 1024
     except ImportError:
         pytest.skip("psutil not installed")
+
+    # Exclude one-time framework, middleware, and allocator initialization from
+    # the leak window so suite order does not determine the RSS baseline.
+    for _ in range(50):
+        client.get("/health")
+        client.get("/bundles")
+
+    import gc
+    gc.collect()
+    mem_before = process.memory_info().rss / 1024 / 1024
 
     for _ in range(200):
         client.get("/health")
         client.get("/bundles")
 
-    import gc
     gc.collect()
     mem_after = process.memory_info().rss / 1024 / 1024
     growth = mem_after - mem_before

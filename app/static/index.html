@@ -1313,6 +1313,12 @@
       align-items: flex-start;
       gap: 16px;
     }
+    .guided-decision-review-head-actions {
+      display: grid;
+      justify-items: end;
+      gap: 8px;
+      flex: 0 0 auto;
+    }
     .guided-decision-review h4,
     .guided-decision-review h5 {
       margin: 0;
@@ -1330,7 +1336,6 @@
     }
     .guided-decision-review-copy { margin: 5px 0 0; max-width: 720px; }
     .guided-decision-review-boundary {
-      flex: 0 0 auto;
       margin: 0;
       padding: 5px 8px;
       border: 1px solid #9ca3af;
@@ -1340,6 +1345,53 @@
       font-size: 0.72rem;
       font-weight: 800;
       white-space: nowrap;
+    }
+    .guided-decision-review-handoff,
+    .guided-decision-review-recheck,
+    .guided-decision-review-disposition-download {
+      min-height: 34px;
+      padding: 6px 10px;
+      border: 1px solid var(--border, #e5e7eb);
+      border-radius: 4px;
+      background: var(--surface, #fff);
+      color: var(--text, #111827);
+      cursor: pointer;
+      font: inherit;
+      font-size: 0.76rem;
+      font-weight: 800;
+    }
+    .guided-decision-review-handoff:hover,
+    .guided-decision-review-recheck:hover,
+    .guided-decision-review-disposition-download:hover { background: #f3f4f6; }
+    .guided-decision-review-handoff:disabled,
+    .guided-decision-review-recheck:disabled,
+    .guided-decision-review-disposition-download:disabled {
+      cursor: wait;
+      opacity: .55;
+    }
+    .guided-decision-review-disposition-control {
+      display: grid;
+      grid-template-columns: minmax(0, 190px) auto;
+      align-items: end;
+      gap: 6px;
+    }
+    .guided-decision-review-disposition-control label {
+      display: grid;
+      gap: 3px;
+      color: var(--muted, #6b7280);
+      font-size: 0.72rem;
+      font-weight: 700;
+    }
+    .guided-decision-review-disposition-control select {
+      width: 100%;
+      min-height: 34px;
+      padding: 6px 8px;
+      border: 1px solid var(--border, #e5e7eb);
+      border-radius: 4px;
+      background: var(--surface, #fff);
+      color: var(--text, #111827);
+      font: inherit;
+      font-size: 0.76rem;
     }
     .guided-decision-review-summary {
       display: grid;
@@ -3432,6 +3484,7 @@
       .decision-evidence-head { align-items: stretch; flex-direction: column; }
       .decision-evidence-readonly { align-self: flex-start; }
       .guided-decision-review-head { align-items: stretch; flex-direction: column; }
+      .guided-decision-review-head-actions { justify-items: start; }
       .guided-decision-review-boundary { align-self: flex-start; white-space: normal; }
       .guided-decision-review-summary,
       .guided-decision-review-steps { grid-template-columns: 1fr; }
@@ -7755,6 +7808,11 @@
   let _procurementReviewInboxPayload = null;
   let _procurementReviewInboxLoadId = 0;
   let _projectDetailLoadId = 0;
+  let _guidedDecisionReviewHandoffRequestId = 0;
+  let _guidedDecisionReviewRecheckRequestId = 0;
+  let _guidedDecisionReviewDispositionRequestId = 0;
+  let _guidedDecisionReviewVerifiedHandoff = null;
+  let _guidedDecisionReviewVerifiedRecheck = null;
   let _decisionEvidenceMapState = {
     scopeKey: '',
     query: '',
@@ -19167,6 +19225,7 @@
     }
     if (event.key !== null && !AUTH_SESSION_STORAGE_KEYS.has(event.key)) return;
     _authSessionRevision += 1;
+    invalidateProcurementReviewViews();
     reconcileCrossTabAuthContext();
   }
 
@@ -21676,6 +21735,7 @@
     _procurementReviewInboxPayload = null;
     _projectDetailLoadId += 1;
     _clearScopedExportDownloadUrls(PROCUREMENT_REVIEW_DOWNLOAD_SCOPE);
+    clearGuidedDecisionReviewHandoffSource();
   }
 
   function wireProcurementReviewInboxActions(section) {
@@ -24798,6 +24858,98 @@
     'legal_contractual_commitment',
   ];
 
+  const GUIDED_DECISION_REVIEW_HANDOFF_SHA256_HEADER = (
+    'X-DecisionDoc-Guided-Review-Handoff-SHA256'
+  );
+  const GUIDED_DECISION_REVIEW_RECHECK_SHA256_HEADER = (
+    'X-DecisionDoc-Guided-Review-Recheck-Receipt-SHA256'
+  );
+  const GUIDED_DECISION_REVIEW_DISPOSITION_SHA256_HEADER = (
+    'X-DecisionDoc-Guided-Review-Disposition-Receipt-SHA256'
+  );
+
+  const GUIDED_DECISION_REVIEW_HANDOFF_FIELDS = [
+    'contract_version',
+    'source_contract_version',
+    'source_generated_at',
+    'project_id',
+    'bundle_type',
+    'projection_fingerprint',
+    'read_only',
+    'snapshot_atomic',
+    'requires_recheck_before_reliance',
+    'handoff_persisted',
+    'overall_state',
+    'recommended_next_check',
+    'stages',
+    'authority',
+  ];
+
+  const GUIDED_DECISION_REVIEW_HANDOFF_STAGE_FIELDS = [
+    'name',
+    'status',
+    'evidence',
+  ];
+
+  const GUIDED_DECISION_REVIEW_HANDOFF_NEXT_FIELDS = [
+    'stage',
+    'instruction',
+  ];
+
+  const GUIDED_DECISION_REVIEW_HANDOFF_DOWNLOAD_SCOPE = (
+    'guided-decision-review-handoff'
+  );
+  const GUIDED_DECISION_REVIEW_RECHECK_DOWNLOAD_SCOPE = (
+    'guided-decision-review-recheck'
+  );
+  const GUIDED_DECISION_REVIEW_DISPOSITION_DOWNLOAD_SCOPE = (
+    'guided-decision-review-disposition'
+  );
+  const GUIDED_DECISION_REVIEW_RECHECK_FIELDS = [
+    'contract_version',
+    'source_handoff',
+    'source_handoff_sha256',
+    'current_handoff',
+    'current_handoff_sha256',
+    'source_review_state_fingerprint_sha256',
+    'current_review_state_fingerprint_sha256',
+    'review_state_status',
+    'fingerprint_algorithm',
+    'volatile_fields_excluded',
+    'review_state_only',
+    'review_only',
+    'read_only',
+    'snapshot_atomic',
+    'requires_recheck_before_reliance',
+    'recheck_persisted',
+    'authority',
+  ];
+  const GUIDED_DECISION_REVIEW_DISPOSITION_FIELDS = [
+    'contract_version',
+    'project_id',
+    'bundle_type',
+    'source_recheck_receipt',
+    'source_recheck_receipt_sha256',
+    'current_handoff_sha256',
+    'current_review_state_fingerprint_sha256',
+    'review_state_status',
+    'review_disposition',
+    'disposition_binding_sha256',
+    'receipt_status',
+    'review_state_only',
+    'review_only',
+    'read_only',
+    'reviewer_identity_bound',
+    'snapshot_atomic',
+    'requires_recheck_before_reliance',
+    'disposition_receipt_persisted',
+    'authority',
+  ];
+  const GUIDED_DECISION_REVIEW_DISPOSITIONS = {
+    unchanged: ['acknowledged_unchanged', 'review_deferred'],
+    changed: ['new_handoff_required', 'review_deferred'],
+  };
+
   const GUIDED_DECISION_REVIEW_FALSE_EXPORT_FIELD = [
     'actual',
     'export',
@@ -25072,6 +25224,16 @@
     );
   }
 
+  function isGuidedDecisionReviewAuthority(authority) {
+    return (
+      authority
+      && typeof authority === 'object'
+      && !Array.isArray(authority)
+      && Object.keys(authority).length === GUIDED_DECISION_REVIEW_AUTHORITY_KEYS.length
+      && GUIDED_DECISION_REVIEW_AUTHORITY_KEYS.every(key => authority[key] === false)
+    );
+  }
+
   function isGuidedDecisionReviewMap(map, projectId) {
     const authority = map?.authority;
     if (
@@ -25109,11 +25271,7 @@
       && map.edges.length <= map.limits.max_edges
       && typeof map.truncated === 'boolean'
       && isGuidedDecisionReviewBlueprint(map.proposal_blueprint)
-      && authority
-      && typeof authority === 'object'
-      && !Array.isArray(authority)
-      && Object.keys(authority).length === GUIDED_DECISION_REVIEW_AUTHORITY_KEYS.length
-      && GUIDED_DECISION_REVIEW_AUTHORITY_KEYS.every(key => authority[key] === false)
+      && isGuidedDecisionReviewAuthority(authority)
     );
   }
 
@@ -25276,6 +25434,265 @@
     return { stages, next, overallState };
   }
 
+  function isGuidedDecisionReviewHandoffShape(handoff, projectId = '') {
+    if (!hasGuidedDecisionReviewFields(handoff, GUIDED_DECISION_REVIEW_HANDOFF_FIELDS)) {
+      return false;
+    }
+    const next = handoff.recommended_next_check;
+    const stages = handoff.stages;
+    const expectedStageNames = ['Decision', 'Evidence', 'Review', 'Documents'];
+    return (
+      handoff.contract_version === 'guided-decision-review-handoff.v1'
+      && handoff.source_contract_version === 'decision_evidence_map.v1'
+      && isGuidedDecisionReviewText(handoff.source_generated_at)
+      && (!projectId || handoff.project_id === projectId)
+      && isGuidedDecisionReviewText(handoff.project_id)
+      && isGuidedDecisionReviewText(handoff.bundle_type)
+      && isGuidedDecisionReviewSha256(handoff.projection_fingerprint)
+      && handoff.read_only === true
+      && handoff.snapshot_atomic === false
+      && handoff.requires_recheck_before_reliance === true
+      && handoff.handoff_persisted === false
+      && ['Needs review', 'Review in progress', 'No blocking signal observed'].includes(
+        handoff.overall_state,
+      )
+      && hasGuidedDecisionReviewFields(next, GUIDED_DECISION_REVIEW_HANDOFF_NEXT_FIELDS)
+      && expectedStageNames.includes(next.stage)
+      && isGuidedDecisionReviewText(next.instruction)
+      && Array.isArray(stages)
+      && stages.length === expectedStageNames.length
+      && stages.every((stage, index) => (
+        hasGuidedDecisionReviewFields(stage, GUIDED_DECISION_REVIEW_HANDOFF_STAGE_FIELDS)
+        && stage.name === expectedStageNames[index]
+        && Object.prototype.hasOwnProperty.call(
+          GUIDED_DECISION_REVIEW_STATUS_LABELS,
+          stage.status,
+        )
+        && isGuidedDecisionReviewText(stage.evidence)
+      ))
+      && isGuidedDecisionReviewAuthority(handoff.authority)
+    );
+  }
+
+  function isGuidedDecisionReviewHandoff(handoff, projectId, map, review) {
+    if (!isGuidedDecisionReviewHandoffShape(handoff, projectId)) return false;
+    const expectedStageNames = Object.keys(review.stages);
+    return (
+      handoff.bundle_type === map.bundle_type
+      && handoff.projection_fingerprint === map.projection_fingerprint
+      && handoff.overall_state === review.overallState
+      && handoff.recommended_next_check.stage === review.next.stage
+      && handoff.recommended_next_check.instruction === review.next.copy
+      && handoff.stages.every((stage, index) => (
+        stage.name === expectedStageNames[index]
+        && stage.status === review.stages[stage.name].status
+      ))
+    );
+  }
+
+  function stringifyGuidedDecisionReviewAscii(value) {
+    return JSON.stringify(value).replace(
+      /[\u007f-\uffff]/g,
+      character => `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`,
+    );
+  }
+
+  function canonicalGuidedDecisionReviewJson(value) {
+    if (typeof value === 'string') {
+      return stringifyGuidedDecisionReviewAscii(value);
+    }
+    if (value === null || typeof value === 'boolean') {
+      return JSON.stringify(value);
+    }
+    if (typeof value === 'number') {
+      if (!Number.isFinite(value)) {
+        throw new Error('Guided review recheck receipt verification failed.');
+      }
+      return JSON.stringify(value);
+    }
+    if (Array.isArray(value)) {
+      return `[${value.map(canonicalGuidedDecisionReviewJson).join(',')}]`;
+    }
+    if (!value || typeof value !== 'object') {
+      throw new Error('Guided review recheck receipt verification failed.');
+    }
+    return `{${Object.keys(value).sort().map(key => (
+      `${stringifyGuidedDecisionReviewAscii(key)}:${canonicalGuidedDecisionReviewJson(value[key])}`
+    )).join(',')}}`;
+  }
+
+  function guidedDecisionReviewStateFingerprint(handoff) {
+    const stable = { ...handoff };
+    delete stable.source_generated_at;
+    return stable;
+  }
+
+  async function normalizeGuidedDecisionReviewRecheckReceipt(
+    receipt,
+    verifiedSource,
+    projectId,
+  ) {
+    if (
+      !hasGuidedDecisionReviewFields(receipt, GUIDED_DECISION_REVIEW_RECHECK_FIELDS)
+      || !isGuidedDecisionReviewHandoffShape(receipt.source_handoff, projectId)
+      || !isGuidedDecisionReviewHandoffShape(receipt.current_handoff, projectId)
+    ) {
+      throw new Error('Guided review recheck receipt verification failed.');
+    }
+    const sourceHandoffSha256 = String(receipt.source_handoff_sha256 || '').toLowerCase();
+    const currentHandoffSha256 = String(receipt.current_handoff_sha256 || '').toLowerCase();
+    const sourceFingerprintSha256 = String(
+      receipt.source_review_state_fingerprint_sha256 || '',
+    ).toLowerCase();
+    const currentFingerprintSha256 = String(
+      receipt.current_review_state_fingerprint_sha256 || '',
+    ).toLowerCase();
+    const sourceCanonicalText = canonicalGuidedDecisionReviewJson(
+      receipt.source_handoff,
+    );
+    const currentCanonicalText = canonicalGuidedDecisionReviewJson(
+      receipt.current_handoff,
+    );
+    const sourceCanonical = new TextEncoder().encode(`${sourceCanonicalText}\n`);
+    const currentCanonical = new TextEncoder().encode(`${currentCanonicalText}\n`);
+    const sourceFingerprint = new TextEncoder().encode(
+      canonicalGuidedDecisionReviewJson(
+        guidedDecisionReviewStateFingerprint(receipt.source_handoff),
+      ),
+    );
+    const currentFingerprint = new TextEncoder().encode(
+      canonicalGuidedDecisionReviewJson(
+        guidedDecisionReviewStateFingerprint(receipt.current_handoff),
+      ),
+    );
+    const expectedStatus = sourceFingerprintSha256 === currentFingerprintSha256
+      ? 'unchanged'
+      : 'changed';
+    if (
+      receipt.contract_version !== 'guided-decision-review-recheck-receipt.v1'
+      || sourceHandoffSha256 !== verifiedSource.bodySha256
+      || sourceCanonicalText !== canonicalGuidedDecisionReviewJson(
+        verifiedSource.handoff,
+      )
+      || ![
+        sourceHandoffSha256,
+        currentHandoffSha256,
+        sourceFingerprintSha256,
+        currentFingerprintSha256,
+      ].every(isGuidedDecisionReviewSha256)
+      || sourceHandoffSha256 !== await sha256Hex(sourceCanonical)
+      || currentHandoffSha256 !== await sha256Hex(currentCanonical)
+      || sourceFingerprintSha256 !== await sha256Hex(sourceFingerprint)
+      || currentFingerprintSha256 !== await sha256Hex(currentFingerprint)
+      || receipt.source_handoff.bundle_type !== receipt.current_handoff.bundle_type
+      || receipt.review_state_status !== expectedStatus
+      || receipt.fingerprint_algorithm !== 'sha256'
+      || !Array.isArray(receipt.volatile_fields_excluded)
+      || receipt.volatile_fields_excluded.length !== 1
+      || receipt.volatile_fields_excluded[0] !== 'source_generated_at'
+      || receipt.review_state_only !== true
+      || receipt.review_only !== true
+      || receipt.read_only !== true
+      || receipt.snapshot_atomic !== false
+      || receipt.requires_recheck_before_reliance !== true
+      || receipt.recheck_persisted !== false
+      || !isGuidedDecisionReviewAuthority(receipt.authority)
+    ) {
+      throw new Error('Guided review recheck receipt verification failed.');
+    }
+    return {
+      receipt,
+      currentHandoffSha256,
+      reviewStateStatus: expectedStatus,
+    };
+  }
+
+  async function normalizeGuidedDecisionReviewDispositionReceipt(
+    receipt,
+    verifiedRecheck,
+    projectId,
+    expectedDisposition,
+  ) {
+    if (
+      !hasGuidedDecisionReviewFields(
+        receipt,
+        GUIDED_DECISION_REVIEW_DISPOSITION_FIELDS,
+      )
+      || !verifiedRecheck
+    ) {
+      throw new Error('Guided review disposition receipt verification failed.');
+    }
+    const sourceReceiptSha256 = String(
+      receipt.source_recheck_receipt_sha256 || '',
+    ).toLowerCase();
+    const currentHandoffSha256 = String(
+      receipt.current_handoff_sha256 || '',
+    ).toLowerCase();
+    const currentFingerprintSha256 = String(
+      receipt.current_review_state_fingerprint_sha256 || '',
+    ).toLowerCase();
+    const dispositionBindingSha256 = String(
+      receipt.disposition_binding_sha256 || '',
+    ).toLowerCase();
+    const sourceCanonicalText = canonicalGuidedDecisionReviewJson(
+      receipt.source_recheck_receipt,
+    );
+    const sourceCanonical = new TextEncoder().encode(`${sourceCanonicalText}\n`);
+    const allowed = GUIDED_DECISION_REVIEW_DISPOSITIONS[
+      receipt.review_state_status
+    ] || [];
+    const expectedBinding = {
+      project_id: receipt.project_id,
+      bundle_type: receipt.bundle_type,
+      source_recheck_receipt_sha256: sourceReceiptSha256,
+      current_handoff_sha256: currentHandoffSha256,
+      current_review_state_fingerprint_sha256: currentFingerprintSha256,
+      review_state_status: receipt.review_state_status,
+      review_disposition: receipt.review_disposition,
+    };
+    const bindingBytes = new TextEncoder().encode(
+      canonicalGuidedDecisionReviewJson(expectedBinding),
+    );
+    const source = receipt.source_recheck_receipt;
+    if (
+      receipt.contract_version
+        !== 'guided-decision-review-disposition-receipt.v1'
+      || sourceCanonicalText !== canonicalGuidedDecisionReviewJson(
+        verifiedRecheck.receipt,
+      )
+      || sourceReceiptSha256 !== verifiedRecheck.bodySha256
+      || ![
+        sourceReceiptSha256,
+        currentHandoffSha256,
+        currentFingerprintSha256,
+        dispositionBindingSha256,
+      ].every(isGuidedDecisionReviewSha256)
+      || sourceReceiptSha256 !== await sha256Hex(sourceCanonical)
+      || receipt.project_id !== projectId
+      || receipt.project_id !== source.current_handoff.project_id
+      || receipt.bundle_type !== source.current_handoff.bundle_type
+      || currentHandoffSha256 !== source.current_handoff_sha256
+      || currentFingerprintSha256
+        !== source.current_review_state_fingerprint_sha256
+      || receipt.review_state_status !== source.review_state_status
+      || receipt.review_disposition !== expectedDisposition
+      || !allowed.includes(receipt.review_disposition)
+      || dispositionBindingSha256 !== await sha256Hex(bindingBytes)
+      || receipt.receipt_status !== 'issued'
+      || receipt.review_state_only !== true
+      || receipt.review_only !== true
+      || receipt.read_only !== true
+      || receipt.reviewer_identity_bound !== false
+      || receipt.snapshot_atomic !== false
+      || receipt.requires_recheck_before_reliance !== true
+      || receipt.disposition_receipt_persisted !== false
+      || !isGuidedDecisionReviewAuthority(receipt.authority)
+    ) {
+      throw new Error('Guided review disposition receipt verification failed.');
+    }
+    return receipt;
+  }
+
   function renderGuidedDecisionReview(project, decision, reviews, councilSession, docs, map) {
     if (!isGuidedDecisionReviewMap(map, project?.project_id)) return '';
     const review = deriveGuidedDecisionReview(decision, reviews, councilSession, docs, map);
@@ -25294,7 +25711,21 @@
             <h4 id="guided-decision-review-title">Guided Decision Review</h4>
             <p class="guided-decision-review-copy">Current project records are grouped for review navigation only. Statuses describe observed records, not current authority or operational readiness.</p>
           </div>
-          <p class="guided-decision-review-boundary">READ ONLY · NON-ATOMIC · NO APPROVAL/EXPORT/PROVIDER EXECUTION</p>
+          <div class="guided-decision-review-head-actions">
+            <p class="guided-decision-review-boundary">READ ONLY · NON-ATOMIC · NO APPROVAL/EXPORT/PROVIDER EXECUTION</p>
+            <button type="button" class="guided-decision-review-handoff" data-guided-decision-review-handoff aria-label="Download guided decision review handoff JSON">↓ Review handoff JSON</button>
+            <button type="button" class="guided-decision-review-recheck" data-guided-decision-review-recheck aria-label="Recheck guided decision review handoff" disabled>↻ Recheck handoff</button>
+            <div class="guided-decision-review-disposition-control">
+              <label>Review disposition
+                <select data-guided-decision-review-disposition disabled>
+                  <option value="acknowledged_unchanged">Acknowledge unchanged</option>
+                  <option value="new_handoff_required">New handoff required</option>
+                  <option value="review_deferred">Defer review</option>
+                </select>
+              </label>
+              <button type="button" class="guided-decision-review-disposition-download" data-guided-decision-review-disposition-download aria-label="Download guided decision review disposition receipt JSON" disabled>↓ Disposition receipt</button>
+            </div>
+          </div>
         </div>
         <div class="guided-decision-review-summary">
           <p><strong>Overall state:</strong> ${escapeHtml(review.overallState)}</p>
@@ -25318,6 +25749,497 @@
     if (announcement) announcement.textContent = `Moved to ${stageName}.`;
   }
 
+  function isGuidedDecisionReviewHandoffRequestCurrent(context) {
+    return (
+      context.requestId === _guidedDecisionReviewHandoffRequestId
+      && context.projectLoadId === _projectDetailLoadId
+      && context.authRevision === _authSessionRevision
+      && context.tenantId === _currentTenantId
+      && context.userId === String(_currentUser?.sub || _currentUser?.user_id || '')
+      && context.projectId === _currentProjectDetail?.project?.project_id
+      && context.projectionFingerprint === (
+        _currentProjectDetail?.decisionEvidenceMap?.projection_fingerprint || ''
+      )
+    );
+  }
+
+  function clearGuidedDecisionReviewHandoffSource() {
+    _guidedDecisionReviewHandoffRequestId += 1;
+    _guidedDecisionReviewRecheckRequestId += 1;
+    _guidedDecisionReviewVerifiedHandoff = null;
+    _clearScopedExportDownloadUrls(GUIDED_DECISION_REVIEW_HANDOFF_DOWNLOAD_SCOPE);
+    _clearScopedExportDownloadUrls(GUIDED_DECISION_REVIEW_RECHECK_DOWNLOAD_SCOPE);
+    clearGuidedDecisionReviewVerifiedRecheck();
+    const recheckButton = document.querySelector(
+      '[data-guided-decision-review-recheck]',
+    );
+    if (recheckButton) recheckButton.disabled = true;
+  }
+
+  function clearGuidedDecisionReviewVerifiedRecheck() {
+    _guidedDecisionReviewDispositionRequestId += 1;
+    _guidedDecisionReviewVerifiedRecheck = null;
+    _clearScopedExportDownloadUrls(
+      GUIDED_DECISION_REVIEW_DISPOSITION_DOWNLOAD_SCOPE,
+    );
+    syncGuidedDecisionReviewDispositionControls();
+  }
+
+  function isGuidedDecisionReviewVerifiedSourceCurrent(source) {
+    const detail = _currentProjectDetail;
+    if (!source || !detail) return false;
+    const projectId = String(detail.project?.project_id || '');
+    const map = detail.decisionEvidenceMap;
+    if (!projectId || !isGuidedDecisionReviewMap(map, projectId)) return false;
+    const review = deriveGuidedDecisionReview(
+      detail.procurementDecision,
+      detail.procurementReviews,
+      detail.decisionCouncilSession,
+      Object.values(detail.docsById || {}),
+      map,
+    );
+    return (
+      source.projectLoadId === _projectDetailLoadId
+      && source.authRevision === _authSessionRevision
+      && source.tenantId === _currentTenantId
+      && source.userId === String(_currentUser?.sub || _currentUser?.user_id || '')
+      && source.projectId === projectId
+      && source.projectionFingerprint === map.projection_fingerprint
+      && isGuidedDecisionReviewHandoff(source.handoff, projectId, map, review)
+    );
+  }
+
+  function isGuidedDecisionReviewRecheckRequestCurrent(context) {
+    return (
+      context.requestId === _guidedDecisionReviewRecheckRequestId
+      && context.projectLoadId === _projectDetailLoadId
+      && context.authRevision === _authSessionRevision
+      && context.tenantId === _currentTenantId
+      && context.userId === String(_currentUser?.sub || _currentUser?.user_id || '')
+      && context.projectId === _currentProjectDetail?.project?.project_id
+      && context.sourceHandoffSha256 === (
+        _guidedDecisionReviewVerifiedHandoff?.bodySha256 || ''
+      )
+    );
+  }
+
+  function isGuidedDecisionReviewVerifiedRecheckCurrent(source) {
+    return Boolean(
+      source
+      && source.projectLoadId === _projectDetailLoadId
+      && source.authRevision === _authSessionRevision
+      && source.tenantId === _currentTenantId
+      && source.userId === String(_currentUser?.sub || _currentUser?.user_id || '')
+      && source.projectId === _currentProjectDetail?.project?.project_id
+      && source.receipt?.current_handoff?.project_id === source.projectId
+      && source.receipt?.review_state_status === source.reviewStateStatus
+    );
+  }
+
+  function syncGuidedDecisionReviewDispositionControls() {
+    const select = document.querySelector(
+      '[data-guided-decision-review-disposition]',
+    );
+    const button = document.querySelector(
+      '[data-guided-decision-review-disposition-download]',
+    );
+    if (!select || !button) return;
+    const source = _guidedDecisionReviewVerifiedRecheck;
+    const current = isGuidedDecisionReviewVerifiedRecheckCurrent(source);
+    const allowed = current
+      ? GUIDED_DECISION_REVIEW_DISPOSITIONS[source.reviewStateStatus]
+      : [];
+    Array.from(select.options).forEach(option => {
+      option.disabled = !allowed.includes(option.value);
+    });
+    if (current && !allowed.includes(select.value)) {
+      select.value = allowed[0] || '';
+    }
+    select.disabled = !current;
+    button.disabled = !current;
+  }
+
+  function isGuidedDecisionReviewDispositionRequestCurrent(context) {
+    const select = document.querySelector(
+      '[data-guided-decision-review-disposition]',
+    );
+    return (
+      context.requestId === _guidedDecisionReviewDispositionRequestId
+      && context.projectLoadId === _projectDetailLoadId
+      && context.authRevision === _authSessionRevision
+      && context.tenantId === _currentTenantId
+      && context.userId === String(_currentUser?.sub || _currentUser?.user_id || '')
+      && context.projectId === _currentProjectDetail?.project?.project_id
+      && context.sourceRecheckReceiptSha256 === (
+        _guidedDecisionReviewVerifiedRecheck?.bodySha256 || ''
+      )
+      && context.reviewDisposition === select?.value
+    );
+  }
+
+  async function downloadGuidedDecisionReviewHandoff(button) {
+    const detail = _currentProjectDetail;
+    const projectId = String(detail?.project?.project_id || '');
+    const map = detail?.decisionEvidenceMap;
+    if (!projectId || !isGuidedDecisionReviewMap(map, projectId)) {
+      showNotification('현재 Decision Evidence Map을 검증하지 못했습니다.', 'error');
+      return;
+    }
+    const review = deriveGuidedDecisionReview(
+      detail.procurementDecision,
+      detail.procurementReviews,
+      detail.decisionCouncilSession,
+      Object.values(detail.docsById || {}),
+      map,
+    );
+    clearGuidedDecisionReviewVerifiedRecheck();
+    const context = {
+      requestId: ++_guidedDecisionReviewHandoffRequestId,
+      projectLoadId: _projectDetailLoadId,
+      authRevision: _authSessionRevision,
+      tenantId: _currentTenantId,
+      userId: String(_currentUser?.sub || _currentUser?.user_id || ''),
+      projectId,
+      projectionFingerprint: map.projection_fingerprint,
+    };
+    const requestIsCurrent = () => isGuidedDecisionReviewHandoffRequestCurrent(context);
+    const announcement = document.getElementById('guided-decision-review-announcement');
+    if (button) button.disabled = true;
+    if (announcement) announcement.textContent = 'Verifying review handoff.';
+    try {
+      const response = await fetch(
+        `/projects/${encodeURIComponent(projectId)}/guided-decision-review-handoff?bundle_type=${encodeURIComponent(map.bundle_type)}`,
+        { headers: getAuthHeaders() },
+      );
+      if (!requestIsCurrent()) return;
+      if (!response.ok) {
+        const error = await resolveApiErrorResponse(response);
+        if (!requestIsCurrent()) return;
+        throw new Error(error.message);
+      }
+      const bodyBytes = new Uint8Array(await response.arrayBuffer());
+      if (!requestIsCurrent()) return;
+      const bodySha256 = String(
+        response.headers.get(GUIDED_DECISION_REVIEW_HANDOFF_SHA256_HEADER) || '',
+      ).trim().toLowerCase();
+      const projectionFingerprint = String(
+        response.headers.get('X-DecisionDoc-Projection-Fingerprint') || '',
+      ).trim().toLowerCase();
+      const contentType = String(response.headers.get('Content-Type') || '').toLowerCase();
+      const contentDisposition = String(response.headers.get('Content-Disposition') || '');
+      if (
+        !contentType.startsWith('application/json')
+        || !/^attachment;\s*filename="[^"]+\.json"$/.test(contentDisposition)
+        || response.headers.get('Cache-Control') !== 'no-store'
+        || response.headers.get('X-Content-Type-Options') !== 'nosniff'
+        || response.headers.get('X-DecisionDoc-Operational-Approval') !== 'false'
+        || projectionFingerprint !== map.projection_fingerprint
+        || !isGuidedDecisionReviewSha256(bodySha256)
+        || bodySha256 !== await sha256Hex(bodyBytes)
+      ) {
+        throw new Error('Guided review handoff response verification failed.');
+      }
+      const handoff = JSON.parse(new TextDecoder().decode(bodyBytes));
+      if (
+        !requestIsCurrent()
+        || !isGuidedDecisionReviewHandoff(handoff, projectId, map, review)
+      ) {
+        throw new Error('Guided review handoff contract verification failed.');
+      }
+      const filename = _filenameFromContentDisposition(
+        contentDisposition,
+        `guided-decision-review-handoff-${map.projection_fingerprint.slice(0, 12)}.json`,
+      );
+      _triggerBrowserDownload(
+        new Blob([bodyBytes], { type: 'application/json' }),
+        filename,
+        'Guided Decision Review handoff JSON',
+        { scope: GUIDED_DECISION_REVIEW_HANDOFF_DOWNLOAD_SCOPE },
+      );
+      _guidedDecisionReviewVerifiedHandoff = {
+        handoff,
+        bodySha256,
+        projectLoadId: context.projectLoadId,
+        authRevision: context.authRevision,
+        tenantId: context.tenantId,
+        userId: context.userId,
+        projectId: context.projectId,
+        projectionFingerprint: context.projectionFingerprint,
+      };
+      const recheckButton = document.querySelector(
+        '[data-guided-decision-review-recheck]',
+      );
+      if (recheckButton) recheckButton.disabled = false;
+      if (announcement) {
+        announcement.textContent = 'Verified review handoff download started.';
+      }
+    } catch (error) {
+      if (!requestIsCurrent()) return;
+      const message = error.message || String(error);
+      if (announcement) announcement.textContent = message;
+      showNotification(message, 'error');
+    } finally {
+      if (button && requestIsCurrent()) button.disabled = false;
+    }
+  }
+
+  async function recheckGuidedDecisionReviewHandoff(button) {
+    const verifiedSource = _guidedDecisionReviewVerifiedHandoff;
+    if (!isGuidedDecisionReviewVerifiedSourceCurrent(verifiedSource)) {
+      clearGuidedDecisionReviewHandoffSource();
+      showNotification('검증된 현재 handoff를 먼저 다운로드해야 합니다.', 'error');
+      return;
+    }
+    clearGuidedDecisionReviewVerifiedRecheck();
+    const context = {
+      requestId: ++_guidedDecisionReviewRecheckRequestId,
+      projectLoadId: _projectDetailLoadId,
+      authRevision: _authSessionRevision,
+      tenantId: _currentTenantId,
+      userId: String(_currentUser?.sub || _currentUser?.user_id || ''),
+      projectId: verifiedSource.projectId,
+      sourceHandoffSha256: verifiedSource.bodySha256,
+    };
+    const requestIsCurrent = () => isGuidedDecisionReviewRecheckRequestCurrent(context);
+    const announcement = document.getElementById('guided-decision-review-announcement');
+    if (button) button.disabled = true;
+    if (announcement) announcement.textContent = 'Rechecking review handoff.';
+    try {
+      const response = await fetch(
+        `/projects/${encodeURIComponent(context.projectId)}/guided-decision-review-handoff/recheck`,
+        {
+          method: 'POST',
+          headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contract_version: 'guided-decision-review-recheck-request.v1',
+            source_handoff: verifiedSource.handoff,
+            source_handoff_sha256: verifiedSource.bodySha256,
+          }),
+        },
+      );
+      if (!requestIsCurrent()) return;
+      if (!response.ok) {
+        const error = await resolveApiErrorResponse(response);
+        if (!requestIsCurrent()) return;
+        throw new Error(error.message);
+      }
+      const bodyBytes = new Uint8Array(await response.arrayBuffer());
+      if (!requestIsCurrent()) return;
+      const bodySha256 = String(
+        response.headers.get(GUIDED_DECISION_REVIEW_RECHECK_SHA256_HEADER) || '',
+      ).trim().toLowerCase();
+      const contentType = String(response.headers.get('Content-Type') || '').toLowerCase();
+      const contentDisposition = String(response.headers.get('Content-Disposition') || '');
+      const projectionFingerprint = String(
+        response.headers.get('X-DecisionDoc-Projection-Fingerprint') || '',
+      ).trim().toLowerCase();
+      const reviewStateStatus = String(
+        response.headers.get('X-DecisionDoc-Review-State-Status') || '',
+      ).trim();
+      if (
+        !contentType.startsWith('application/json')
+        || !/^attachment;\s*filename="[^"]+\.json"$/.test(contentDisposition)
+        || response.headers.get('Cache-Control') !== 'no-store'
+        || response.headers.get('X-Content-Type-Options') !== 'nosniff'
+        || response.headers.get('X-DecisionDoc-Operational-Approval') !== 'false'
+        || !isGuidedDecisionReviewSha256(bodySha256)
+        || bodySha256 !== await sha256Hex(bodyBytes)
+      ) {
+        throw new Error('Guided review recheck response verification failed.');
+      }
+      const receipt = JSON.parse(new TextDecoder().decode(bodyBytes));
+      const normalized = await normalizeGuidedDecisionReviewRecheckReceipt(
+        receipt,
+        verifiedSource,
+        context.projectId,
+      );
+      if (
+        !requestIsCurrent()
+        || projectionFingerprint !== receipt.current_handoff.projection_fingerprint
+        || reviewStateStatus !== normalized.reviewStateStatus
+      ) {
+        throw new Error('Guided review recheck receipt verification failed.');
+      }
+      const filename = _filenameFromContentDisposition(
+        contentDisposition,
+        `guided-decision-review-recheck-receipt-${projectionFingerprint.slice(0, 12)}.json`,
+      );
+      _triggerBrowserDownload(
+        new Blob([bodyBytes], { type: 'application/json' }),
+        filename,
+        'Guided Decision Review recheck receipt JSON',
+        { scope: GUIDED_DECISION_REVIEW_RECHECK_DOWNLOAD_SCOPE },
+      );
+      _guidedDecisionReviewVerifiedRecheck = {
+        receipt,
+        bodySha256,
+        projectLoadId: context.projectLoadId,
+        authRevision: context.authRevision,
+        tenantId: context.tenantId,
+        userId: context.userId,
+        projectId: context.projectId,
+        reviewStateStatus: normalized.reviewStateStatus,
+      };
+      syncGuidedDecisionReviewDispositionControls();
+      if (receipt.review_state_status === 'changed') {
+        _guidedDecisionReviewVerifiedHandoff = null;
+        if (button) button.disabled = true;
+        if (announcement) {
+          announcement.textContent = (
+            'Review state changed. Reload project detail before a new handoff.'
+          );
+        }
+      } else if (announcement) {
+        announcement.textContent = 'Review state unchanged. Recheck receipt downloaded.';
+      }
+    } catch (error) {
+      if (!requestIsCurrent()) return;
+      const message = error.message || String(error);
+      if (announcement) announcement.textContent = message;
+      showNotification(message, 'error');
+    } finally {
+      if (button && requestIsCurrent()) {
+        button.disabled = !isGuidedDecisionReviewVerifiedSourceCurrent(
+          _guidedDecisionReviewVerifiedHandoff,
+        );
+      }
+      syncGuidedDecisionReviewDispositionControls();
+    }
+  }
+
+  async function downloadGuidedDecisionReviewDisposition(button) {
+    const verifiedRecheck = _guidedDecisionReviewVerifiedRecheck;
+    if (!isGuidedDecisionReviewVerifiedRecheckCurrent(verifiedRecheck)) {
+      clearGuidedDecisionReviewVerifiedRecheck();
+      showNotification('검증된 현재 recheck receipt가 필요합니다.', 'error');
+      return;
+    }
+    const dispositionSelect = document.querySelector(
+      '[data-guided-decision-review-disposition]',
+    );
+    const reviewDisposition = dispositionSelect?.value || '';
+    const allowed = GUIDED_DECISION_REVIEW_DISPOSITIONS[
+      verifiedRecheck.reviewStateStatus
+    ] || [];
+    if (!allowed.includes(reviewDisposition)) {
+      clearGuidedDecisionReviewVerifiedRecheck();
+      showNotification('허용되지 않은 review disposition입니다.', 'error');
+      return;
+    }
+    const context = {
+      requestId: ++_guidedDecisionReviewDispositionRequestId,
+      projectLoadId: _projectDetailLoadId,
+      authRevision: _authSessionRevision,
+      tenantId: _currentTenantId,
+      userId: String(_currentUser?.sub || _currentUser?.user_id || ''),
+      projectId: verifiedRecheck.projectId,
+      sourceRecheckReceiptSha256: verifiedRecheck.bodySha256,
+      reviewDisposition,
+    };
+    const requestIsCurrent = () => (
+      isGuidedDecisionReviewDispositionRequestCurrent(context)
+    );
+    const announcement = document.getElementById(
+      'guided-decision-review-announcement',
+    );
+    if (button) button.disabled = true;
+    if (dispositionSelect) dispositionSelect.disabled = true;
+    if (announcement) announcement.textContent = 'Verifying review disposition.';
+    try {
+      const response = await fetch(
+        `/projects/${encodeURIComponent(context.projectId)}/guided-decision-review-handoff/review-disposition`,
+        {
+          method: 'POST',
+          headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contract_version: 'guided-decision-review-disposition-request.v1',
+            source_recheck_receipt: verifiedRecheck.receipt,
+            source_recheck_receipt_sha256: verifiedRecheck.bodySha256,
+            review_disposition: reviewDisposition,
+          }),
+        },
+      );
+      if (!requestIsCurrent()) return;
+      if (!response.ok) {
+        const error = await resolveApiErrorResponse(response);
+        if (!requestIsCurrent()) return;
+        throw new Error(error.message);
+      }
+      const bodyBytes = new Uint8Array(await response.arrayBuffer());
+      if (!requestIsCurrent()) return;
+      const bodySha256 = String(
+        response.headers.get(
+          GUIDED_DECISION_REVIEW_DISPOSITION_SHA256_HEADER,
+        ) || '',
+      ).trim().toLowerCase();
+      const contentType = String(
+        response.headers.get('Content-Type') || '',
+      ).toLowerCase();
+      const contentDisposition = String(
+        response.headers.get('Content-Disposition') || '',
+      );
+      const projectionFingerprint = String(
+        response.headers.get('X-DecisionDoc-Projection-Fingerprint') || '',
+      ).trim().toLowerCase();
+      const reviewStateStatus = String(
+        response.headers.get('X-DecisionDoc-Review-State-Status') || '',
+      ).trim();
+      if (
+        !contentType.startsWith('application/json')
+        || !/^attachment;\s*filename="[^"]+\.json"$/.test(contentDisposition)
+        || response.headers.get('Cache-Control') !== 'no-store'
+        || response.headers.get('X-Content-Type-Options') !== 'nosniff'
+        || response.headers.get('X-DecisionDoc-Operational-Approval') !== 'false'
+        || !isGuidedDecisionReviewSha256(bodySha256)
+        || bodySha256 !== await sha256Hex(bodyBytes)
+      ) {
+        throw new Error(
+          'Guided review disposition response verification failed.',
+        );
+      }
+      const receipt = await normalizeGuidedDecisionReviewDispositionReceipt(
+        JSON.parse(new TextDecoder().decode(bodyBytes)),
+        verifiedRecheck,
+        context.projectId,
+        context.reviewDisposition,
+      );
+      if (
+        !requestIsCurrent()
+        || projectionFingerprint
+          !== receipt.source_recheck_receipt.current_handoff
+            .projection_fingerprint
+        || reviewStateStatus !== receipt.review_state_status
+        || dispositionSelect.value !== context.reviewDisposition
+      ) {
+        throw new Error(
+          'Guided review disposition receipt verification failed.',
+        );
+      }
+      const filename = _filenameFromContentDisposition(
+        contentDisposition,
+        `guided-decision-review-disposition-receipt-${projectionFingerprint.slice(0, 12)}.json`,
+      );
+      _triggerBrowserDownload(
+        new Blob([bodyBytes], { type: 'application/json' }),
+        filename,
+        'Guided Decision Review disposition receipt JSON',
+        { scope: GUIDED_DECISION_REVIEW_DISPOSITION_DOWNLOAD_SCOPE },
+      );
+      if (announcement) {
+        announcement.textContent = 'Review disposition receipt downloaded.';
+      }
+    } catch (error) {
+      if (!requestIsCurrent()) return;
+      const message = error.message || String(error);
+      if (announcement) announcement.textContent = message;
+      showNotification(message, 'error');
+    } finally {
+      if (requestIsCurrent()) {
+        syncGuidedDecisionReviewDispositionControls();
+      }
+    }
+  }
+
   function wireGuidedDecisionReviewActions(root) {
     root.querySelectorAll('[data-guided-decision-review-target]').forEach(button => {
       button.addEventListener('click', () => focusGuidedDecisionReviewTarget(
@@ -25325,6 +26247,30 @@
         button.dataset.guidedDecisionReviewStage || 'review section',
       ));
     });
+    root.querySelector('[data-guided-decision-review-handoff]')?.addEventListener(
+      'click',
+      event => downloadGuidedDecisionReviewHandoff(event.currentTarget),
+    );
+    root.querySelector('[data-guided-decision-review-recheck]')?.addEventListener(
+      'click',
+      event => recheckGuidedDecisionReviewHandoff(event.currentTarget),
+    );
+    root.querySelector(
+      '[data-guided-decision-review-disposition-download]',
+    )?.addEventListener(
+      'click',
+      event => downloadGuidedDecisionReviewDisposition(event.currentTarget),
+    );
+    root.querySelector(
+      '[data-guided-decision-review-disposition]',
+    )?.addEventListener('change', () => {
+      _guidedDecisionReviewDispositionRequestId += 1;
+      _clearScopedExportDownloadUrls(
+        GUIDED_DECISION_REVIEW_DISPOSITION_DOWNLOAD_SCOPE,
+      );
+      syncGuidedDecisionReviewDispositionControls();
+    });
+    syncGuidedDecisionReviewDispositionControls();
   }
 
   const DECISION_EVIDENCE_NODE_LABELS = {
@@ -26179,6 +27125,7 @@
   }
 
   window.hideProjectDetail = function hideProjectDetail() {
+    clearGuidedDecisionReviewHandoffSource();
     const projectId = _currentProjectDetail?.project?.project_id || '';
     clearProjectProcurementDetailUrlState(projectId);
     clearLocationProcurementSummaryUrlState();
@@ -26194,6 +27141,7 @@
   function renderProjectDetail(p, procurementDecision = null, options = {}) {
     const container = document.getElementById('project-detail');
     if (!container) return;
+    clearGuidedDecisionReviewHandoffSource();
     const docs = p.documents || [];
     const recordings = p.meeting_recordings || [];
     const previousProjectId = _currentProjectDetail?.project?.project_id;

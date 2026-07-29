@@ -14,7 +14,7 @@ def procurement_review_audit_principal(
     session_id: str,
 ) -> tuple[str, str, str, str]:
     """Keep the reviewer identity without persisting its session identifier."""
-    if action.startswith("procurement.review"):
+    if _is_procurement_review_action(action):
         return user_id, username, user_role, ""
     return user_id, username, user_role, session_id
 
@@ -25,9 +25,21 @@ def procurement_review_audit_network(
     user_agent: str,
 ) -> tuple[str, str]:
     """Exclude request network metadata from procurement review evidence."""
-    if action.startswith("procurement.review"):
+    if _is_procurement_review_action(action):
         return "", ""
     return ip_address, user_agent
+
+
+def _is_procurement_review_action(action: str) -> bool:
+    return (
+        action.startswith("procurement.review")
+        or action
+        in {
+            "procurement.guided_review_handoff_download",
+            "procurement.guided_review_handoff_recheck",
+            "procurement.guided_review_disposition",
+        }
+    )
 
 
 def procurement_review_audit_detail(
@@ -49,6 +61,27 @@ def procurement_review_audit_detail(
             "reviewed_package_sha256"
         ),
         "procurement_review_access_scope": "access_scope",
+        "decision_evidence_projection_fingerprint": "projection_fingerprint",
+        "guided_review_handoff_sha256": "handoff_sha256",
+        "guided_review_source_handoff_sha256": "source_handoff_sha256",
+        "guided_review_current_handoff_sha256": "current_handoff_sha256",
+        "guided_review_source_state_fingerprint_sha256": (
+            "source_review_state_fingerprint_sha256"
+        ),
+        "guided_review_current_state_fingerprint_sha256": (
+            "current_review_state_fingerprint_sha256"
+        ),
+        "guided_review_state_status": "review_state_status",
+        "guided_review_disposition": "review_disposition",
+        "guided_review_source_recheck_receipt_sha256": (
+            "source_recheck_receipt_sha256"
+        ),
+        "guided_review_disposition_binding_sha256": (
+            "disposition_binding_sha256"
+        ),
+        "guided_review_disposition_receipt_sha256": (
+            "disposition_receipt_sha256"
+        ),
     }
     for state_field, detail_field in text_fields.items():
         value = getattr(request.state, state_field, "") or ""
@@ -64,6 +97,17 @@ def procurement_review_audit_detail(
         "procurement_review_pending_count": "review_pending_count",
         "procurement_review_completed_count": "review_completed_count",
         "procurement_review_authorized_count": "authorized_review_count",
+        "guided_review_read_only": "read_only",
+        "guided_review_snapshot_atomic": "snapshot_atomic",
+        "guided_review_handoff_persisted": "handoff_persisted",
+        "guided_review_requires_recheck_before_reliance": (
+            "requires_recheck_before_reliance"
+        ),
+        "guided_review_recheck_persisted": "recheck_persisted",
+        "guided_review_reviewer_identity_bound": "reviewer_identity_bound",
+        "guided_review_disposition_receipt_persisted": (
+            "disposition_receipt_persisted"
+        ),
     }
     for state_field, detail_field in optional_fields.items():
         value = getattr(request.state, state_field, None)

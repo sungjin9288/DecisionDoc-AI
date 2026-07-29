@@ -73,13 +73,28 @@ def _serialize_project_detail(
                 project_id=project.project_id,
             )
         ]
+    payload["documents"] = _serialize_project_documents(
+        request,
+        tenant_id=tenant_id,
+        project=project,
+    )
+    return payload
+
+
+def _serialize_project_documents(
+    request: Request,
+    *,
+    tenant_id: str,
+    project,
+) -> list[dict]:
+    documents = asdict(project).get("documents", [])
     if not getattr(request.app.state, "procurement_copilot_enabled", False):
-        return payload
+        return documents
 
     service = getattr(request.app.state, "decision_council_service", None)
     procurement_store = getattr(request.app.state, "procurement_store", None)
     if procurement_store is None:
-        return payload
+        return documents
 
     procurement_record = procurement_store.get(project.project_id, tenant_id=tenant_id)
     latest_session = None
@@ -96,7 +111,7 @@ def _serialize_project_detail(
 
     review_store = getattr(request.app.state, "procurement_review_store", None)
 
-    for doc in payload.get("documents", []):
+    for doc in documents:
         status_meta = describe_procurement_council_document_status(
             bundle_id=str(doc.get("bundle_id") or ""),
             source_session_id=doc.get("source_decision_council_session_id"),
@@ -137,4 +152,4 @@ def _serialize_project_detail(
         doc["procurement_review_document_status_tone"] = review_status_meta["tone"]
         doc["procurement_review_document_status_copy"] = review_status_meta["copy"]
         doc["procurement_review_document_status_summary"] = review_status_meta["summary"]
-    return payload
+    return documents

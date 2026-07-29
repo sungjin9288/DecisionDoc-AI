@@ -36,9 +36,17 @@ def test_guided_decision_review_static_contract_is_read_only_and_fail_closed():
     assert source.count("Recommended next check:") == 1
     assert "READ ONLY · NON-ATOMIC · NO APPROVAL/EXPORT/PROVIDER EXECUTION" in source
     assert 'aria-live="polite"' in source
-    assert "fetch(" not in source
-    assert "method: 'POST'" not in source
-    assert "download" not in source.lower()
+    assert source.count("method: 'POST'") == 2
+    assert "/guided-decision-review-handoff/recheck" in source
+    assert (
+        "contract_version: 'guided-decision-review-recheck-request.v1'"
+        in source
+    )
+    assert "/guided-decision-review-handoff/review-disposition" in source
+    assert (
+        "contract_version: 'guided-decision-review-disposition-request.v1'"
+        in source
+    )
     assert "progressbar" not in source
     assert "ready" not in source
     assert "approved" not in source

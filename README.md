@@ -48,7 +48,7 @@ LLM이 만든 결과를 단발성 텍스트가 아니라 **업무 산출물**로
 | 품질 실험·요청 패턴 상태 무결성 | A/B prompt experiment와 freeform·sketch request pattern을 tenant별 local/S3 state에 결속하고 손상·중복 identity를 빈 상태로 축소하지 않는다. Variant·hint·experiment identity를 한 CAS assignment로 결속하고 result도 같은 incarnation에만 기록하며, resumable winner claim과 snapshot-bound clear로 worker 경쟁을 조정 |
 | 공개 공유 상태 무결성 | 외부 공개 링크의 생성·조회·접근 횟수·취소 lifecycle을 tenant별 local/S3 state에 결속하고 손상·identity drift를 원본 보존 상태로 fail closed 처리 |
 | 공공조달 Go/No-Go | G2B 기반 판단부터 tenant별 검토 패킷, 검토함, assignee/admin의 검증된 원본 packet 재다운로드, 1회 완료 receipt, reviewed-package 이력과 review-bound downstream provenance까지 연결 (`G2B_API_KEY`, 스모크 옵션 제공) |
-| Decision Evidence Map | project별 procurement·Decision Council·문서·검토·승인·report workflow 관계를 deterministic read-only projection으로 표시. Evidence Neighborhood Explorer는 canonical accessible table, one-hop relation/provenance 탐색과 filter를 제공하고, Guided Decision Review는 Decision → Evidence → Review → Documents의 다음 확인 위치로 local scroll/focus만 수행. 두 surface 모두 malformed/authority-drifted map에서 fail closed하며 approval/export/provider/입찰 실행 권한을 만들지 않음 |
+| Decision Evidence Map | project별 procurement·Decision Council·문서·검토·승인·report workflow 관계를 deterministic read-only projection으로 표시. Evidence Neighborhood Explorer는 canonical accessible table, one-hop relation/provenance 탐색과 filter를 제공하고, Guided Decision Review는 Decision → Evidence → Review → Documents의 다음 확인 위치로 local scroll/focus만 수행. 명시적 handoff download는 현재 four-stage observation을 exact-hash canonical JSON으로 전달하고, page-memory recheck는 source와 fresh observation의 semantic fingerprint를 비교함. Verified recheck에는 status별 allowlisted disposition을 exact-hash receipt로 결속함. 세 경로 모두 non-atomic·non-persisted·recheck-required이며 reviewer identity, approval, export, provider 또는 입찰 실행 권한을 만들지 않음 |
 | 로컬 procurement decision package evidence | mock/local fixture 기반 12개 artifact, one-screen 검토, deterministic review ZIP, packet-bound browser review draft와 reviewer receipt, review-completed audit envelope, handoff, sign-off, export boundary, CLI contract 검증 경로 |
 | 완성 문서 review packet | completed human review receipt 기반 deterministic ZIP, embedded SHA256 index, tamper/path boundary 검증 |
 | 품질 교정 파일럿 | Ready artifact 3~5개의 순서·readiness·JSONL SHA-256·외부 학습 비승인 경계를 먼저 검토하고, server-side export package와 local human-review handoff를 각각 exact-membership ZIP으로 고정해 독립 재검증 |
@@ -89,11 +89,11 @@ FastAPI (app/main.py — create_app(), 모듈 레벨 side-effect 없음)
   │     / rate_limit / audit / auth / tenant / billing / metrics
   │     / document_ops_audit / auth_session_retention_audit
   │     billing은 tenant/auth context가 확정된 뒤 metered request를 검사
-  ├─ Routers (23 top-level files, 라우트 286): generate / approvals / projects / knowledge
+  ├─ Routers (23 top-level files, 라우트 289): generate / approvals / projects / knowledge
   │     / report_workflows / auth / sso / admin / audit / billing / dashboard
   │     / history / eval / finetune / local_llm / g2b / templates / health ...
   ▼
-Services (46) — 도메인 오케스트레이션
+Services (47) — 도메인 오케스트레이션
   ├─ generation_service ─ 핵심 파이프라인:
   │     요청 → 캐시 → Provider.generate_bundle() → 스키마 검증
   │        → Stabilizer → Storage 저장 → Jinja2 렌더 → Lint → 반환
@@ -116,9 +116,9 @@ Providers (5)    Storage (50 modules)   Ops
 ```bash
 python3 scripts/count_readme_metrics.py --field middleware_files  # → 12
 python3 scripts/count_readme_metrics.py --field router_files      # → 23
-python3 scripts/count_readme_metrics.py --field service_files     # → 46
+python3 scripts/count_readme_metrics.py --field service_files     # → 47
 python3 scripts/count_readme_metrics.py --field storage_files     # → 50
-python3 scripts/count_readme_metrics.py --field route_decorators  # → 286
+python3 scripts/count_readme_metrics.py --field route_decorators  # → 289
 ```
 
 **설계 불변식**: Provider·Storage는 ABC + factory(환경변수로만 교체) · 모든 파일 쓰기는 atomic write(tmp + fsync + os.replace) · 라우트 핸들러는 `request.app.state.*`로 의존성 접근 · Request 모델은 `strict=True, extra="forbid"` · mock provider는 결정론적(CI 기준 경로).
@@ -178,10 +178,10 @@ python3 scripts/count_readme_metrics.py --field env_keys  # → 94
 
 ## API / Usage
 
-FastAPI 라우트는 **286개**입니다.
+FastAPI 라우트는 **289개**입니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field route_decorators  # → 286
+python3 scripts/count_readme_metrics.py --field route_decorators  # → 289
 ```
 
 대표 도메인:
@@ -197,7 +197,7 @@ python3 scripts/count_readme_metrics.py --field route_decorators  # → 286
 | Billing | `/billing/status`, `/billing/usage`, `/billing/checkout` |
 | Report quality | `/report-workflows/learning/correction-artifacts`, `/report-workflows/learning/correction-artifacts/{artifact_id}`, `/report-workflows/learning/correction-artifacts/pilot-export/preview`, `/report-workflows/learning/correction-artifacts/pilot-export`, `/report-workflows/learning/correction-artifacts/pilot-export/package`, `/report-workflows/learning/correction-artifacts/pilot-package/verify`, `/report-workflows/learning/correction-artifacts/export` |
 | Public procurement | `GET /procurement/reviews`, `/projects/{id}/procurement/evaluate`, `/projects/{id}/procurement/review-packet`, `/projects/{id}/procurement/reviews/{sha}/packet`, `/projects/{id}/procurement/reviews/{sha}/complete`, `/projects/{id}/procurement/reviews/{sha}/reviewed-package`, `/projects/{id}/decision-council/run` |
-| Decision evidence | `GET /projects/{id}/decision-evidence-map?bundle_type=proposal_kr` |
+| Decision evidence | `GET /projects/{id}/decision-evidence-map?bundle_type=proposal_kr`, `GET /projects/{id}/guided-decision-review-handoff?bundle_type=proposal_kr`, `POST /projects/{id}/guided-decision-review-handoff/recheck`, `POST /projects/{id}/guided-decision-review-handoff/review-disposition` |
 | DocumentOps | `/api/agent/document-ops/trajectories`, `/api/agent/document-ops/trajectories/governance/overview`, `/api/agent/document-ops/trajectories/governance-artifacts/inventory` |
 
 UI에서 내려받은 품질 교정 검토 패키지를 local review pack으로 가져옵니다.
@@ -284,11 +284,11 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **3,684개**, **267개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **3,716개**, **269개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 3684
-python3 scripts/count_readme_metrics.py --field test_files      # → 267
+python3 scripts/count_readme_metrics.py --field test_functions  # → 3716
+python3 scripts/count_readme_metrics.py --field test_files      # → 269
 ```
 
 > 위 수치는 Python AST로 확인한 `test_` 함수 정의 개수입니다. 각 테스트의 현재 pass 여부는 환경 구성 후 `pytest`로 재확인하세요. 검증되지 않은 커버리지·통과율 수치는 표기하지 않습니다.
@@ -317,7 +317,7 @@ bandit -r app/ -x app/providers/mock_provider.py -ll
 
 ## Development Plan — 완성까지 남은 것
 
-현재 H125 전체 no-cost baseline은 `pytest tests/ -m "not live" -q` 기준 `4,477 passed, 1 skipped, 4 deselected`입니다(2026-07-27 실측). 이 수치는 mock/local 및 non-live 범위이며 실제 LLM Provider, AWS runtime, G2B 실데이터 검증을 포함하지 않습니다. "완성"을 막는 외부 실증 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
+현재 H128 전체 no-cost baseline은 `pytest tests/ -m "not live" -q` 기준 `4,509 passed, 1 skipped, 4 deselected`입니다(2026-07-29 실측). 이 수치는 mock/local 및 non-live 범위이며 실제 LLM Provider, AWS runtime, G2B 실데이터 검증을 포함하지 않습니다. "완성"을 막는 외부 실증 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
 
 ```bash
 python3 scripts/check_completion_readiness.py --print-env-template
@@ -380,7 +380,7 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 - 공개 공유 state는 tenant별 `shares.json`에 conditional create/CAS를 적용합니다. 충돌마다 최신 ownership·schema와 lifecycle 위에 create/access/revoke를 재적용하고 최근 mutation receipt를 64개로 제한해 commit 응답 유실 뒤 successor CAS도 조정합니다. 이미 취소된 링크는 최초 취소자와 시각을 보존합니다. 이 보장은 단일 share state object 범위이고 실제 AWS runtime, 다른 state object와의 distributed transaction, 운영 URL의 외부 접근성은 검증 범위가 아닙니다.
 - Procurement review record·원본 packet·reviewed-package는 local/S3 공통 backend의 tenant/project/packet SHA-256 경로에 함께 결속합니다. Blank·malformed·invalid UTF-8·duplicate key/identity, artifact 누락·변조와 backend failure는 빈 검토함, 새 packet 또는 사용자 입력 충돌로 축소하지 않고 `500 INTERNAL_ERROR`로 중단하며 원본 bytes를 보존합니다. Pending receipt와 완료 package의 embedded receipt/manifest까지 semantic하게 다시 대조합니다. Packet은 exact orphan bytes만 재사용하고 reviewed-package는 content-addressed 경로에 immutable하게 쓴 뒤 record를 CAS로 전환합니다. S3는 `If-None-Match`/`If-Match`, local은 conditional file lock과 atomic write를 사용하며 commit 결과가 불확실하면 read-back으로 조정합니다. 여러 artifact를 한 번에 commit하는 distributed transaction과 실제 AWS S3 runtime 검증은 범위 밖입니다.
 - 프로젝트 procurement review는 원본 packet SHA256과 tenant/project 경계에 묶인 검토 증빙입니다. Packet preparation은 활성 tenant admin/member username을 stable user ID에 결속하고, completion은 그 assignee의 current session-bound JWT만 허용합니다. Packet 생성, 검토함, 프로젝트 이력과 reviewed package 다운로드도 session-bound admin/member만 사용할 수 있습니다. Admin은 tenant 전체를 보고 활성 admin/member에게 지정할 수 있으며, member는 자신에게 지정된 v2 record만 보고 자신에게만 지정할 수 있습니다. API key, Ops key, sessionless JWT, viewer와 client-supplied reviewer text는 이 경로의 authority가 아닙니다. v1 package는 admin만 다운로드합니다. HTTP summary는 receipt, rationale, stable user ID, attestation과 session/network metadata를 숨기고 assigned reviewer, current-user assignment, completion username, access scope와 검토 상태만 제공합니다. v2 reviewed package verifier는 tenant/project/stable reviewer scope를 외부에서 받아 attestation을 재검증하고, 동일 assignee의 동일 decision/rationale 재전송만 persisted package exact replay로 복구합니다. Audit은 actor identity와 packet/decision/package hash, access scope와 authorized count를 남기되 target stable ID, rationale, attestation body, session ID, token, IP, User-Agent를 저장하지 않습니다. 현재 source와 일치하는 완료 review는 downstream 생성 문맥과 project document provenance에 이어집니다. 이후 procurement decision이 바뀌면 해당 문서는 stale review로 다시 분류되고, 프로젝트 문서 목록·결재 요청·공유 링크에 경고와 재검토 동선이 표시됩니다. 완료 receipt와 reviewed-package를 포함해 운영 승인, provider 호출, 입찰 제출을 실행하거나 허가하지 않습니다.
-- Decision Evidence Map은 여러 tenant-scoped record를 순차 관측해 합성하는 `read_only=true`, `snapshot_atomic=false` projection입니다. Evidence Neighborhood Explorer의 browser state는 tenant/user/auth revision/project/bundle/fingerprint에 결속하며, one-hop focus, relation provenance, diagnostic navigation과 presentation layout은 같은 bounded response를 읽기 전용으로 표시할 뿐 authority를 추가하지 않습니다. Guided Decision Review도 같은 map의 exact v1 shape와 false authority flags를 검증한 뒤 decision, evidence, review, document section으로 local scroll/focus만 수행합니다. Map이 없거나 malformed/authority-drifted이면 panel을 숨기며 다른 payload에서 evidence state를 추론하지 않습니다. Accepted review는 current freshness가 아니고, document status도 관측된 canonical 상태가 모두 `current`일 때만 current로 표시합니다. Edge line style과 content SHA-256은 provenance level과 observed field-content binding을 설명할 뿐 proof, approval 또는 external authenticity를 주장하지 않습니다. Exact canonical `requirement:` reference만 explicit reference coverage를 만들며 이것은 요구사항 충족 증명이 아닙니다. Proposal Blueprint의 PPTX node는 기존 export path의 readiness만 나타내고 durable export receipt나 실제 export 실행을 주장하지 않습니다. Map 조회와 두 UI surface는 approval, export execution, provider call, bid submission, legal approval, contractual commitment를 허가하거나 실행하지 않습니다.
+- Decision Evidence Map은 여러 tenant-scoped record를 순차 관측해 합성하는 `read_only=true`, `snapshot_atomic=false` projection입니다. Evidence Neighborhood Explorer의 browser state는 tenant/user/auth revision/project/bundle/fingerprint에 결속하며, one-hop focus, relation provenance, diagnostic navigation과 presentation layout은 같은 bounded response를 읽기 전용으로 표시할 뿐 authority를 추가하지 않습니다. Guided Decision Review도 같은 map의 exact v1 shape와 false authority flags를 검증한 뒤 decision, evidence, review, document section으로 local scroll/focus만 수행합니다. 명시적 H126 handoff download는 canonical JSON body SHA-256과 projection fingerprint를 검증하지만 `handoff_persisted=false`, `requires_recheck_before_reliance=true`이며 source reads를 atomic snapshot으로 바꾸지 않습니다. H127 recheck는 browser가 검증한 source를 page memory에만 두고 fresh handoff와 `source_generated_at`을 제외한 semantic fingerprint를 비교합니다. Exact-hash receipt의 `unchanged`는 비교 시점의 semantic equality일 뿐 future currentness나 atomic snapshot이 아니며, client-supplied source hash는 prior server issuance를 증명하지 않습니다. H128 disposition은 browser가 검증한 H127 receipt를 page memory에만 두고 status별 allowlist를 적용한 exact binding receipt를 만들지만 reviewer identity를 결속하거나 receipt를 server-side에 저장하지 않습니다. `changed` receipt 뒤에는 stale H126 source를 폐기하며 disposition은 `new_handoff_required|review_deferred`로 제한합니다. Map, handoff 또는 receipt가 malformed/authority-drifted이면 panel 또는 download를 차단하고 다른 payload에서 evidence state를 추론하지 않습니다. Accepted review는 current freshness가 아니고, document status도 관측된 canonical 상태가 모두 `current`일 때만 current로 표시합니다. Edge line style과 content SHA-256은 provenance level과 observed field-content binding을 설명할 뿐 proof, approval 또는 external authenticity를 주장하지 않습니다. Exact canonical `requirement:` reference만 explicit reference coverage를 만들며 이것은 요구사항 충족 증명이 아닙니다. Proposal Blueprint의 PPTX node는 기존 export path의 readiness만 나타내고 durable export receipt나 실제 export 실행을 주장하지 않습니다. Map 조회, 두 UI surface, handoff download, read-only recheck와 disposition은 approval, export execution, provider call, bid submission, legal approval, contractual commitment를 허가하거나 실행하지 않습니다.
 - Final review packet은 모든 bundle의 사람 검토가 완료된 receipt에서만 생성됩니다. 현재 tracked sample은 `pending`이라 packet을 제공하지 않습니다.
 
 ---
@@ -394,4 +394,4 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 286 · 테스트 3,684 · env 키 94 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 289 · 테스트 3,716 · env 키 94 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
