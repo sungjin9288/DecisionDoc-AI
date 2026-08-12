@@ -78,6 +78,16 @@
 .venv/bin/bandit -r app/ -f json -o bandit_report.json
 ```
 
+### DocumentOps comparison file intake
+
+`POST /api/agent/document-ops/comparison-documents/extract`는 API key/maintenance gate, multipart single-file input, safe basename, exact source/extracted-text SHA-256, exact response field set, `Cache-Control: no-store`, local parser errors와 false provider/persistence flags를 unit/API test로 확인한다. Infrastructure test는 dedicated service가 existing `extract_text`만 사용하고 fallback/provider/storage import가 없는지, browser validator와 baseline/candidate control의 task-scoped wiring을 고정한다. Chromium test는 real local endpoint의 text-file baseline/candidate fill, malformed response의 pre-mutation rejection, late response discard, edit provenance invalidation, existing comparison run/redaction, desktop과 390px overflow 및 console/page error 0건을 확인한다.
+
+```bash
+python3 -m pytest -q tests/test_document_ops_agent_api.py -k comparison_document --tb=short
+python3 -m pytest -q tests/test_infrastructure.py -k comparison_file_intake --tb=short
+python3 -m pytest -q tests/e2e/test_main_flow.py -k comparison_file_intake --tb=short
+```
+
 ### 대표 bundle 구조 품질 evidence
 
 ```bash

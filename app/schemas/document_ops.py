@@ -1,8 +1,30 @@
 """Document-ops agent run, trajectory review/export, and training approval schemas."""
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+class DocumentOpsComparisonDocumentResponse(BaseModel):
+    """Strict, no-effect response for one comparison file extraction."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    schema_version: Literal["document_ops_comparison_document_v1"] = (
+        "document_ops_comparison_document_v1"
+    )
+    filename: str = Field(..., min_length=1, max_length=255)
+    source_size_bytes: int = Field(..., ge=1, le=20 * 1024 * 1024)
+    source_sha256: str = Field(..., pattern=r"^[0-9a-f]{64}$")
+    extracted_text: str = Field(..., min_length=1)
+    extracted_text_sha256: str = Field(..., pattern=r"^[0-9a-f]{64}$")
+    extracted_char_count: int = Field(..., ge=1)
+    content_may_be_truncated: bool
+    extraction_mode: Literal["deterministic_local_existing_parser"] = (
+        "deterministic_local_existing_parser"
+    )
+    provider_called: Literal[False] = False
+    persisted: Literal[False] = False
 
 
 class DocumentOpsAgentRunRequest(BaseModel):

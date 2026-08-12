@@ -7,8 +7,8 @@ import re
 from datetime import UTC, datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import Response
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+from fastapi.responses import JSONResponse, Response
 
 from app.agents.schemas import (
     DocumentOpsSkillBinding,
@@ -24,6 +24,7 @@ from app.middleware.document_ops_audit import (
 )
 from app.schemas import (
     DocumentOpsAgentRunRequest,
+    DocumentOpsComparisonDocumentResponse,
     DocumentOpsDatasetFreezeRequest,
     DocumentOpsTrainingAuditExportRequest,
     DocumentOpsTrajectoryExportPreviewRequest,
@@ -40,6 +41,11 @@ from app.services.document_ops_service import (
     DocumentOpsRunUnavailableError,
 )
 from app.services.generation.context_store import record_direct_provider_usage
+from app.services.document_ops_comparison_intake import (
+    ComparisonDocumentIntakeError,
+    MAX_COMPARISON_DOCUMENT_BYTES,
+    extract_comparison_document,
+)
 
 router = APIRouter(prefix="/api/agent/document-ops", tags=["document-ops-agent"])
 
@@ -64,6 +70,34 @@ def _record_agent_skill_binding(
 ) -> None:
     request.state.document_ops_agent_skill_binding_sha256 = (
         document_ops_skill_binding_sha256(binding)
+    )
+
+
+@router.post(
+    "/comparison-documents/extract",
+    dependencies=[Depends(require_not_maintenance), Depends(require_api_key)],
+    response_model=DocumentOpsComparisonDocumentResponse,
+)
+async def extract_document_ops_comparison_document(
+    request: Request,
+    file: UploadFile = File(...),
+) -> JSONResponse:
+    """Extract a single comparison document without provider or storage effects."""
+    request.state.audit_action = "document_ops.comparison_document_extract"
+    try:
+        if len((await request.form()).getlist("file")) != 1:
+            raise ComparisonDocumentIntakeError(
+                "exactly one comparison document file is required",
+            )
+        raw = await file.read(MAX_COMPARISON_DOCUMENT_BYTES + 1)
+        response = extract_comparison_document(filename=file.filename, raw=raw)
+    except ComparisonDocumentIntakeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    finally:
+        await file.close()
+    return JSONResponse(
+        content=response.model_dump(),
+        headers={"Cache-Control": "no-store"},
     )
 
 

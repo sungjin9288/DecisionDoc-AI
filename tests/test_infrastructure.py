@@ -4159,6 +4159,57 @@ def test_document_ops_service_binds_agent_run_to_request_tenant():
     assert any(keyword.arg == "tenant_id" for keyword in agent_calls[0].keywords)
 
 
+def test_document_ops_comparison_file_intake_stays_local_strict_and_ephemeral():
+    root = Path(__file__).resolve().parents[1]
+    service = (root / "app" / "services" / "document_ops_comparison_intake.py").read_text(
+        encoding="utf-8",
+    )
+    router = (root / "app" / "routers" / "document_ops_agent.py").read_text(
+        encoding="utf-8",
+    )
+    page = (root / "app" / "static" / "index.html").read_text(encoding="utf-8")
+
+    assert "from app.services.attachment_service import" in service
+    assert "extract_text," in service
+    assert "extract_text_with_ai_fallback" not in service
+    assert "get_provider" not in service
+    assert "app.storage" not in service
+    assert "comparison-documents/extract" in router
+    assert "Depends(require_not_maintenance), Depends(require_api_key)" in router
+    assert "await file.read(MAX_COMPARISON_DOCUMENT_BYTES + 1)" in router
+    assert 'headers={"Cache-Control": "no-store"}' in router
+    assert "document_ops.comparison_document_extract" in router
+
+    for marker in (
+        'id="docops-baseline-file"',
+        'id="docops-candidate-file"',
+        'id="docops-baseline-file-status"',
+        'id="docops-candidate-file-status"',
+        "DOCUMENT_OPS_COMPARISON_DOCUMENT_KEYS",
+        "documentOpsValidatedComparisonDocument",
+        "documentOpsSha256Bytes",
+        "documentOpsSha256Text",
+        "extractDocumentOpsComparisonFile",
+        "documentOpsComparisonFileRequestIsCurrent",
+        "invalidateDocumentOpsComparisonFileProvenance",
+        "documentOpsComparisonProvenanceMatchesText",
+        "deterministic_local_existing_parser",
+        "DOCUMENT_OPS_COMPARISON_MAX_SOURCE_BYTES",
+        "DOCUMENT_OPS_COMPARISON_MAX_EXTRACTED_CHARS",
+        "provider_called !== false",
+        "persisted !== false",
+    ):
+        assert marker in page
+
+    comparison_start = page.index('id="docops-comparison-inputs"')
+    comparison_end = page.index('id="docops-capture-trajectory"', comparison_start)
+    comparison_controls = page[comparison_start:comparison_end]
+    assert 'id="docops-baseline-file"' in comparison_controls
+    assert 'id="docops-candidate-file"' in comparison_controls
+    assert 'id="docops-baseline-document"' in comparison_controls
+    assert 'id="docops-candidate-document"' in comparison_controls
+
+
 def test_primary_smoke_modules_stay_within_800_line_guide():
     root = Path(__file__).resolve().parents[1]
     module_paths = (

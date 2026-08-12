@@ -135,6 +135,7 @@ from app.schemas.billing_sharing import (
 )
 from app.schemas.document_ops import (
     DocumentOpsAgentRunRequest,
+    DocumentOpsComparisonDocumentResponse,
     DocumentOpsDatasetFreezeRequest,
     DocumentOpsTrainingApprovalRequest,
     DocumentOpsTrainingAuditExportRequest,
@@ -270,6 +271,7 @@ __all__ = [
     "InviteUserRequest",
     "AcceptInviteRequest",
     "DocumentOpsAgentRunRequest",
+    "DocumentOpsComparisonDocumentResponse",
     "DocumentOpsTrajectoryReviewRequest",
     "DocumentOpsTrajectoryExportRequest",
     "DocumentOpsTrajectoryExportPreviewRequest",

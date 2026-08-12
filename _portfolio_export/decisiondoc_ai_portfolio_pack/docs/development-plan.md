@@ -39,12 +39,16 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
 
 DocumentOps comparison review는 source-grounded task와 함께 UI에서 선택할 수 있는 first-party skill이다. 비교 입력은 provider·captured-operation claim 전에 검증하고, `comparison_criteria`는 생략 시 `[]`이며 최대 8개·각 120자다. Local mock/backend와 loopback Chromium 측정은 exact UTF-8 hash context, raw-input trajectory redaction, exact replay, malformed context pre-success rejection과 390px overflow를 대상으로 하며 semantic change·policy/legal/operational effect는 사람 재확인 대상으로 남긴다. GitHub-derived skill-pattern reference는 [external repository analysis](./specs/external_repo_integration/ANALYSIS_20260812.md)의 clean-room design 기록만 사용하며 remote skill loading, dynamic install, provider/training/deploy/publication authority를 추가하지 않는다. Live provider, AWS runtime, external completion proof는 M1/M6의 기존 갭으로 변함없다.
 
+Comparison file intake는 동일 task 안의 optional local convenience path다. Existing attachment parser의 20 MB upload와 12,000-character cap을 그대로 사용하고 `.hwp` legacy binary, unsupported, empty, unreadable input을 bounded `422`로 거부한다. API response와 browser check는 exact selected source bytes와 returned UTF-8 text hash를 결속하지만, semantic equivalence, source authenticity, policy/legal effect 또는 file retention을 주장하지 않는다. 이 path는 deterministic server-memory extraction만 제공하며 provider fallback/OCR, storage persistence, training, AWS, deployment, publication과 approval authority를 추가하지 않는다.
+
 ```bash
 python3 -m pytest -q tests/test_infrastructure.py -k document_ops_agent --tb=short
 python3 -m pytest -q tests/e2e/test_main_flow.py -k document_ops_agent --tb=short
 python3 -m pytest -q tests/agents/test_skill_registry.py tests/agents/test_document_ops_agent.py tests/evals/test_document_ops_gates.py tests/test_document_ops_agent_api.py --tb=short
 python3 -m pytest -q tests/test_infrastructure.py -k document_ops --tb=short
 python3 -m pytest -q tests/e2e/test_main_flow.py -k document_ops --tb=short
+python3 -m pytest -q tests/test_document_ops_agent_api.py -k comparison_document --tb=short
+python3 -m pytest -q tests/e2e/test_main_flow.py -k comparison_file_intake --tb=short
 ```
 
 ### H120 local slice
@@ -214,10 +218,10 @@ promotion, deployment와 service resume은 실행하지 않았다.
 
 ```bash
 python3 scripts/count_readme_metrics.py --field router_files      # → 23 (top-level 라우터 파일)
-python3 scripts/count_readme_metrics.py --field service_files     # → 47 (서비스)
+python3 scripts/count_readme_metrics.py --field service_files     # → 48 (서비스)
 python3 scripts/count_readme_metrics.py --field storage_files     # → 50 (top-level storage modules)
 python3 scripts/count_readme_metrics.py --field middleware_files  # → 12 (미들웨어)
-python3 scripts/count_readme_metrics.py --field route_decorators  # → 290 (라우트)
+python3 scripts/count_readme_metrics.py --field route_decorators  # → 291 (라우트)
 ```
 
 ```text

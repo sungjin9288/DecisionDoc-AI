@@ -7561,6 +7561,152 @@ def test_document_ops_comparison_mode_validates_and_renders_trusted_context(page
     _assert_document_ops_comparison_mode_validates_and_renders_trusted_context(page, tmp_path)
 
 
+def test_document_ops_comparison_file_intake_validates_bytes_response_and_stale_state(page, tmp_path):
+    console_errors: list[str] = []
+    page_errors: list[str] = []
+    page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
+    page.on("pageerror", lambda error: page_errors.append(str(error)))
+    page.locator('[data-page="document-ops-page"]').click()
+    page.locator("#docops-task-type").select_option("document_comparison_review")
+
+    baseline_bytes = "baseline file text\nreview only".encode("utf-8")
+    candidate_bytes = "candidate file text\nreview only\nsecurity check".encode("utf-8")
+    page.set_input_files(
+        "#docops-baseline-file",
+        {"name": "baseline.txt", "mimeType": "text/plain", "buffer": baseline_bytes},
+    )
+    page.set_input_files(
+        "#docops-candidate-file",
+        {"name": "candidate.txt", "mimeType": "text/plain", "buffer": candidate_bytes},
+    )
+    _wait_until_text_contains(page, "#docops-baseline-file-status", "검증된 파일 intake")
+    _wait_until_text_contains(page, "#docops-candidate-file-status", "검증된 파일 intake")
+    assert page.input_value("#docops-baseline-document") == baseline_bytes.decode("utf-8")
+    assert page.input_value("#docops-candidate-document") == candidate_bytes.decode("utf-8")
+
+    page.locator("#docops-title").fill("Verified file comparison")
+    page.locator('[data-docops-action="run-agent"]').click()
+    _wait_until_text_contains(page, "#document-ops-result", "비교 context", timeout_ms=10000)
+    result = page.locator("#document-ops-result").inner_text()
+    assert hashlib.sha256(baseline_bytes).hexdigest() in result
+    assert hashlib.sha256(candidate_bytes).hexdigest() in result
+    assert baseline_bytes.decode("utf-8") not in result
+    assert candidate_bytes.decode("utf-8") not in result
+
+    malformed_bytes = b"malformed intake source"
+    page.evaluate(
+        """() => {
+          window.__comparisonIntakeNativeFetch = window.fetch;
+          window.fetch = (input, options) => {
+            if (String(input) === '/api/agent/document-ops/comparison-documents/extract') {
+              return Promise.resolve(new Response(JSON.stringify({
+                schema_version: 'document_ops_comparison_document_v1',
+                filename: 'malformed.txt', source_size_bytes: 23,
+                source_sha256: 'a'.repeat(64), extracted_text: 'must not fill',
+                extracted_text_sha256: 'b'.repeat(64), extracted_char_count: 13,
+                content_may_be_truncated: false,
+                extraction_mode: 'deterministic_local_existing_parser',
+                provider_called: false, persisted: false, unexpected: true,
+              }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+            }
+            return window.__comparisonIntakeNativeFetch(input, options);
+          };
+        }"""
+    )
+    page.set_input_files(
+        "#docops-baseline-file",
+        {"name": "malformed.txt", "mimeType": "text/plain", "buffer": malformed_bytes},
+    )
+    _wait_until_text_contains(page, "#docops-baseline-file-status", "파일 검증 실패")
+    assert page.input_value("#docops-baseline-document") == ""
+
+    stale_a = b"stale first file"
+    stale_b = b"current second file"
+    stale_a_text = stale_a.decode("utf-8")
+    stale_b_text = stale_b.decode("utf-8")
+
+    def intake_response(filename: str, raw: bytes) -> dict[str, object]:
+        text = raw.decode("utf-8")
+        return {
+            "schema_version": "document_ops_comparison_document_v1",
+            "filename": filename,
+            "source_size_bytes": len(raw),
+            "source_sha256": hashlib.sha256(raw).hexdigest(),
+            "extracted_text": text,
+            "extracted_text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+            "extracted_char_count": len(text),
+            "content_may_be_truncated": False,
+            "extraction_mode": "deterministic_local_existing_parser",
+            "provider_called": False,
+            "persisted": False,
+        }
+
+    page.evaluate(
+        """() => {
+          window.__comparisonIntakeResolvers = [];
+          window.fetch = (input, options) => {
+            if (String(input) === '/api/agent/document-ops/comparison-documents/extract') {
+              return new Promise(resolve => window.__comparisonIntakeResolvers.push(resolve));
+            }
+            return window.__comparisonIntakeNativeFetch(input, options);
+          };
+        }"""
+    )
+    page.set_input_files(
+        "#docops-baseline-file",
+        {"name": "stale-a.txt", "mimeType": "text/plain", "buffer": stale_a},
+    )
+    page.wait_for_function("() => window.__comparisonIntakeResolvers.length === 1")
+    page.set_input_files(
+        "#docops-baseline-file",
+        {"name": "stale-b.txt", "mimeType": "text/plain", "buffer": stale_b},
+    )
+    page.wait_for_function("() => window.__comparisonIntakeResolvers.length === 2")
+    page.evaluate(
+        """body => window.__comparisonIntakeResolvers.shift()(
+          new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+        )""",
+        intake_response("stale-a.txt", stale_a),
+    )
+    page.wait_for_timeout(100)
+    assert page.input_value("#docops-baseline-document") != stale_a_text
+    page.evaluate(
+        """body => window.__comparisonIntakeResolvers.shift()(
+          new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+        )""",
+        intake_response("stale-b.txt", stale_b),
+    )
+    _wait_until_text_contains(page, "#docops-baseline-file-status", "stale-b.txt")
+    assert page.input_value("#docops-baseline-document") == stale_b_text
+    page.locator("#docops-baseline-document").fill("edited direct text")
+    assert "직접 편집" in page.locator("#docops-baseline-file-status").inner_text()
+    assert page.evaluate("() => _documentOpsComparisonFileProvenance.baseline") is None
+    assert page.locator("#docops-baseline-file").input_value() == ""
+    page.evaluate("() => { window.fetch = window.__comparisonIntakeNativeFetch; }")
+
+    page.evaluate(
+        """() => {
+          const bytes = new Uint8Array((20 * 1024 * 1024) + 1);
+          const transfer = new DataTransfer();
+          transfer.items.add(new File([bytes], 'too-large.txt', { type: 'text/plain' }));
+          const input = document.querySelector('#docops-baseline-file');
+          input.files = transfer.files;
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+        }"""
+    )
+    _wait_until_text_contains(page, "#docops-baseline-file-status", "20 MB")
+    assert page.input_value("#docops-baseline-document") == "edited direct text"
+
+    page.locator("#notification-container").evaluate("container => container.replaceChildren()")
+    page.set_viewport_size({"width": 1440, "height": 1000})
+    page.screenshot(path=str(tmp_path / "document-ops-comparison-file-intake-desktop.png"), full_page=True)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.screenshot(path=str(tmp_path / "document-ops-comparison-file-intake-mobile.png"), full_page=True)
+    assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth")
+    assert page_errors == []
+    assert console_errors == []
+
+
 # ── 생성 플로우 ───────────────────────────────────────────────────────────────
 
 def test_generate_flow_produces_results(page):

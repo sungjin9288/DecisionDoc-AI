@@ -28,6 +28,7 @@ DecisionDoc AI의 정보 자산을 보호하고 서비스 연속성을 유지한
 - 감사 로그: 최소 1년 보존
 - 접근 로그: 90일 보존
 - 로그 무결성: Append-only, 삭제/수정 불가
+- DocumentOps comparison file intake는 upload bytes, extracted text, source hash와 original path-bearing filename을 audit detail·application log·trajectory에 기록하지 않는다. `document_ops.comparison_document_extract` audit은 route, HTTP result, duration 등 aggregate metadata만 남기며 intake 자체는 provider call·storage persistence를 하지 않는다. 20 MB application read cap과 별도로 public deployment에서는 reverse proxy 또는 load balancer의 multipart body limit과 rate limit을 설정한다.
 
 ## 6.1 운영 권한/로그 정책 요약 (구현 기준)
 - 배포 권한

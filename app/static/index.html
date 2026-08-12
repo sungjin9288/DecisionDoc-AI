@@ -7007,8 +7007,18 @@
       <label style="display:block;font-size:.8rem;font-weight:700;margin:.55rem 0 .25rem;">source references</label>
       <textarea id="docops-source-refs" class="gov-input" rows="3" placeholder="예: accident-report&#10;rfp-v2&#10;meeting-note-0418" style="width:100%;resize:vertical;"></textarea>
       <div id="docops-comparison-inputs" hidden aria-hidden="true">
+        <div style="margin-top:.55rem;">
+          <label style="display:block;font-size:.8rem;font-weight:700;margin:0 0 .25rem;" for="docops-baseline-file">Baseline file (선택)</label>
+          <input id="docops-baseline-file" class="gov-input" type="file" accept=".txt,.md,.pdf,.docx,.pptx,.hwpx,.xlsx,.xls,.csv,.tsv,.json,.jsonl,.ndjson,.yaml,.yml,.xml,.html,.htm,.rtf,.log,.ini,.cfg,.conf,.odt,.ods,.odp,.zip" style="width:100%;max-width:100%;">
+          <div id="docops-baseline-file-status" role="status" style="margin-top:.3rem;font-size:.72rem;color:var(--muted);overflow-wrap:anywhere;">직접 입력 또는 검증된 파일 추출을 선택하세요.</div>
+        </div>
         <label style="display:block;font-size:.8rem;font-weight:700;margin:.55rem 0 .25rem;" for="docops-baseline-document">Baseline document</label>
         <textarea id="docops-baseline-document" class="gov-input" rows="5" maxlength="20000" placeholder="비교 기준 원문을 입력하세요." style="width:100%;resize:vertical;"></textarea>
+        <div style="margin-top:.55rem;">
+          <label style="display:block;font-size:.8rem;font-weight:700;margin:0 0 .25rem;" for="docops-candidate-file">Candidate file (선택)</label>
+          <input id="docops-candidate-file" class="gov-input" type="file" accept=".txt,.md,.pdf,.docx,.pptx,.hwpx,.xlsx,.xls,.csv,.tsv,.json,.jsonl,.ndjson,.yaml,.yml,.xml,.html,.htm,.rtf,.log,.ini,.cfg,.conf,.odt,.ods,.odp,.zip" style="width:100%;max-width:100%;">
+          <div id="docops-candidate-file-status" role="status" style="margin-top:.3rem;font-size:.72rem;color:var(--muted);overflow-wrap:anywhere;">직접 입력 또는 검증된 파일 추출을 선택하세요.</div>
+        </div>
         <label style="display:block;font-size:.8rem;font-weight:700;margin:.55rem 0 .25rem;" for="docops-candidate-document">Candidate document</label>
         <textarea id="docops-candidate-document" class="gov-input" rows="5" maxlength="20000" placeholder="변경 후보 원문을 입력하세요." style="width:100%;resize:vertical;"></textarea>
         <label style="display:block;font-size:.8rem;font-weight:700;margin:.55rem 0 .25rem;" for="docops-comparison-criteria">Comparison criteria</label>
@@ -8029,6 +8039,9 @@
   let _documentOpsTrainingRehearsalRequestVersion = 0;
   let _documentOpsGovernanceObservation = null;
   let _documentOpsTrajectorySearchTimer = null;
+  let _documentOpsComparisonModeActive = false;
+  const _documentOpsComparisonIntakeVersion = { baseline: 0, candidate: 0 };
+  const _documentOpsComparisonFileProvenance = { baseline: null, candidate: null };
   const _documentOpsReviewDrafts = new Map();
 
   function documentOpsReviewDraftKey(
@@ -8067,6 +8080,10 @@
   const DOCUMENT_OPS_SKILL_VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
   const DOCUMENT_OPS_SHA256_PATTERN = /^[0-9a-f]{64}$/;
   const DOCUMENT_OPS_COMPARISON_CONTEXT_KEYS = 'baseline_sha256,candidate_sha256,comparison_criteria,documents_identical,raw_content_included,schema_version';
+  const DOCUMENT_OPS_COMPARISON_DOCUMENT_KEYS = 'content_may_be_truncated,extracted_char_count,extracted_text,extracted_text_sha256,extraction_mode,filename,persisted,provider_called,schema_version,source_sha256,source_size_bytes';
+  const DOCUMENT_OPS_COMPARISON_MAX_SOURCE_BYTES = 20 * 1024 * 1024;
+  const DOCUMENT_OPS_COMPARISON_EXTRACTION_MODE = 'deterministic_local_existing_parser';
+  const DOCUMENT_OPS_COMPARISON_MAX_EXTRACTED_CHARS = 12000;
 
   function documentOpsValidatedSkillBinding(value) {
     if (
@@ -8195,6 +8212,163 @@
     }
   }
 
+  function documentOpsComparisonFileInput(slot) {
+    return $id(`docops-${slot}-file`);
+  }
+
+  function documentOpsComparisonTextInput(slot) {
+    return $id(`docops-${slot}-document`);
+  }
+
+  function setDocumentOpsComparisonFileStatus(slot, message, tone = 'muted') {
+    const el = $id(`docops-${slot}-file-status`);
+    if (!el) return;
+    el.textContent = message;
+    el.style.color = tone === 'error' ? '#b91c1c' : tone === 'verified' ? '#166534' : tone === 'loading' ? '#92400e' : 'var(--muted)';
+  }
+
+  function documentOpsSafeComparisonFilename(value) {
+    const basename = String(value || '').replace(/\\/g, '/').split('/').pop().trim().replace(/[\x00-\x1f\x7f]/g, '_');
+    return basename && basename !== '.' && basename !== '..' ? basename : '';
+  }
+
+  async function documentOpsSha256Bytes(bytes) {
+    const digest = await window.crypto.subtle.digest('SHA-256', bytes);
+    return Array.from(new Uint8Array(digest)).map(item => item.toString(16).padStart(2, '0')).join('');
+  }
+
+  async function documentOpsSha256Text(value) {
+    return documentOpsSha256Bytes(new TextEncoder().encode(value));
+  }
+
+  async function documentOpsValidatedComparisonDocument(value, file, sourceSha256) {
+    if (
+      !value
+      || typeof value !== 'object'
+      || Array.isArray(value)
+      || Object.keys(value).sort().join(',') !== DOCUMENT_OPS_COMPARISON_DOCUMENT_KEYS
+      || value.schema_version !== 'document_ops_comparison_document_v1'
+      || value.filename !== documentOpsSafeComparisonFilename(file?.name)
+      || typeof value.source_size_bytes !== 'number'
+      || !Number.isInteger(value.source_size_bytes)
+      || value.source_size_bytes !== file?.size
+      || typeof value.source_sha256 !== 'string'
+      || value.source_sha256 !== sourceSha256
+      || !DOCUMENT_OPS_SHA256_PATTERN.test(value.source_sha256)
+      || typeof value.extracted_text !== 'string'
+      || !value.extracted_text.trim()
+      || typeof value.extracted_text_sha256 !== 'string'
+      || !DOCUMENT_OPS_SHA256_PATTERN.test(value.extracted_text_sha256)
+      || typeof value.extracted_char_count !== 'number'
+      || !Number.isInteger(value.extracted_char_count)
+      || value.extracted_char_count !== value.extracted_text.length
+      || typeof value.content_may_be_truncated !== 'boolean'
+      || value.content_may_be_truncated !== (value.extracted_char_count >= DOCUMENT_OPS_COMPARISON_MAX_EXTRACTED_CHARS)
+      || value.extraction_mode !== DOCUMENT_OPS_COMPARISON_EXTRACTION_MODE
+      || value.provider_called !== false
+      || value.persisted !== false
+    ) return null;
+    try {
+      if (await documentOpsSha256Text(value.extracted_text) !== value.extracted_text_sha256) return null;
+    } catch (_) {
+      return null;
+    }
+    return {
+      filename: value.filename,
+      sourceSha256: value.source_sha256,
+      extractedText: value.extracted_text,
+      extractedTextSha256: value.extracted_text_sha256,
+      extractedCharCount: value.extracted_char_count,
+      contentMayBeTruncated: value.content_may_be_truncated,
+    };
+  }
+
+  function invalidateDocumentOpsComparisonFileProvenance(slot, { clearFileText = false, reason = '직접 입력' } = {}) {
+    _documentOpsComparisonIntakeVersion[slot] += 1;
+    const provenance = _documentOpsComparisonFileProvenance[slot];
+    const textInput = documentOpsComparisonTextInput(slot);
+    if (clearFileText && provenance && textInput?.value === provenance.extractedText) textInput.value = '';
+    _documentOpsComparisonFileProvenance[slot] = null;
+    setDocumentOpsComparisonFileStatus(slot, `${reason}: file provenance 없음`);
+  }
+
+  function invalidateDocumentOpsComparisonIntake({ clearFileText = false, reason = '비교 context 변경' } = {}) {
+    ['baseline', 'candidate'].forEach(slot => {
+      invalidateDocumentOpsComparisonFileProvenance(slot, { clearFileText, reason });
+      const input = documentOpsComparisonFileInput(slot);
+      if (input) input.value = '';
+    });
+  }
+
+  function documentOpsComparisonFileRequestIsCurrent(slot, generation, tenantId, authRevision, file) {
+    return (
+      generation === _documentOpsComparisonIntakeVersion[slot]
+      && tenantId === _currentTenantId
+      && authRevision === _authSessionRevision
+      && documentOpsSelectedTaskType() === 'document_comparison_review'
+      && documentOpsComparisonFileInput(slot)?.files?.[0] === file
+    );
+  }
+
+  async function extractDocumentOpsComparisonFile(slot) {
+    const file = documentOpsComparisonFileInput(slot)?.files?.[0];
+    invalidateDocumentOpsComparisonFileProvenance(slot, { clearFileText: true, reason: '새 파일 선택' });
+    if (!file) return;
+    const generation = _documentOpsComparisonIntakeVersion[slot];
+    const tenantId = _currentTenantId;
+    const authRevision = _authSessionRevision;
+    const current = () => documentOpsComparisonFileRequestIsCurrent(slot, generation, tenantId, authRevision, file);
+    if (file.size > DOCUMENT_OPS_COMPARISON_MAX_SOURCE_BYTES) {
+      setDocumentOpsComparisonFileStatus(slot, '파일 검증 실패: comparison document exceeds the 20 MB limit', 'error');
+      return;
+    }
+    setDocumentOpsComparisonFileStatus(slot, '파일 bytes와 추출 결과를 검증하는 중…', 'loading');
+    try {
+      const sourceBytes = await file.arrayBuffer();
+      const sourceSha256 = await documentOpsSha256Bytes(sourceBytes);
+      if (!current()) return;
+      const form = new FormData();
+      form.append('file', file, file.name);
+      const response = await fetch('/api/agent/document-ops/comparison-documents/extract', {
+        method: 'POST',
+        headers: getAuthHeaders(tenantId),
+        body: form,
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(typeof payload?.detail === 'string' ? payload.detail : '파일 추출에 실패했습니다.');
+      const verified = await documentOpsValidatedComparisonDocument(payload, file, sourceSha256);
+      if (!verified) throw new Error('파일 추출 응답 검증에 실패했습니다. 텍스트를 변경하지 않았습니다.');
+      if (!current()) return;
+      const textInput = documentOpsComparisonTextInput(slot);
+      if (!textInput) return;
+      textInput.value = verified.extractedText;
+      _documentOpsComparisonFileProvenance[slot] = verified;
+      setDocumentOpsComparisonFileStatus(
+        slot,
+        verified.contentMayBeTruncated
+          ? `검증된 파일 intake · ${verified.filename} · parser cap으로 일부 내용이 생략됐을 수 있습니다.`
+          : `검증된 파일 intake · ${verified.filename} · local parser only`,
+        'verified',
+      );
+    } catch (error) {
+      if (!current()) return;
+      _documentOpsComparisonFileProvenance[slot] = null;
+      setDocumentOpsComparisonFileStatus(slot, `파일 검증 실패: ${error?.message || error}`, 'error');
+    }
+  }
+
+  async function documentOpsComparisonProvenanceMatchesText(slot) {
+    const provenance = _documentOpsComparisonFileProvenance[slot];
+    if (!provenance) return true;
+    const value = String(documentOpsComparisonTextInput(slot)?.value || '');
+    try {
+      return value === provenance.extractedText
+        && await documentOpsSha256Text(value) === provenance.extractedTextSha256;
+    } catch (_) {
+      return false;
+    }
+  }
+
   function renderDocumentOpsProvenanceVerificationError(resultEl) {
     if (resultEl) {
       resultEl.innerHTML = '<div role="alert" style="color:#b91c1c;font-size:.84rem;line-height:1.5;">Agent 응답의 실행 provenance를 검증하지 못했습니다. 결과를 표시하거나 성공 처리하지 않았습니다.</div>';
@@ -8237,6 +8411,10 @@
     }
     if (baseline) baseline.required = comparisonMode;
     if (candidate) candidate.required = comparisonMode;
+    if (_documentOpsComparisonModeActive !== comparisonMode) {
+      _documentOpsComparisonModeActive = comparisonMode;
+      invalidateDocumentOpsComparisonIntake({ clearFileText: true, reason: '비교 작업 변경' });
+    }
   }
 
   function documentOpsTrajectoryFilters() {
@@ -8667,6 +8845,13 @@
       showNotification('Candidate document를 입력해주세요.', 'warn');
       $id('docops-candidate-document')?.focus();
       return;
+    }
+    if (comparisonMode) {
+      for (const slot of ['baseline', 'candidate']) {
+        if (!await documentOpsComparisonProvenanceMatchesText(slot)) {
+          invalidateDocumentOpsComparisonFileProvenance(slot, { reason: '추출 텍스트 변경' });
+        }
+      }
     }
     const skillName = ($id('docops-skill-name')?.value || '').trim();
     const resultEl = $id('document-ops-result');
@@ -10818,6 +11003,20 @@
   $id('docops-task-type')?.addEventListener('change', () => {
     markDocumentOpsExportEvidenceStale('DocumentOps task 조건이 변경되었습니다.');
     syncDocumentOpsComparisonControls();
+  });
+  ['baseline', 'candidate'].forEach(slot => {
+    documentOpsComparisonFileInput(slot)?.addEventListener('change', () => {
+      void extractDocumentOpsComparisonFile(slot);
+    });
+    documentOpsComparisonTextInput(slot)?.addEventListener('input', () => {
+      if (_documentOpsComparisonFileProvenance[slot]) {
+        invalidateDocumentOpsComparisonFileProvenance(slot, { reason: '직접 편집' });
+        const fileInput = documentOpsComparisonFileInput(slot);
+        if (fileInput) fileInput.value = '';
+      } else {
+        setDocumentOpsComparisonFileStatus(slot, '직접 입력 · file provenance 없음');
+      }
+    });
   });
   syncDocumentOpsComparisonControls();
 
@@ -14709,6 +14908,9 @@
 
   function storeTenantContext(tenantId) {
     try {
+      if (_currentTenantId !== tenantId) {
+        invalidateDocumentOpsComparisonIntake({ clearFileText: true, reason: 'tenant context 변경' });
+      }
       localStorage.setItem('dd_tenant_id', tenantId);
       _currentTenantId = tenantId;
       window.invalidateAuthSessionRetentionHandoff?.();
@@ -14758,6 +14960,7 @@
         throw new Error('tenant context storage failed');
       }
       _authSessionRevision += 1;
+      invalidateDocumentOpsComparisonIntake({ clearFileText: true, reason: 'auth context 변경' });
       invalidateProcurementReviewViews();
       return claims;
     } catch (_) {
@@ -14856,6 +15059,7 @@
       clearDocumentOpsPendingRunMarker('', previousTenantId);
       _documentOpsPendingRunRecovery = null;
       _documentOpsRunRecoveryPromise = null;
+      invalidateDocumentOpsComparisonIntake({ clearFileText: true, reason: 'tenant context 변경' });
       _currentTenantId = tenantId;
       invalidateProcurementReviewViews();
       window.location.reload();
@@ -19496,6 +19700,7 @@
     }
     if (event.key !== null && !AUTH_SESSION_STORAGE_KEYS.has(event.key)) return;
     _authSessionRevision += 1;
+    invalidateDocumentOpsComparisonIntake({ clearFileText: true, reason: 'auth context 변경' });
     invalidateProcurementReviewViews();
     reconcileCrossTabAuthContext();
   }
@@ -19729,6 +19934,7 @@
     localStorage.removeItem('dd_access_token');
     localStorage.removeItem('dd_refresh_token');
     _authSessionRevision += 1;
+    invalidateDocumentOpsComparisonIntake({ clearFileText: true, reason: 'auth context 변경' });
     invalidateProcurementReviewViews();
     window.invalidateAuthSessionRetentionHandoff?.();
     _documentOpsReviewDrafts.clear();

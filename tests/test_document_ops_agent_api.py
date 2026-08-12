@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 
+import pytest
 from fastapi.testclient import TestClient
 
 
@@ -46,6 +47,133 @@ def test_document_ops_run_requires_api_key(tmp_path, monkeypatch) -> None:
     )
 
     assert response.status_code == 401
+
+
+def test_document_ops_comparison_document_extract_is_deterministic_and_redacted(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    client = _create_client(tmp_path, monkeypatch)
+    raw = "비교 기준 원문\n승인 전 검토".encode("utf-8")
+    expected_text = raw.decode("utf-8")
+    provider = client.app.state.document_ops_service._agent.provider
+
+    def provider_must_not_run(*args, **kwargs):
+        raise AssertionError("comparison document intake must not call a provider")
+
+    provider.generate_raw = provider_must_not_run
+    client.app.state.document_ops_service._agent._provider = provider
+
+    assert client.post(
+        "/api/agent/document-ops/comparison-documents/extract",
+        files={"file": ("baseline.txt", raw, "text/plain")},
+    ).status_code == 401
+
+    response = client.post(
+        "/api/agent/document-ops/comparison-documents/extract",
+        headers=_api_headers(),
+        files={"file": ("../private/baseline.txt", raw, "text/plain")},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.json() == {
+        "schema_version": "document_ops_comparison_document_v1",
+        "filename": "baseline.txt",
+        "source_size_bytes": len(raw),
+        "source_sha256": hashlib.sha256(raw).hexdigest(),
+        "extracted_text": expected_text,
+        "extracted_text_sha256": hashlib.sha256(expected_text.encode("utf-8")).hexdigest(),
+        "extracted_char_count": len(expected_text),
+        "content_may_be_truncated": False,
+        "extraction_mode": "deterministic_local_existing_parser",
+        "provider_called": False,
+        "persisted": False,
+    }
+
+    from app.storage.audit_store import AuditStore
+
+    audits = AuditStore("system").query(
+        filters={"action": "document_ops.comparison_document_extract"},
+    )
+    assert len(audits) == 1
+    serialized_audit = json.dumps(audits[0], ensure_ascii=False)
+    assert expected_text not in serialized_audit
+    assert "../private/baseline.txt" not in serialized_audit
+    assert hashlib.sha256(raw).hexdigest() not in serialized_audit
+    assert hashlib.sha256(expected_text.encode("utf-8")).hexdigest() not in serialized_audit
+    assert not list((tmp_path / "tenants" / "system" / "document_ops_agent_operations").glob("*.json"))
+
+
+def test_document_ops_comparison_document_extract_rejects_unsafe_or_unreadable_input(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    client = _create_client(tmp_path, monkeypatch)
+    endpoint = "/api/agent/document-ops/comparison-documents/extract"
+
+    from app.services.document_ops_comparison_intake import (
+        ComparisonDocumentIntakeError,
+        extract_comparison_document,
+    )
+
+    for missing_or_unsafe_name in (None, "", "..", f"{'x' * 252}.txt"):
+        with pytest.raises(ComparisonDocumentIntakeError):
+            extract_comparison_document(filename=missing_or_unsafe_name, raw=b"content")
+
+    for filename, raw in (
+        ("empty.txt", b""),
+        ("blank.txt", b" \n\t "),
+        ("legacy.hwp", b"legacy binary data"),
+        ("unsupported.exe", b"not a document"),
+        ("broken.pdf", b"not a PDF"),
+    ):
+        response = client.post(
+            endpoint,
+            headers=_api_headers(),
+            files={"file": (filename, raw, "application/octet-stream")},
+        )
+        assert response.status_code == 422
+        assert isinstance(response.json()["detail"], str)
+        assert len(response.json()["detail"]) <= 160
+        assert filename not in response.json()["detail"]
+
+    from app.services.attachment_service import MAX_FILE_SIZE_BYTES
+
+    oversized = client.post(
+        endpoint,
+        headers=_api_headers(),
+        files={"file": ("large.txt", b"x" * (MAX_FILE_SIZE_BYTES + 1), "text/plain")},
+    )
+    assert oversized.status_code == 422
+    assert "20 MB" in oversized.json()["detail"]
+
+    multiple = client.post(
+        endpoint,
+        headers=_api_headers(),
+        files=[
+            ("file", ("first.txt", b"first", "text/plain")),
+            ("file", ("second.txt", b"second", "text/plain")),
+        ],
+    )
+    assert multiple.status_code == 422
+    assert multiple.json()["detail"] == "exactly one comparison document file is required"
+
+
+def test_document_ops_comparison_document_extract_respects_maintenance_boundary(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    client = _create_client(tmp_path, monkeypatch)
+    monkeypatch.setenv("DECISIONDOC_MAINTENANCE", "1")
+
+    response = client.post(
+        "/api/agent/document-ops/comparison-documents/extract",
+        headers=_api_headers(),
+        files={"file": ("baseline.txt", b"baseline", "text/plain")},
+    )
+
+    assert response.status_code == 503
 
 
 def test_document_ops_skill_catalog_requires_api_key_and_does_not_call_provider(tmp_path, monkeypatch) -> None:
