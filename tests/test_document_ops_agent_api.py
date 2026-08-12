@@ -115,6 +115,7 @@ def test_document_ops_run_can_capture_and_list_trajectory(tmp_path, monkeypatch)
     assert body["skill_binding"]["external_runtime_authorized"] is False
     assert "body" not in body["skill_binding"]
     assert "source_path" not in body["skill_binding"]
+    assert "comparison_context" not in body
     assert body["trajectory_saved"] is True
     assert body["trajectory_id"].startswith("trj_")
     assert body["qa"]["hard_gate_pass"] is True
@@ -356,6 +357,96 @@ def test_document_ops_run_operation_replays_without_provider_or_usage_duplicatio
         "result",
         "result_sha256",
     } & success_audit["detail"].keys()
+
+
+def test_document_ops_comparison_validates_before_provider_and_replays_trusted_redacted_context(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    client = _create_client(tmp_path, monkeypatch)
+    provider = client.app.state.document_ops_service._agent.provider
+    original_generate_raw = provider.generate_raw
+    calls = 0
+
+    def counted_generate_raw(prompt: str, *, request_id: str, max_output_tokens=None) -> str:
+        nonlocal calls
+        calls += 1
+        return original_generate_raw(prompt, request_id=request_id, max_output_tokens=max_output_tokens)
+
+    provider.generate_raw = counted_generate_raw
+    client.app.state.document_ops_service._agent._provider = provider
+    invalid = client.post(
+        "/api/agent/document-ops/run",
+        headers=_api_headers(),
+        json={
+            "task_type": "document_comparison_review",
+            "requirements": {
+                "baseline_document_text": "baseline private text",
+                "candidate_document_text": "candidate private text",
+                "comparison_criteria": ["duplicate", " duplicate "],
+            },
+            "capture_trajectory": True,
+            "operation_id": "agent-run:comparison-invalid",
+        },
+    )
+    assert invalid.status_code == 400
+    assert calls == 0
+    assert not list((tmp_path / "tenants" / "system" / "document_ops_agent_operations").glob("*.json"))
+
+    baseline = "범위: 기존 운영\n검토: PM"
+    candidate = "범위: 기존 운영과 보안 검토\n검토: PM\n검토: 보안 담당"
+    payload = {
+        "task_type": "document_comparison_review",
+        "requirements": {
+            "title": "운영 변경 비교",
+            "baseline_document_text": baseline,
+            "candidate_document_text": candidate,
+            "comparison_criteria": [" 관찰된 변경 ", "결정 영향"],
+        },
+        "capture_trajectory": True,
+        "operation_id": "agent-run:comparison-replay",
+    }
+    first = client.post("/api/agent/document-ops/run", headers=_api_headers(), json=payload)
+    replay = client.post("/api/agent/document-ops/run", headers=_api_headers(), json=payload)
+
+    assert first.status_code == 200
+    assert replay.status_code == 200
+    first_body = first.json()
+    replay_body = replay.json()
+    expected_context = {
+        "schema_version": "document_ops_comparison_context_v1",
+        "baseline_sha256": hashlib.sha256(baseline.encode("utf-8")).hexdigest(),
+        "candidate_sha256": hashlib.sha256(candidate.encode("utf-8")).hexdigest(),
+        "documents_identical": False,
+        "comparison_criteria": ["관찰된 변경", "결정 영향"],
+        "raw_content_included": False,
+    }
+    assert first_body["skill_name"] == "document-comparison-review"
+    assert first_body["comparison_context"] == expected_context
+    assert replay_body["comparison_context"] == expected_context
+    assert replay_body["operation_replayed"] is True
+    assert calls == 1
+
+    detail = client.get(
+        f"/api/agent/document-ops/trajectories/{first_body['trajectory_id']}",
+        headers=_api_headers(),
+    )
+    assert detail.status_code == 200
+    trajectory = detail.json()["trajectory"]
+    assert trajectory["comparison_context"] == expected_context
+    assert trajectory["input"]["requirements"]["baseline_document_text"] == "[redacted]"
+    assert trajectory["input"]["requirements"]["candidate_document_text"] == "[redacted]"
+    serialized_trajectory = json.dumps(trajectory, ensure_ascii=False)
+    assert baseline not in serialized_trajectory
+    assert candidate not in serialized_trajectory
+
+    persisted = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in tmp_path.rglob("*")
+        if path.is_file()
+    )
+    assert baseline not in persisted
+    assert candidate not in persisted
 
 
 def test_document_ops_run_operation_conflicts_on_skill_or_catalog_drift_before_provider(

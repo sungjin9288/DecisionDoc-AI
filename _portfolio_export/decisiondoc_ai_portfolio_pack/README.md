@@ -58,6 +58,7 @@ LLM이 만든 결과를 단발성 텍스트가 아니라 **업무 산출물**로
 | Auth authority·browser 전환 일관성 | Protected request와 `/events` query-token 구독은 signed JWT의 장기 role claim만 신뢰하지 않고 tenant `UserStore`의 현재 role·`is_active`·`credential_version`을 다시 확인한다. 열린 SSE도 최대 15초 간격으로 같은 authority와 token expiry를 재검증해 invalid credential에는 고정 `auth_revoked` control event만 보낸 뒤 닫고, state를 신뢰할 수 없으면 application event를 더 보내지 않은 채 `auth_unavailable`로 닫는다. Browser는 revoked 연결에서 refresh를 한 번 시도하고 refresh credential이 거절된 경우에만 session과 page-memory evidence를 정리한다. 일시 장애는 기존 credential과 작업을 보존하고 polling과 SSE reconnect로 복구한다. 비밀번호 변경은 persisted credential version을 같은 CAS mutation에서 증가시켜 이전 access/refresh token을 모두 거부하고 현재 browser에는 새 token pair를 반환한다. Login·register·refresh·LDAP session은 access/refresh token과 signed tenant를 하나의 browser commit으로 저장하며 실패하면 이전 session과 미저장 evidence를 복원한다. 동시에 발생한 401은 한 refresh에 합류하고 generic mutating request는 자동 replay하지 않는다. 다른 tab의 signed user·tenant·role·credential version이 현재 page와 달라지면 앱을 한 번 reload해 page-memory evidence를 새 authorization context에서 다시 구성하며, 네 값이 같은 token rotation은 현재 작업을 유지한다 |
 | 로그인 세션별 서버 폐기·본인 세션 관리 | Register·login·invite·LDAP·SAML·GCloud·password-change가 발급하는 access/refresh pair는 같은 random session ID와 tenant-scoped `auth-session.v2` state에 결속되고 refresh도 그 ID를 유지한다. 기존 v1 record는 strict read-compatible하며 label 저장 시 v2로 승격한다. `POST /auth/logout`은 현재 token의 session만 CAS로 폐기한다. `GET /auth/sessions`와 `PATCH /auth/sessions/label`은 현재 credential version의 본인 활성 세션을 조회하고 최대 40자의 user-supplied 기기 이름을 설정·삭제한다. Label은 API와 storage가 공유하는 validator에서 trim하며 Unicode control·line separator·bidirectional/invisible format 문자를 거부하고 ZWNJ/ZWJ만 허용한다. `POST /auth/sessions/revoke`는 다른 로그인 하나를, `POST /auth/sessions/revoke-others`는 current를 제외한 나머지를 종료한다. `POST /auth/sessions/revoke-all`은 strict confirmation 뒤 current를 마지막에 써서 snapshot 전체를 종료한다. Admin JWT 또는 Ops key가 호출하는 `GET /admin/auth-sessions/retention-preview`는 tenant prefix 전체를 strict 검증하고 오래된 expired/revoked state를 식별자 없는 aggregate로만 계산한다. 응답은 `read_only=true`, `deletion_authorized=false`, `no-store`를 고정하며 파일이나 S3 object를 변경하지 않는다. Ops 화면은 30/90/180/365일 기준의 aggregate만 표시하고 credential이 있을 때만 조회하며, strict contract·tenant/request generation을 모두 통과한 최신 응답만 렌더링한다. 새로고침 외 mutation control과 삭제 action은 두지 않는다. Profile UI는 session ID를 DOM에 넣지 않으며 label/revoke action이 같은 single-flight와 stale-response guard를 공유한다. 손상·unavailable state는 원본 보존 `503`으로 닫고 audit은 token·session ID·label을 복사하지 않는다. Legacy sessionless token은 exact session API를 사용할 수 없다. 일괄 종료는 multi-object transaction이 아니므로 중간 실패 뒤 일부 다른 session이 이미 종료됐을 수 있고, 요청 뒤 생긴 session은 다음 요청 대상이다. Session state/inventory에 User-Agent/IP를 자동 결합하는 기능, admin mass revoke, 실제 만료 state 삭제·scheduler와 즉시 push는 제공하지 않는다 |
 | DocumentOps 검토 작업대 | tenant-scoped trajectory JSONL을 선택된 local/S3 `StateBackend`의 단일 conditional create/CAS authority로 관리한다. Append와 사람 review는 충돌 시 최신 record 집합에 최대 32회 재적용하고, private append/incarnation identity와 최근 64개 review receipt로 commit 응답 유실 뒤 successor mutation을 조정한다. Expected review version은 최신 CAS state에서 비교해 오래 열린 화면의 덮어쓰기를 `409`로 차단하며 private metadata는 목록·상세·SFT source에 노출하지 않는다. 검색·필터·정렬, summary-first 상세 조회, 사용자·tenant·trajectory별 page-memory 초안, signed tenant context, 민감 본문을 제외한 audit 추적도 유지한다. Freeze·dry-run approval·execution request·audit export는 optional `operation_id`와 private payload hash를 metadata CAS에 결속해 동일 payload replay를 원래 verified artifact로 수렴시키고 다른 payload 재사용을 `409`로 차단한다. Trajectory capture를 선택한 Agent run도 provider 호출 전에 private shared-backend claim을 선점해 exact replay는 저장된 결과를 반환하고, 실행 중·불확실한 이전 시도는 자동 재호출하지 않는다. Browser는 각 write에 UUID를 보내고 pending 동안 initiating control을 single-flight로 잠근다. Captured run의 응답을 잃으면 operation/schema/state가 결속된 redacted status만 `no-store`로 읽고, terminal success가 확인된 경우에만 같은 operation ID와 payload를 replay한다. Mismatched·unavailable·running 상태는 payload를 page memory에 보존해 Agent 버튼과 상태 재확인 버튼이 새 실행 대신 같은 operation을 다시 확인하며, 두 control은 recovery promise 하나를 공유한다. Captured POST 직전에는 payload를 제외한 schema·tenant·operation ID marker만 tenant-scoped same-origin browser storage에 기록한다. Shared storage가 가능하면 tenant-scoped Web Lock 안에서 marker claim을 직렬화해 동시 tab 중 하나만 POST를 시작하고, 나머지 tab과 tab-close 뒤 다시 연 화면은 같은 status만 확인한다. 서로 다른 tenant marker는 같은 origin에서도 독립적으로 유지하며 tenant 전환은 이전 tenant marker만 정리한다. Shared storage가 막히면 기존 tab-scoped fallback을 유지한다. Operator가 backend 실행은 취소되지 않는다는 경고를 확인해 상태 추적을 명시적으로 종료해야 새 operation을 시작할 수 있다. |
+| DocumentOps source-grounded·문서 비교 검토 | first-party Markdown skill registry가 task별 skill을 strict binding으로 고정한다. `document_comparison_review`는 두 원문의 exact UTF-8 SHA-256, 동일 여부와 선택 비교 기준만 담은 `document_ops_comparison_context_v1`을 반환·trajectory·exact replay에 연결하고 원문은 trajectory input에서 redaction한다. 결과는 관찰된 텍스트 변화와 조건부 해석, 근거/가정·결정/트레이드오프·거버넌스 경계·권고·사람 재확인 질문을 분리하며 approval, provider·training·publication authority를 만들지 않는다. |
 
 ---
 
@@ -314,10 +315,10 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **3,755개**, **272개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **3,766개**, **272개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 3755
+python3 scripts/count_readme_metrics.py --field test_functions  # → 3766
 python3 scripts/count_readme_metrics.py --field test_files      # → 272
 ```
 
@@ -355,6 +356,14 @@ DocumentOps strict skill binding 변경의 focused no-cost 검증은 2026-08-12�
 python3 -m pytest -q tests/agents/test_skill_registry.py tests/agents/test_document_ops_agent.py tests/test_document_ops_agent_api.py tests/storage/test_document_ops_run_operation_store.py tests/test_audit.py --tb=short
 ```
 
+문서 비교 검토의 로컬 측정 경로는 아래 command입니다. mock provider·temporary local storage·loopback Chromium만 사용하며, GitHub-derived skill 설계 참고는 [external repository analysis](./docs/specs/external_repo_integration/ANALYSIS_20260812.md)의 clean-room design input으로만 사용합니다.
+
+```bash
+python3 -m pytest -q tests/agents/test_skill_registry.py tests/agents/test_document_ops_agent.py tests/evals/test_document_ops_gates.py tests/test_document_ops_agent_api.py --tb=short
+python3 -m pytest -q tests/test_infrastructure.py -k document_ops --tb=short
+python3 -m pytest -q tests/e2e/test_main_flow.py -k document_ops --tb=short
+```
+
 ```bash
 python3 scripts/check_completion_readiness.py --print-env-template
 python3 scripts/check_completion_readiness.py --print-proof-plan
@@ -389,6 +398,7 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 - 다수 기능이 단독 구현/실험 단계이며, **본인 직접 기여 범위는 포트폴리오·면접 설명 시 별도 정리**가 필요합니다.
 - 공공조달(G2B) 연동은 외부 API 키·실데이터에 의존하므로, 키 없이는 해당 흐름이 동작하지 않습니다.
 - Live provider proof는 2026-07-13 OpenAI 1회만 통과했습니다. Gemini는 API quota, Claude는 account credits로 blocked이며 성공 fallback proof도 남아 있습니다.
+- DocumentOps 문서 비교는 제공된 두 입력의 exact UTF-8 byte와 line-level text difference만 관찰합니다. 의미·정책·법적 효력·운영 영향은 입력만으로 확정하지 않으며 사람이 재확인해야 합니다. 현재 증거는 mock/local backend와 local Chromium 범위이고 live provider, AWS runtime, 외부 publication 또는 approval 완료를 증명하지 않습니다.
 - H119 retention registry는 deterministic H118 receipt를 변경하지 않습니다. Current session-bound admin JWT만 exact H118 source를 immutable canonical record로 저장할 수 있고, Ops Key와 legacy sessionless admin은 접근할 수 없습니다. Wrapper record만 reviewer identity/persistence를 true로 하며 approval, execution, policy, deletion, scheduler, mass-revoke authority는 모두 false입니다.
 - 로그인 token pair는 persisted session ID에 결속되고 `/auth/logout`은 현재 session만 폐기합니다. 본인 profile에서 각 active session에 최대 40자의 직접 지정 기기 이름을 저장·삭제하고, 다른 로그인 하나, 현재 browser를 제외한 active snapshot, 또는 current를 포함한 snapshot 전체를 종료할 수 있습니다. 이름은 audit에 복사하지 않고 session state/inventory에도 User-Agent·IP 필드를 자동 결합하지 않습니다. Admin/Ops retention 화면은 한 번의 strict inspection에서 30/90/180/365일 aggregate를 비교하고 새로고침 외 mutation control을 두지 않습니다. Browser가 `auth-session-retention-comparison.v1`, `read_only=true`, `deletion_authorized=false`, `snapshot_atomic=false`, `requires_recheck_before_mutation=true`, 정책 순서·count·timestamp consistency를 검증하지 못하면 결과를 표시하지 않습니다. `auth-session-retention-review-handoff.v2`는 tenant에 결속되며, 검증한 handoff만 page memory에 보관해 `auth-session-retention-recheck-receipt.v1`으로 fresh aggregate를 재확인할 수 있습니다. `auth-session-retention-review-disposition-receipt.v1`은 그 verified recheck receipt에 `acknowledged_unchanged`, `new_handoff_required`, `review_deferred` 중 하나를 deterministic하게 연결하지만 reviewer identity, approval, execution, policy, deletion, scheduler, mass revoke authority를 만들지 않으며 server-side에 저장하지 않습니다. `unchanged`는 aggregate equivalence일 뿐 session set identity나 mutation safety를 의미하지 않으며, changed 결과도 새 handoff가 필요하다는 read-only 검증 결과입니다. 실제 delete, scheduler, retention policy apply는 이 흐름에 포함되지 않습니다. Prefix 전체는 bulk mutation 전에 검증하지만 일괄 종료는 여러 session object를 순서대로 CAS하는 non-atomic 작업입니다. 전체 종료는 current를 마지막에 쓰므로 다른 session write가 실패하면 현재 browser를 보존하지만 일부 다른 session은 이미 종료됐을 수 있습니다. Current revoke 응답을 잃은 경우에도 server session은 종료됐을 수 있으며 browser는 다음 request에서 재로그인이 필요합니다. 요청 시작 뒤 생긴 session은 다음 조회·종료 대상입니다. 같은 session을 복사한 다른 browser/device는 다음 protected request·refresh 또는 열린 SSE의 최대 15초 recheck에서 거부됩니다. Legacy sessionless token의 exact logout·목록·label·선택/일괄 종료, admin mass revoke, 만료 state 자동 GC, 즉시 cross-device push와 15초보다 짧은 termination SLA는 제공하지 않습니다.
 - 로컬 procurement decision package evidence 경로는 fixture 검증이며, 실제 입찰 제출·법적 승인·계약상 확약을 의미하지 않습니다.
@@ -433,4 +443,4 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 290 · 테스트 3,755 · env 키 95 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 290 · 테스트 3,766 · env 키 95 등)는 소스 코드에서 직접 카운트했으며, 테스트 수 재현은 `python3 scripts/count_readme_metrics.py --field test_functions`를 사용합니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

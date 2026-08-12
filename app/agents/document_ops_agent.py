@@ -139,6 +139,7 @@ class DocumentOpsAgent:
             evidence_status=draft.evidence_status,
             qa=qa,
             quality_warnings=quality_warnings,
+            comparison_context=request.comparison_context,
             trajectory=trajectory,
         )
 
@@ -155,6 +156,8 @@ class DocumentOpsAgent:
             "source_summaries": request.source_summaries,
             "source_references": request.source_references,
         }
+        if request.comparison_context is not None:
+            payload["comparison_context"] = request.comparison_context.model_dump()
         return (
             "DecisionDoc DocumentOps Agent\n"
             "Return only valid JSON matching this schema:\n"
@@ -171,6 +174,9 @@ class DocumentOpsAgent:
             "Write Korean content for plan, draft, and evidence_status values unless a source ID or product name must stay unchanged.\n"
             "For policy, public-sector, and operational planning tasks, explicitly cover 개인정보, 보안, 운영책임, 리스크, 로그/감사 where relevant.\n"
             "For develop_quality_improvement tasks, critique the current draft first, list concrete revision tasks, then return the improved draft without inventing missing evidence.\n"
+            "For document_comparison_review tasks, use only baseline_document_text and candidate_document_text as comparison evidence. "
+            "State observed changes, evidence and assumption delta, decision and trade-off impact, authority or governance boundary changes, a recommendation, and human recheck questions. "
+            "Do not invent a textual or semantic change that the two inputs do not support; keep any interpretation conditional.\n"
             "Do not include keys outside the schema unless unavoidable.\n\n"
             "Verified skill binding JSON:\n"
             f"{json.dumps(skill_binding.model_dump(), ensure_ascii=False, sort_keys=True, separators=(',', ':'))}\n"
@@ -208,6 +214,8 @@ class DocumentOpsAgent:
         *,
         reason: str = "agent_fallback:unknown",
     ) -> DocumentOpsDraftOutput:
+        if request.comparison_context is not None:
+            return self._comparison_fallback_draft(request, skill, reason=reason)
         title = str(request.requirements.get("title") or request.project_context.get("title") or "의사결정 문서")
         goal = str(request.requirements.get("goal") or request.requirements.get("objective") or "승인 가능한 실행 방향 수립")
         source_refs = [
@@ -249,6 +257,60 @@ class DocumentOpsAgent:
             qa={
                 "hard_gate_pass": False,
                 "warnings": warnings,
+                "fallback_used": True,
+                "skill": skill.name,
+            },
+        )
+
+    @staticmethod
+    def _comparison_fallback_draft(
+        request: DocumentOpsRequest,
+        skill: DocumentOpsSkill,
+        *,
+        reason: str,
+    ) -> DocumentOpsDraftOutput:
+        context = request.comparison_context
+        assert context is not None
+        equality = "동일" if context.documents_identical else "서로 다름"
+        observed = (
+            "두 입력의 exact UTF-8 SHA-256이 같아 텍스트 변경은 관찰되지 않았습니다."
+            if context.documents_identical
+            else "두 입력의 exact UTF-8 SHA-256이 달라 텍스트 변경이 관찰됐습니다. 의미 변화는 사람 재확인이 필요합니다."
+        )
+        draft = (
+            "# 문서 비교 검토 초안\n\n"
+            "## 관찰된 변경\n"
+            f"{observed}\n\n"
+            "## 근거와 가정 변화\n"
+            "근거는 제공된 두 입력의 exact byte hash에 한정됩니다. 문서 밖 사실, 의도, 효력은 가정하지 않습니다.\n\n"
+            "## 결정 및 트레이드오프 영향\n"
+            "입력만으로 결정 영향은 확정할 수 없으므로, 변경된 문구가 범위·비용·일정·책임에 미치는 영향은 조건부로 재검토합니다.\n\n"
+            "## 권한·거버넌스 경계\n"
+            "이 비교는 읽기 전용 검토 초안이며 승인, provider 권한, 외부 실행, dataset upload, training, publication 권한을 만들지 않습니다.\n\n"
+            "## 권고\n"
+            f"현재 비교 상태는 {equality}입니다. 비교 기준별 사람 검토 후에만 후속 결정을 갱신하세요.\n\n"
+            "## 사람 재확인 질문\n"
+            "- 관찰된 텍스트 차이가 의도한 정책·계약·운영 변경인가?\n"
+            "- 변경으로 인해 승인자, 책임자, 보안·감사 검토 범위가 달라지는가?"
+        )
+        return DocumentOpsDraftOutput(
+            plan=[
+                "두 입력의 exact byte hash와 비교 기준을 확인합니다.",
+                "관찰된 변경과 해석 가정을 분리합니다.",
+                "결정·거버넌스 영향과 사람 재확인 질문을 정리합니다.",
+            ],
+            critique=["Provider 응답을 구조화할 수 없어 raw content를 복사하지 않는 로컬 비교 초안을 사용했습니다."],
+            revision_tasks=["비교 기준별 검토 결과와 근거를 사람이 확인한 뒤 초안을 갱신합니다."],
+            draft=draft,
+            evidence_status=EvidenceStatus(
+                confirmed=["baseline/candidate exact UTF-8 hash comparison"],
+                assumptions=["텍스트 외 형식, 법적 효력, 운영 의도는 입력만으로 확정할 수 없음"],
+                gaps=["변경의 의미와 승인·운영 영향은 사람 재확인 필요"],
+                source_references=["baseline_document", "candidate_document"],
+            ),
+            qa={
+                "hard_gate_pass": False,
+                "warnings": [reason, "텍스트 외 의미와 영향은 사람 재확인 필요"],
                 "fallback_used": True,
                 "skill": skill.name,
             },
@@ -314,6 +376,11 @@ class DocumentOpsAgent:
                     "source_summaries": request.source_summaries,
                     "source_references": request.source_references,
                 }
+            ),
+            "comparison_context": (
+                request.comparison_context.model_dump()
+                if request.comparison_context is not None
+                else None
             ),
             "requirements_keys": sorted(request.requirements.keys()),
             "source_summary_count": len(request.source_summaries),

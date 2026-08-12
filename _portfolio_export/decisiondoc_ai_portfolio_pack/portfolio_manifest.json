@@ -15,13 +15,13 @@
     },
     {
       "path": "README.md",
-      "sha256": "30a499aef4c18a195aa4006457dc5f854b5c228fc49e19172095515526990aab",
-      "size_bytes": 86755
+      "sha256": "157982c777464d05410b7a40032b9a04b5e198d41dfd93bd1ca4df7f36af03cc",
+      "size_bytes": 88558
     },
     {
       "path": "docs/architecture.md",
-      "sha256": "57c3eda3471a29b041b3b22f756f5fd3697116fb261dd7bb147d9ea9c5b94ce3",
-      "size_bytes": 50086
+      "sha256": "ba9fcf411075ee0f1cef6b926b39efd24746b330a623a282278930c4378960f1",
+      "size_bytes": 51397
     },
     {
       "path": "docs/case-study.md",
@@ -40,8 +40,8 @@
     },
     {
       "path": "docs/development-plan.md",
-      "sha256": "de76f0599536247e3b5aabe2f324c9f35ffd260a273b40f21422b2ae04f37766",
-      "size_bytes": 54943
+      "sha256": "59c882cda2968feadbe434a424cba34cd0a213c20d4c401607eedfdeac38750c",
+      "size_bytes": 56227
     },
     {
       "path": "docs/evidence-checklist.md",
@@ -197,6 +197,11 @@
       "path": "docs/samples/procurement_decision_package_local_demo/sample_input.json",
       "sha256": "757beefbdbf7d8980e43fc01c36df2f464bc703d35401a8603537f6d6fd6e42c",
       "size_bytes": 2888
+    },
+    {
+      "path": "docs/specs/external_repo_integration/ANALYSIS_20260812.md",
+      "sha256": "f9b7d0da3997b102d559d50cdd1fe2549a96f04f05f477953734abb191781081",
+      "size_bytes": 6906
     },
     {
       "path": "docs/specs/report_quality_learning/PILOT_REVIEW_RUNBOOK.md",

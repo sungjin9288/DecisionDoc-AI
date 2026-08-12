@@ -35,6 +35,8 @@ def test_registry_loads_first_party_skills() -> None:
         "evidence-gap-checker",
         "decision-brief-builder",
         "develop-document-improver",
+        "source-grounded-document",
+        "document-comparison-review",
     } <= names
 
 
@@ -44,6 +46,38 @@ def test_registry_selects_skill_by_task_type() -> None:
     assert registry.select("evidence_gap_review").name == "evidence-gap-checker"
     assert registry.select("decision_brief").name == "decision-brief-builder"
     assert registry.select("develop_quality_improvement").name == "develop-document-improver"
+    assert registry.select("source_grounded_document").name == "source-grounded-document"
+    assert registry.select("document_comparison_review").name == "document-comparison-review"
+
+
+def test_document_ops_ui_stays_synced_with_every_first_party_skill_and_task_mapping() -> None:
+    """A registered first-party skill must be selectable and default-mapped in the UI."""
+    registry = SkillRegistry.from_directory()
+    content = Path("app/static/index.html").read_text(encoding="utf-8")
+    mapping_start = content.index("function documentOpsTaskSkill(taskType)")
+    mapping_end = content.index("\n  }\n\n  const DOCUMENT_OPS_SKILL_BINDING_KEYS", mapping_start)
+    mapping = content[mapping_start:mapping_end]
+
+    for skill in registry.list_skills():
+        assert f'<option value="{skill.name}">{skill.name}</option>' in content
+        for task_type in skill.task_types:
+            assert f'<option value="{task_type}"' in content
+            assert re.search(
+                rf"if \(taskType === '{re.escape(task_type)}'\) return '{re.escape(skill.name)}';",
+                mapping,
+            ), f"missing UI default mapping for {task_type} -> {skill.name}"
+
+
+def test_document_comparison_skill_is_first_party_data_only_and_single_task_bound() -> None:
+    registry = SkillRegistry.from_directory()
+    skill = registry.get("document-comparison-review")
+
+    assert skill.version == "0.1.0"
+    assert skill.task_types == ["document_comparison_review"]
+    assert skill.source_path.endswith("document-comparison-review.md")
+    assert "code-execution" in skill.body
+    assert "external-runtime" in skill.body
+    assert "raw document text out" in skill.body
 
 
 def test_registry_rejects_wrong_preferred_skill_for_task() -> None:

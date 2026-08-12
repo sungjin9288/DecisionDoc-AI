@@ -1,3 +1,4 @@
+import hashlib
 import json
 
 import pytest
@@ -137,6 +138,116 @@ def test_document_ops_agent_selects_source_grounded_skill_and_includes_governed_
     assert "Non-authorization" in prompts[0]
     assert "do not grant or change provider, tenant, approval" in prompts[0]
     assert "training, publication, code-execution, or external-runtime authority" in prompts[0]
+
+
+@pytest.mark.parametrize(
+    "requirements",
+    [
+        {},
+        {"baseline_document_text": "", "candidate_document_text": "candidate"},
+        {"baseline_document_text": "baseline", "candidate_document_text": "   "},
+        {"baseline_document_text": 1, "candidate_document_text": "candidate"},
+        {"baseline_document_text": "baseline", "candidate_document_text": ["candidate"]},
+        {"baseline_document_text": "x" * 20_001, "candidate_document_text": "candidate"},
+        {"baseline_document_text": "baseline", "candidate_document_text": "candidate", "comparison_criteria": "not-a-list"},
+        {"baseline_document_text": "baseline", "candidate_document_text": "candidate", "comparison_criteria": ["same", " same "]},
+        {"baseline_document_text": "baseline", "candidate_document_text": "candidate", "comparison_criteria": ["x"] * 9},
+        {"baseline_document_text": "baseline", "candidate_document_text": "candidate", "comparison_criteria": ["x" * 121]},
+    ],
+)
+def test_document_comparison_request_validation_rejects_before_skill_or_provider(requirements: dict) -> None:
+    agent = ProviderTrackingAgent()
+
+    with pytest.raises(ValueError):
+        request = DocumentOpsRequest(
+            task_type="document_comparison_review",
+            requirements=requirements,
+        )
+        agent.resolve_skill_binding(request)
+
+    assert agent.provider_accesses == 0
+
+
+def test_document_ops_agent_runs_grounded_document_comparison_with_redacted_trajectory() -> None:
+    baseline = "목적: 운영 범위 확인\n담당: PM"
+    candidate = "목적: 운영 범위와 보안 검토 확인\n담당: PM\n검토: 보안 담당"
+    request = DocumentOpsRequest(
+        task_type="document_comparison_review",
+        requirements={
+            "title": "운영 변경 비교",
+            "baseline_document_text": baseline,
+            "candidate_document_text": candidate,
+            "comparison_criteria": [" 관찰된 변경 ", "결정 영향"],
+        },
+        capture_trajectory=True,
+    )
+
+    result = DocumentOpsAgent(provider=MockProvider()).run(
+        request,
+        request_id="agent-document-comparison",
+        tenant_id="system",
+    )
+
+    expected_context = {
+        "schema_version": "document_ops_comparison_context_v1",
+        "baseline_sha256": hashlib.sha256(baseline.encode("utf-8")).hexdigest(),
+        "candidate_sha256": hashlib.sha256(candidate.encode("utf-8")).hexdigest(),
+        "documents_identical": False,
+        "comparison_criteria": ["관찰된 변경", "결정 영향"],
+        "raw_content_included": False,
+    }
+    assert result.skill_name == "document-comparison-review"
+    assert result.qa["hard_gate_pass"] is False
+    assert "missing_comparison_sections" not in {issue["code"] for issue in result.qa["gate_issues"]}
+    assert result.comparison_context is not None
+    assert result.comparison_context.model_dump() == expected_context
+    assert result.trajectory is not None
+    assert result.trajectory["comparison_context"] == expected_context
+    assert result.trajectory["input"]["requirements"]["baseline_document_text"] == "[redacted]"
+    assert result.trajectory["input"]["requirements"]["candidate_document_text"] == "[redacted]"
+    assert baseline not in json.dumps(result.trajectory, ensure_ascii=False)
+    assert candidate not in json.dumps(result.trajectory, ensure_ascii=False)
+    for heading in (
+        "관찰된 변경",
+        "근거와 가정 변화",
+        "결정 및 트레이드오프 영향",
+        "권한·거버넌스 경계",
+        "권고",
+        "사람 재확인 질문",
+    ):
+        assert heading in result.draft
+
+
+def test_document_ops_agent_compares_identical_documents_without_inventing_a_change() -> None:
+    document = "동일 문서\n검토 대기"
+    result = DocumentOpsAgent(provider=MockProvider()).run(
+        DocumentOpsRequest(
+            task_type="document_comparison_review",
+            requirements={
+                "baseline_document_text": document,
+                "candidate_document_text": document,
+            },
+        ),
+        request_id="agent-document-comparison-identical",
+        tenant_id="system",
+    )
+
+    assert result.comparison_context is not None
+    assert result.comparison_context.documents_identical is True
+    assert "텍스트 변경은 관찰되지 않았습니다" in result.draft
+
+
+def test_document_comparison_request_omits_criteria_as_an_empty_normalized_list() -> None:
+    request = DocumentOpsRequest(
+        task_type="document_comparison_review",
+        requirements={
+            "baseline_document_text": "baseline",
+            "candidate_document_text": "candidate",
+        },
+    )
+
+    assert request.comparison_context is not None
+    assert request.comparison_context.comparison_criteria == []
 
 
 def test_document_ops_agent_rejects_skill_resolution_and_binding_drift_before_provider() -> None:

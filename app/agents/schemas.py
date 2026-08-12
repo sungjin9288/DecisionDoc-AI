@@ -5,7 +5,13 @@ import hashlib
 import json
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
+
+
+_DOCUMENT_COMPARISON_TASK_TYPE = "document_comparison_review"
+_DOCUMENT_COMPARISON_MAX_TEXT_LENGTH = 20_000
+_DOCUMENT_COMPARISON_MAX_CRITERIA = 8
+_DOCUMENT_COMPARISON_MAX_CRITERION_LENGTH = 120
 
 
 class DocumentOpsSkill(BaseModel):
@@ -74,6 +80,50 @@ class DocumentOpsRequest(BaseModel):
     skill_name: str | None = None
     capture_trajectory: bool = False
 
+    _comparison_context: "DocumentOpsComparisonContext | None" = PrivateAttr(default=None)
+
+    @model_validator(mode="after")
+    def validate_document_comparison_inputs(self) -> "DocumentOpsRequest":
+        """Fail before skill resolution when a comparison request is malformed."""
+        if self.task_type != _DOCUMENT_COMPARISON_TASK_TYPE:
+            return self
+
+        baseline = _required_comparison_document(self.requirements, "baseline_document_text")
+        candidate = _required_comparison_document(self.requirements, "candidate_document_text")
+        criteria = _normalized_comparison_criteria(self.requirements.get("comparison_criteria"))
+        try:
+            baseline_bytes = baseline.encode("utf-8")
+            candidate_bytes = candidate.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise ValueError("comparison document text must be valid UTF-8.") from exc
+        self._comparison_context = DocumentOpsComparisonContext(
+            schema_version="document_ops_comparison_context_v1",
+            baseline_sha256=hashlib.sha256(baseline_bytes).hexdigest(),
+            candidate_sha256=hashlib.sha256(candidate_bytes).hexdigest(),
+            documents_identical=baseline_bytes == candidate_bytes,
+            comparison_criteria=criteria,
+            raw_content_included=False,
+        )
+        return self
+
+    @property
+    def comparison_context(self) -> "DocumentOpsComparisonContext | None":
+        """Return only the server-derived, raw-content-free comparison context."""
+        return self._comparison_context
+
+
+class DocumentOpsComparisonContext(BaseModel):
+    """Trusted public comparison metadata derived from exact UTF-8 input bytes."""
+
+    model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
+
+    schema_version: Literal["document_ops_comparison_context_v1"]
+    baseline_sha256: str = Field(..., pattern=r"^[0-9a-f]{64}$")
+    candidate_sha256: str = Field(..., pattern=r"^[0-9a-f]{64}$")
+    documents_identical: bool
+    comparison_criteria: list[str] = Field(default_factory=list, max_length=_DOCUMENT_COMPARISON_MAX_CRITERIA)
+    raw_content_included: Literal[False] = False
+
 
 class EvidenceStatus(BaseModel):
     """Evidence separation used by QA and future dataset labels."""
@@ -116,4 +166,52 @@ class DocumentOpsResult(BaseModel):
     evidence_status: EvidenceStatus = Field(default_factory=EvidenceStatus)
     qa: dict[str, Any] = Field(default_factory=dict)
     quality_warnings: list[str] = Field(default_factory=list)
+    comparison_context: DocumentOpsComparisonContext | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
     trajectory: dict[str, Any] | None = None
+
+
+def _required_comparison_document(requirements: dict[str, Any], field_name: str) -> str:
+    value = requirements.get(field_name)
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name} must be a non-blank string.")
+    if not value.strip():
+        raise ValueError(f"{field_name} must be a non-blank string.")
+    if len(value) > _DOCUMENT_COMPARISON_MAX_TEXT_LENGTH:
+        raise ValueError(
+            f"{field_name} must not exceed {_DOCUMENT_COMPARISON_MAX_TEXT_LENGTH} characters."
+        )
+    return value
+
+
+def _normalized_comparison_criteria(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError("comparison_criteria must be a list of strings.")
+    if len(value) > _DOCUMENT_COMPARISON_MAX_CRITERIA:
+        raise ValueError(
+            f"comparison_criteria must not contain more than {_DOCUMENT_COMPARISON_MAX_CRITERIA} items."
+        )
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        if not isinstance(item, str):
+            raise ValueError("comparison_criteria must contain only strings.")
+        criterion = item.strip()
+        if not criterion:
+            raise ValueError("comparison_criteria must not contain blank items.")
+        if len(criterion) > _DOCUMENT_COMPARISON_MAX_CRITERION_LENGTH:
+            raise ValueError(
+                "comparison_criteria items must not exceed "
+                f"{_DOCUMENT_COMPARISON_MAX_CRITERION_LENGTH} characters."
+            )
+        duplicate_key = criterion.casefold()
+        if duplicate_key in seen:
+            raise ValueError("comparison_criteria must not contain duplicate items.")
+        seen.add(duplicate_key)
+        normalized.append(criterion)
+    return normalized

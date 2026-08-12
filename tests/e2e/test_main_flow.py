@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import uuid
 from urllib import request as urllib_request
 
@@ -4623,6 +4624,7 @@ def test_document_ops_agent_renders_verified_provenance_and_rejects_invalid_bind
     page.on("pageerror", lambda error: page_errors.append(str(error)))
     page.locator('[data-page="document-ops-page"]').click()
     page.wait_for_timeout(250)
+    page.locator("#docops-task-type").select_option("decision_brief")
 
     result = page.evaluate(
         """async () => {
@@ -4781,9 +4783,257 @@ def test_document_ops_agent_renders_verified_provenance_and_rejects_invalid_bind
     assert console_errors == []
 
 
+def _assert_document_ops_comparison_mode_validates_and_renders_trusted_context(page, tmp_path):
+    console_errors: list[str] = []
+    page_errors: list[str] = []
+    page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
+    page.on("pageerror", lambda error: page_errors.append(str(error)))
+    page.locator('[data-page="document-ops-page"]').click()
+    page.wait_for_timeout(250)
+
+    task_type = page.locator("#docops-task-type")
+    task_type.select_option("source_grounded_document")
+    assert page.locator("#docops-comparison-inputs").is_hidden()
+    task_type.select_option("document_comparison_review")
+    assert page.locator("#docops-comparison-inputs").is_visible()
+    assert page.locator("#docops-baseline-document").get_attribute("required") is not None
+    assert page.locator("#docops-candidate-document").get_attribute("required") is not None
+
+    missing_input = page.evaluate(
+        """async () => {
+          const nativeFetch = window.fetch;
+          let runPosts = 0;
+          try {
+            window.fetch = (input, options) => {
+              if (String(input || '') === '/api/agent/document-ops/run') runPosts += 1;
+              return nativeFetch(input, options);
+            };
+            document.querySelector('#docops-title').value = 'Comparison client validation';
+            document.querySelector('#docops-baseline-document').value = '';
+            document.querySelector('#docops-candidate-document').value = 'candidate text';
+            document.querySelector('#docops-capture-trajectory').checked = true;
+            await runDocumentOpsAgent();
+            return {
+              runPosts,
+              marker: readDocumentOpsPendingRunMarker(),
+              notification: document.querySelector('#notification-container').textContent,
+            };
+          } finally {
+            window.fetch = nativeFetch;
+          }
+        }"""
+    )
+    assert missing_input["runPosts"] == 0
+    assert missing_input["marker"] is None
+    assert "Baseline document를 입력해주세요." in missing_input["notification"]
+
+    baseline = "BASELINE_RAW_ONLY: scope is review-only.\nOwner: team-a"
+    candidate = "CANDIDATE_RAW_ONLY: scope is review-only.\nOwner: team-b"
+    page.locator("#docops-title").fill("Trusted comparison")
+    page.locator("#docops-baseline-document").fill(baseline)
+    page.locator("#docops-candidate-document").fill(candidate)
+    page.locator("#docops-comparison-criteria").fill("")
+    page.locator("#docops-capture-trajectory").check()
+    page.locator('[data-docops-action="run-agent"]').click()
+    _wait_until_text_contains(page, "#document-ops-result", "비교 context", timeout_ms=10000)
+
+    result_text = page.locator("#document-ops-result").inner_text()
+    baseline_sha256 = hashlib.sha256(baseline.encode("utf-8")).hexdigest()
+    candidate_sha256 = hashlib.sha256(candidate.encode("utf-8")).hexdigest()
+    assert "document-comparison-review · 0.1.0" in result_text
+    assert baseline_sha256 in result_text
+    assert candidate_sha256 in result_text
+    assert "Equality\nfalse" in result_text
+    assert baseline not in result_text
+    assert candidate not in result_text
+    trajectory_id = re.search(r"trajectory_id=([^\s]+)", result_text)
+    assert trajectory_id is not None
+
+    trajectory = page.evaluate(
+        """async trajectoryId => {
+          const token = localStorage.getItem('dd_access_token');
+          const response = await fetch(`/api/agent/document-ops/trajectories/${trajectoryId}`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          });
+          if (!response.ok) throw new Error(`trajectory fetch failed: ${response.status}`);
+          return response.json();
+        }""",
+        trajectory_id.group(1),
+    )
+    serialized_trajectory = json.dumps(trajectory, ensure_ascii=False)
+    assert baseline not in serialized_trajectory
+    assert candidate not in serialized_trajectory
+    assert "[redacted]" in serialized_trajectory
+    assert trajectory["trajectory"]["comparison_context"] == {
+        "schema_version": "document_ops_comparison_context_v1",
+        "baseline_sha256": baseline_sha256,
+        "candidate_sha256": candidate_sha256,
+        "documents_identical": False,
+        "comparison_criteria": [],
+        "raw_content_included": False,
+    }
+
+    page.locator("#notification-container").evaluate("container => container.replaceChildren()")
+    page.set_viewport_size({"width": 1440, "height": 1000})
+    page.screenshot(path=str(tmp_path / "document-ops-comparison-desktop.png"), full_page=True)
+    page.locator("#notification-container").evaluate("container => container.replaceChildren()")
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.screenshot(path=str(tmp_path / "document-ops-comparison-mobile.png"), full_page=True)
+    assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth")
+
+    malformed_result = page.evaluate(
+        """async () => {
+          const nativeFetch = window.fetch;
+          const response = body => new Response(JSON.stringify(body), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+          const binding = {
+            schema_version: 'document_ops_skill_binding_v1',
+            skill_name: 'document-comparison-review',
+            skill_version: '0.1.0',
+            risk_level: 'medium',
+            content_sha256: 'a'.repeat(64),
+            catalog_fingerprint: 'b'.repeat(64),
+            code_execution_authorized: false,
+            external_runtime_authorized: false,
+          };
+          try {
+            window.fetch = (input, options) => {
+              if (String(input || '') === '/api/agent/document-ops/run') {
+                return Promise.resolve(response({
+                  skill_name: 'document-comparison-review',
+                  skill_version: '0.1.0',
+                  skill_binding: binding,
+                  task_type: 'document_comparison_review',
+                  provider_name: 'mock',
+                  plan: ['untrusted plan'],
+                  draft: 'untrusted raw context draft',
+                  qa: { hard_gate_pass: false, scores: {}, gate_issues: [] },
+                  evidence_status: { confirmed: [], assumptions: [], gaps: [], source_references: [] },
+                  quality_warnings: [],
+                  trajectory_saved: false,
+                  comparison_context: {
+                    schema_version: 'document_ops_comparison_context_v1',
+                    baseline_sha256: 'a'.repeat(64),
+                    candidate_sha256: 'b'.repeat(64),
+                    documents_identical: false,
+                    comparison_criteria: [],
+                    raw_content_included: true,
+                  },
+                }));
+              }
+              return nativeFetch(input, options);
+            };
+            document.querySelector('#docops-capture-trajectory').checked = false;
+            await runDocumentOpsAgent();
+            return {
+              result: document.querySelector('#document-ops-result').textContent,
+              notification: document.querySelector('#notification-container').textContent,
+            };
+          } finally {
+            window.fetch = nativeFetch;
+          }
+        }"""
+    )
+    assert "실행 provenance를 검증하지 못했습니다" in malformed_result["result"]
+    assert "untrusted raw context draft" not in malformed_result["result"]
+    assert "생성했습니다" not in malformed_result["notification"]
+
+    task_type_downgrade = page.evaluate(
+        """async () => {
+          const nativeFetch = window.fetch;
+          const runPayloads = [];
+          let trajectoryFetchCount = 0;
+          const response = body => new Response(JSON.stringify(body), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+          const binding = {
+            schema_version: 'document_ops_skill_binding_v1',
+            skill_name: 'policy-planning',
+            skill_version: '1.2.3',
+            risk_level: 'low',
+            content_sha256: 'a'.repeat(64),
+            catalog_fingerprint: 'b'.repeat(64),
+            code_execution_authorized: false,
+            external_runtime_authorized: false,
+          };
+          try {
+            window.fetch = (input, options = {}) => {
+              const url = String(input || '');
+              if (url === '/api/agent/document-ops/run') {
+                const payload = JSON.parse(String(options.body || '{}'));
+                runPayloads.push(payload);
+                return Promise.resolve(response({
+                  skill_name: 'policy-planning',
+                  skill_version: '1.2.3',
+                  skill_binding: binding,
+                  task_type: 'policy_planning_brief',
+                  provider_name: 'mock',
+                  plan: ['untrusted policy plan'],
+                  draft: 'untrusted policy-planning draft',
+                  qa: { hard_gate_pass: true, scores: {}, gate_issues: [] },
+                  evidence_status: { confirmed: [], assumptions: [], gaps: [], source_references: [] },
+                  quality_warnings: [],
+                  trajectory_id: 'untrusted-policy-trajectory',
+                  trajectory_saved: true,
+                  operation_id: payload.operation_id,
+                  operation_replayed: false,
+                }));
+              }
+              if (url === '/api/agent/document-ops/trajectories/stats') {
+                trajectoryFetchCount += 1;
+                return Promise.resolve(response({
+                  total_records: 0,
+                  accepted_records: 0,
+                  pending_records: 0,
+                  export_count: 0,
+                }));
+              }
+              if (url.startsWith('/api/agent/document-ops/trajectories?')) {
+                trajectoryFetchCount += 1;
+                return Promise.resolve(response({
+                  trajectories: [], total: 0, offset: 0, returned: 0,
+                  has_more: false, order: 'newest',
+                }));
+              }
+              return nativeFetch(input, options);
+            };
+            document.querySelector('#notification-container').replaceChildren();
+            document.querySelector('#docops-capture-trajectory').checked = true;
+            await runDocumentOpsAgent();
+            const marker = readDocumentOpsPendingRunMarker();
+            return {
+              runPayload: runPayloads[0],
+              marker,
+              result: document.querySelector('#document-ops-result').textContent,
+              notification: document.querySelector('#notification-container').textContent,
+              trajectoryFetchCount,
+            };
+          } finally {
+            window.fetch = nativeFetch;
+            const marker = readDocumentOpsPendingRunMarker();
+            if (marker) clearDocumentOpsPendingRunMarker(marker.operation_id);
+          }
+        }"""
+    )
+    assert task_type_downgrade["runPayload"]["task_type"] == "document_comparison_review"
+    assert task_type_downgrade["marker"]["operation_id"] == task_type_downgrade["runPayload"]["operation_id"]
+    assert "실행 provenance를 검증하지 못했습니다" in task_type_downgrade["result"]
+    assert "untrusted policy-planning draft" not in task_type_downgrade["result"]
+    assert "untrusted policy plan" not in task_type_downgrade["result"]
+    assert "생성했습니다" not in task_type_downgrade["notification"]
+    assert "저장했습니다" not in task_type_downgrade["notification"]
+    assert task_type_downgrade["trajectoryFetchCount"] == 0
+    assert page_errors == []
+    assert console_errors == []
+
+
 def test_document_ops_agent_recovers_a_lost_success_with_the_same_operation_identity(page):
     page.locator('[data-page="document-ops-page"]').click()
     page.wait_for_timeout(250)
+    page.locator("#docops-task-type").select_option("decision_brief")
 
     result = page.evaluate(
         """async () => {
@@ -4918,6 +5168,7 @@ def test_document_ops_agent_recovers_a_lost_success_with_the_same_operation_iden
 def test_document_ops_agent_rechecks_pending_operation_before_exact_replay(page):
     page.locator('[data-page="document-ops-page"]').click()
     page.wait_for_timeout(250)
+    page.locator("#docops-task-type").select_option("decision_brief")
 
     result = page.evaluate(
         """async () => {
@@ -7303,6 +7554,11 @@ def test_document_ops_trajectory_detail_records_explicit_human_review(page, tmp_
     unexpected_console_errors = [message for message in console_errors if message not in expected_conflicts]
     assert len(expected_conflicts) == 1
     assert unexpected_console_errors == []
+
+
+def test_document_ops_comparison_mode_validates_and_renders_trusted_context(page, tmp_path):
+    """Run after shared trajectory pagination tests because it persists one redacted record."""
+    _assert_document_ops_comparison_mode_validates_and_renders_trusted_context(page, tmp_path)
 
 
 # ── 생성 플로우 ───────────────────────────────────────────────────────────────

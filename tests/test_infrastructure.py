@@ -1050,11 +1050,56 @@ def test_index_html_document_ops_agent_validates_exact_public_skill_binding():
     assert "['low', 'medium', 'high']" in validator
     assert "value.code_execution_authorized !== false" in validator
     assert "value.external_runtime_authorized !== false" in validator
+    assert "function documentOpsExecutionProvenance(data, payload)" in provenance
+    assert "data.task_type !== payload.task_type" in provenance
     assert "data.skill_name !== binding.skillName" in provenance
     assert "data.skill_version !== binding.skillVersion" in provenance
     assert "data.operation_replayed !== undefined" in provenance
     assert "typeof data.operation_replayed !== 'boolean'" in provenance
     assert "replayState: data.operation_replayed === true ? 'exact replay' : 'first run'" in provenance
+
+
+def test_index_html_document_ops_comparison_mode_is_discoverable_and_strict():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    run_start = content.index("async function runDocumentOpsAgent()")
+    run_end = content.index("function renderDocumentOpsExecutionProvenance", run_start)
+    run_block = content[run_start:run_end]
+    comparison_validator_start = content.index("function documentOpsValidatedComparisonContext(value)")
+    comparison_validator_end = content.index("function documentOpsExecutionProvenance", comparison_validator_start)
+    comparison_validator = content[comparison_validator_start:comparison_validator_end]
+
+    for marker in (
+        'value="source_grounded_document"',
+        'value="source-grounded-document"',
+        'value="document_comparison_review"',
+        'value="document-comparison-review"',
+        'id="docops-comparison-inputs"',
+        'id="docops-baseline-document"',
+        'id="docops-candidate-document"',
+        'id="docops-comparison-criteria"',
+        "function syncDocumentOpsComparisonControls()",
+        "documentOpsComparisonContextMatchesInput(payload, provenance)",
+        "function renderDocumentOpsComparisonContext(context)",
+    ):
+        assert marker in content
+
+    assert "documentOpsTaskSkill(taskType)" in content
+    assert "return 'document-comparison-review';" in content
+    assert "document_ops_comparison_context_v1" in comparison_validator
+    assert "DOCUMENT_OPS_COMPARISON_CONTEXT_KEYS" in comparison_validator
+    assert "value.raw_content_included !== false" in comparison_validator
+    assert "documentOpsComparisonCriteriaAreNormalized(value.comparison_criteria)" in comparison_validator
+    assert "comparisonRequest = payload.task_type === 'document_comparison_review'" in content
+    assert "binding.skillName !== 'document-comparison-review'" in content
+    assert "!comparisonRequest && data.comparison_context != null" in content
+    assert "new TextEncoder().encode(value)" in content
+    assert "!await documentOpsComparisonContextMatchesInput(payload, provenance)" in run_block
+    assert run_block.index("if (comparisonMode && !baselineDocumentText.trim())") < run_block.index(
+        "claimDocumentOpsPendingRunMarker"
+    )
+    assert run_block.index("if (comparisonMode && !candidateDocumentText.trim())") < run_block.index(
+        "claimDocumentOpsPendingRunMarker"
+    )
 
 
 def test_index_html_document_ops_agent_rejects_before_success_effects():
@@ -1066,8 +1111,11 @@ def test_index_html_document_ops_agent_rejects_before_success_effects():
     recovery_end = content.index("async function recoverDocumentOpsAgentRun()", recovery_start)
     recovery_block = content[recovery_start:recovery_end]
 
-    run_validation = run_block.index("const provenance = documentOpsExecutionProvenance(data);")
+    run_validation = run_block.index(
+        "const provenance = documentOpsExecutionProvenance(data, payload);"
+    )
     post_validation = run_block[run_validation:]
+    assert "!await documentOpsComparisonContextMatchesInput(payload, provenance)" in post_validation
     assert post_validation.index("if (!runIsCurrent()) {") < post_validation.index(
         "if (payload.operation_id) clearDocumentOpsPendingRunMarker"
     )
@@ -1077,8 +1125,9 @@ def test_index_html_document_ops_agent_rejects_before_success_effects():
     assert "renderDocumentOpsProvenanceVerificationError(resultEl);" in post_validation
 
     recovery_validation = recovery_block.index(
-        "const provenance = documentOpsExecutionProvenance(data);"
+        "const provenance = documentOpsExecutionProvenance(data, pending.payload);"
     )
+    assert "!await documentOpsComparisonContextMatchesInput(pending.payload, provenance)" in recovery_block
     assert recovery_validation < recovery_block.index("if (data.operation_id !== operationId")
     assert recovery_validation < recovery_block.index(
         "await presentDocumentOpsAgentResult(data, provenance);"

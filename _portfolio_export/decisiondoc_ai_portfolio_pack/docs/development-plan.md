@@ -37,9 +37,14 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
 
 같은 날짜 browser binding boundary의 static focused command는 `4 passed`, local Chromium focused command는 `9 passed`였다. Static check는 exact eight-field binding validator, top-level skill/version agreement, invalid response의 pre-success 차단과 allowlisted provenance renderer를 검사한다. Chromium check는 valid first run과 exact replay, malformed·authority-widened·mismatched response rejection, 기존 Agent recovery 흐름을 검증했고 desktop과 390px mobile screenshot에서 provenance overlap과 horizontal overflow가 없음을 확인했다. Browser console과 page error도 비어 있었다. 이 결과는 local loopback과 mock response 범위이며 live provider나 배포 runtime 증거를 대체하지 않는다.
 
+DocumentOps comparison review는 source-grounded task와 함께 UI에서 선택할 수 있는 first-party skill이다. 비교 입력은 provider·captured-operation claim 전에 검증하고, `comparison_criteria`는 생략 시 `[]`이며 최대 8개·각 120자다. Local mock/backend와 loopback Chromium 측정은 exact UTF-8 hash context, raw-input trajectory redaction, exact replay, malformed context pre-success rejection과 390px overflow를 대상으로 하며 semantic change·policy/legal/operational effect는 사람 재확인 대상으로 남긴다. GitHub-derived skill-pattern reference는 [external repository analysis](./specs/external_repo_integration/ANALYSIS_20260812.md)의 clean-room design 기록만 사용하며 remote skill loading, dynamic install, provider/training/deploy/publication authority를 추가하지 않는다. Live provider, AWS runtime, external completion proof는 M1/M6의 기존 갭으로 변함없다.
+
 ```bash
 python3 -m pytest -q tests/test_infrastructure.py -k document_ops_agent --tb=short
 python3 -m pytest -q tests/e2e/test_main_flow.py -k document_ops_agent --tb=short
+python3 -m pytest -q tests/agents/test_skill_registry.py tests/agents/test_document_ops_agent.py tests/evals/test_document_ops_gates.py tests/test_document_ops_agent_api.py --tb=short
+python3 -m pytest -q tests/test_infrastructure.py -k document_ops --tb=short
+python3 -m pytest -q tests/e2e/test_main_flow.py -k document_ops --tb=short
 ```
 
 ### H120 local slice
