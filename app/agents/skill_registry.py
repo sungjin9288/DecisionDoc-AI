@@ -9,7 +9,7 @@ from typing import Any, Iterable
 
 import yaml
 
-from app.agents.schemas import DocumentOpsSkill
+from app.agents.schemas import DocumentOpsSkill, DocumentOpsSkillBinding
 
 
 class SkillNotFoundError(KeyError):
@@ -83,6 +83,26 @@ class SkillRegistry:
             if task_type in skill.task_types:
                 return skill
         raise SkillNotFoundError(f"no skill registered for task_type={task_type}")
+
+    def resolve_binding(
+        self,
+        task_type: str,
+        *,
+        preferred_name: str | None = None,
+    ) -> tuple[DocumentOpsSkill, DocumentOpsSkillBinding]:
+        """Resolve a skill and bind it to the exact current public catalog."""
+        skill = self.select(task_type, preferred_name=preferred_name)
+        catalog = self.catalog()
+        return skill, DocumentOpsSkillBinding(
+            schema_version="document_ops_skill_binding_v1",
+            skill_name=skill.name,
+            skill_version=skill.version,
+            risk_level=skill.risk_level,
+            content_sha256=skill.content_sha256,
+            catalog_fingerprint=catalog["catalog_fingerprint"],
+            code_execution_authorized=False,
+            external_runtime_authorized=False,
+        )
 
     def catalog(self) -> dict[str, Any]:
         """Return a deterministic public catalog with no executable content."""

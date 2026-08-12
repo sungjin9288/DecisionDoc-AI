@@ -1,7 +1,9 @@
 """Schemas for DecisionDoc-native DocumentOps agents."""
 from __future__ import annotations
 
-from typing import Any
+import hashlib
+import json
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -20,6 +22,43 @@ class DocumentOpsSkill(BaseModel):
     content_sha256: str = Field(..., pattern=r"^[0-9a-f]{64}$")
     body: str = Field(..., min_length=1)
     source_path: str = Field(..., min_length=1)
+
+
+class DocumentOpsSkillBinding(BaseModel):
+    """Public, immutable provenance for one resolved first-party skill."""
+
+    model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
+
+    schema_version: Literal["document_ops_skill_binding_v1"]
+    skill_name: str = Field(
+        ...,
+        pattern=r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+    )
+    skill_version: str = Field(
+        ...,
+        pattern=(
+            r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
+            r"(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
+            r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
+        ),
+    )
+    risk_level: Literal["low", "medium", "high"]
+    content_sha256: str = Field(..., pattern=r"^[0-9a-f]{64}$")
+    catalog_fingerprint: str = Field(..., pattern=r"^[0-9a-f]{64}$")
+    code_execution_authorized: Literal[False] = False
+    external_runtime_authorized: Literal[False] = False
+
+
+def document_ops_skill_binding_sha256(binding: DocumentOpsSkillBinding) -> str:
+    """Hash the exact public binding without instructions or local paths."""
+    canonical = json.dumps(
+        binding.model_dump(),
+        ensure_ascii=False,
+        sort_keys=True,
+        allow_nan=False,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 class DocumentOpsRequest(BaseModel):
@@ -68,6 +107,7 @@ class DocumentOpsResult(BaseModel):
     task_type: str = Field(..., min_length=1)
     skill_name: str = Field(..., min_length=1)
     skill_version: str = Field(..., min_length=1)
+    skill_binding: DocumentOpsSkillBinding
     provider_name: str = Field(..., min_length=1)
     plan: list[str] = Field(default_factory=list)
     critique: list[str] = Field(default_factory=list)

@@ -2,7 +2,9 @@ from pathlib import Path
 import re
 
 import pytest
+from pydantic import ValidationError
 
+from app.agents.schemas import DocumentOpsSkillBinding
 from app.agents.skill_registry import SkillNotFoundError, SkillRegistry
 
 
@@ -137,3 +139,30 @@ def test_catalog_is_sorted_hashed_and_does_not_expose_instructions_or_authority(
     serialized = str(catalog)
     for forbidden in ("body", "source_path", "provider", "approval", "persistence", "external_code"):
         assert forbidden not in serialized
+
+
+def test_registry_resolves_strict_public_binding_without_instructions_or_path() -> None:
+    registry = SkillRegistry.from_directory()
+
+    skill, binding = registry.resolve_binding("decision_brief")
+    payload = binding.model_dump()
+
+    assert payload == {
+        "schema_version": "document_ops_skill_binding_v1",
+        "skill_name": skill.name,
+        "skill_version": skill.version,
+        "risk_level": skill.risk_level,
+        "content_sha256": skill.content_sha256,
+        "catalog_fingerprint": registry.catalog()["catalog_fingerprint"],
+        "code_execution_authorized": False,
+        "external_runtime_authorized": False,
+    }
+    assert "body" not in payload
+    assert "source_path" not in payload
+
+    with pytest.raises(ValidationError):
+        DocumentOpsSkillBinding.model_validate(
+            {**payload, "code_execution_authorized": True}
+        )
+    with pytest.raises(ValidationError):
+        DocumentOpsSkillBinding.model_validate({**payload, "body": "hidden"})

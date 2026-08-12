@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 
 from fastapi.testclient import TestClient
@@ -108,6 +109,12 @@ def test_document_ops_run_can_capture_and_list_trajectory(tmp_path, monkeypatch)
     assert response.status_code == 200
     body = response.json()
     assert body["skill_name"] == "policy-planning"
+    assert body["skill_version"] == body["skill_binding"]["skill_version"]
+    assert body["skill_name"] == body["skill_binding"]["skill_name"]
+    assert body["skill_binding"]["code_execution_authorized"] is False
+    assert body["skill_binding"]["external_runtime_authorized"] is False
+    assert "body" not in body["skill_binding"]
+    assert "source_path" not in body["skill_binding"]
     assert body["trajectory_saved"] is True
     assert body["trajectory_id"].startswith("trj_")
     assert body["qa"]["hard_gate_pass"] is True
@@ -119,6 +126,7 @@ def test_document_ops_run_can_capture_and_list_trajectory(tmp_path, monkeypatch)
     trajectories = listed_body["trajectories"]
     assert len(trajectories) == 1
     assert trajectories[0]["trajectory_id"] == body["trajectory_id"]
+    assert trajectories[0]["skill_binding"] == body["skill_binding"]
     assert trajectories[0]["input"]["requirements"]["raw_attachment"] == "[redacted]"
 
     summary = client.get(
@@ -131,6 +139,7 @@ def test_document_ops_run_can_capture_and_list_trajectory(tmp_path, monkeypatch)
     assert summary_body["include_detail"] is False
     summary_item = summary_body["trajectories"][0]
     assert summary_item["trajectory_id"] == body["trajectory_id"]
+    assert summary_item["skill_binding"] == body["skill_binding"]
     assert summary_item["title"] == "보행자 안전 정책 기획 사업"
     assert summary_item["draft_preview"]
     assert summary_item["human_feedback"] == {"accepted": False}
@@ -219,6 +228,7 @@ def test_document_ops_run_operation_replays_without_provider_or_usage_duplicatio
     assert replay.json()["operation_id"] == payload["operation_id"]
     assert first.json()["operation_replayed"] is False
     assert replay.json()["operation_replayed"] is True
+    assert first.json()["skill_binding"] == replay.json()["skill_binding"]
     assert {
         key: value
         for key, value in first.json().items()
@@ -240,6 +250,69 @@ def test_document_ops_run_operation_replays_without_provider_or_usage_duplicatio
         "/api/agent/document-ops/trajectories/stats",
         headers=_api_headers(),
     ).json()["total_records"] == 1
+
+    from app.storage.audit_store import AuditStore
+
+    run_audits = AuditStore("system").query(
+        filters={"action": "document_ops.agent_run"},
+    )
+    successful_run_audits = [
+        entry for entry in run_audits if entry["result"] == "success"
+    ]
+    assert len(successful_run_audits) == 2
+    binding_sha256 = hashlib.sha256(
+        json.dumps(
+            first.json()["skill_binding"],
+            ensure_ascii=False,
+            sort_keys=True,
+            allow_nan=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    assert {
+        entry["detail"]["operation_replayed"] for entry in successful_run_audits
+    } == {False, True}
+    for entry in successful_run_audits:
+        assert entry["resource_type"] == "document_ops_agent_run"
+        assert entry["resource_id"] == binding_sha256
+        assert {
+            key: entry["detail"][key]
+            for key in (
+                "task_type",
+                "skill_binding_sha256",
+                "operation_replayed",
+                "code_execution_authorized",
+                "external_runtime_authorized",
+            )
+        } == {
+            "task_type": "decision_brief",
+            "skill_binding_sha256": binding_sha256,
+            "operation_replayed": entry["detail"]["operation_replayed"],
+            "code_execution_authorized": False,
+            "external_runtime_authorized": False,
+        }
+        assert set(entry["detail"]) == {
+            "method",
+            "path",
+            "status_code",
+            "duration_ms",
+            "task_type",
+            "skill_binding_sha256",
+            "operation_replayed",
+            "code_execution_authorized",
+            "external_runtime_authorized",
+        }
+        serialized_audit = json.dumps(entry, ensure_ascii=False)
+        for forbidden in (
+            "Agent retry identity",
+            "skill instructions",
+            "source_path",
+            "request_sha256",
+            "provider_name",
+            "draft",
+            "credential",
+        ):
+            assert forbidden not in serialized_audit
 
     status_path = f"/api/agent/document-ops/run-operations/{payload['operation_id']}"
     unauthorized = client.get(status_path)
@@ -265,8 +338,6 @@ def test_document_ops_run_operation_replays_without_provider_or_usage_duplicatio
     }
     assert missing.status_code == 404
 
-    from app.storage.audit_store import AuditStore
-
     status_audits = AuditStore("system").query(
         filters={"action": "document_ops.agent_run_operation_view"},
     )
@@ -285,6 +356,92 @@ def test_document_ops_run_operation_replays_without_provider_or_usage_duplicatio
         "result",
         "result_sha256",
     } & success_audit["detail"].keys()
+
+
+def test_document_ops_run_operation_conflicts_on_skill_or_catalog_drift_before_provider(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    client = _create_client(tmp_path, monkeypatch)
+    agent = client.app.state.document_ops_service._agent
+    provider = agent.provider
+    original_generate_raw = provider.generate_raw
+    calls = 0
+
+    def counted_generate_raw(prompt: str, *, request_id: str, max_output_tokens=None) -> str:
+        nonlocal calls
+        calls += 1
+        return original_generate_raw(
+            prompt,
+            request_id=request_id,
+            max_output_tokens=max_output_tokens,
+        )
+
+    provider.generate_raw = counted_generate_raw
+    agent._provider = provider
+    base_payload = {
+        "task_type": "decision_brief",
+        "requirements": {"title": "Binding drift gate"},
+        "capture_trajectory": True,
+    }
+
+    selected_payload = {
+        **base_payload,
+        "skill_name": "decision-brief-builder",
+        "operation_id": "agent-run:selected-skill-drift",
+    }
+    assert client.post(
+        "/api/agent/document-ops/run",
+        headers=_api_headers(),
+        json=selected_payload,
+    ).status_code == 200
+    selected_skill = agent._skill_registry.get("decision-brief-builder")
+    selected_skill.version = "0.1.1"
+    selected_conflict = client.post(
+        "/api/agent/document-ops/run",
+        headers=_api_headers(),
+        json=selected_payload,
+    )
+    assert selected_conflict.status_code == 409
+
+    selected_skill.version = "0.1.0"
+    catalog_payload = {
+        **base_payload,
+        "operation_id": "agent-run:catalog-drift",
+    }
+    assert client.post(
+        "/api/agent/document-ops/run",
+        headers=_api_headers(),
+        json=catalog_payload,
+    ).status_code == 200
+    agent._skill_registry.get("policy-planning").version = "0.1.1"
+    catalog_conflict = client.post(
+        "/api/agent/document-ops/run",
+        headers=_api_headers(),
+        json=catalog_payload,
+    )
+    assert catalog_conflict.status_code == 409
+
+    agent._skill_registry.get("policy-planning").version = "0.1.0"
+    original_resolve_skill_binding = agent.resolve_skill_binding
+
+    def resolve_then_drift(request):
+        binding = original_resolve_skill_binding(request)
+        agent._skill_registry.get("decision-brief-builder").version = "0.1.2"
+        return binding
+
+    agent.resolve_skill_binding = resolve_then_drift
+    pre_provider_drift = client.post(
+        "/api/agent/document-ops/run",
+        headers=_api_headers(),
+        json={
+            **base_payload,
+            "operation_id": "agent-run:pre-provider-drift",
+        },
+    )
+    assert pre_provider_drift.status_code == 400
+    assert "skill binding changed" in pre_provider_drift.json()["detail"]
+    assert calls == 2
 
 
 def test_document_ops_run_operation_requires_trajectory_capture(

@@ -2,8 +2,12 @@ import json
 
 import pytest
 
-from app.agents.document_ops_agent import DocumentOpsAgent
+from app.agents.document_ops_agent import (
+    DocumentOpsAgent,
+    SkillBindingMismatchError,
+)
 from app.agents.schemas import DocumentOpsRequest
+from app.agents.skill_registry import SkillNotFoundError
 from app.providers.base import Provider, ProviderError
 from app.providers.mock_provider import MockProvider
 from app.storage.trajectory_store import TrajectoryStore
@@ -47,6 +51,17 @@ class NamedRawProvider(RawTextProvider):
         self.name = name
 
 
+class ProviderTrackingAgent(DocumentOpsAgent):
+    def __init__(self) -> None:
+        super().__init__()
+        self.provider_accesses = 0
+
+    @property
+    def provider(self) -> Provider:
+        self.provider_accesses += 1
+        return FailingProvider()
+
+
 def test_document_ops_agent_runs_policy_planning_with_mock_provider() -> None:
     agent = DocumentOpsAgent(provider=MockProvider())
     result = agent.run(
@@ -65,11 +80,16 @@ def test_document_ops_agent_runs_policy_planning_with_mock_provider() -> None:
 
     assert result.provider_name == "mock"
     assert result.skill_name == "policy-planning"
+    assert result.skill_version == result.skill_binding.skill_version
+    assert result.skill_name == result.skill_binding.skill_name
+    assert result.skill_binding.code_execution_authorized is False
+    assert result.skill_binding.external_runtime_authorized is False
     assert result.plan
     assert "보행자 안전 정책 기획 사업" in result.draft
     assert result.qa["hard_gate_pass"] is True
     assert result.trajectory is not None
     assert result.trajectory["skill"]["name"] == "policy-planning"
+    assert result.trajectory["skill_binding"] == result.skill_binding.model_dump()
 
 
 def test_document_ops_agent_selects_source_grounded_skill_and_includes_governed_instructions() -> None:
@@ -105,10 +125,59 @@ def test_document_ops_agent_selects_source_grounded_skill_and_includes_governed_
     )
 
     assert result.skill_name == "source-grounded-document"
-    assert prompts and "Skill name: source-grounded-document" in prompts[0]
+    binding_json = json.dumps(
+        result.skill_binding.model_dump(),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    assert prompts and prompts[0].count(binding_json) == 1
     assert "decision intent" in prompts[0]
     assert "source reference" in prompts[0]
     assert "Non-authorization" in prompts[0]
+    assert "do not grant or change provider, tenant, approval" in prompts[0]
+    assert "training, publication, code-execution, or external-runtime authority" in prompts[0]
+
+
+def test_document_ops_agent_rejects_skill_resolution_and_binding_drift_before_provider() -> None:
+    unknown_agent = ProviderTrackingAgent()
+    with pytest.raises(SkillNotFoundError, match="unknown skill"):
+        unknown_agent.run(
+            DocumentOpsRequest(
+                task_type="decision_brief",
+                skill_name="unknown-skill",
+            ),
+            request_id="agent-unknown-skill",
+            tenant_id="system",
+        )
+    assert unknown_agent.provider_accesses == 0
+
+    unsupported_agent = ProviderTrackingAgent()
+    with pytest.raises(SkillNotFoundError, match="does not support"):
+        unsupported_agent.run(
+            DocumentOpsRequest(
+                task_type="decision_brief",
+                skill_name="policy-planning",
+            ),
+            request_id="agent-unsupported-skill",
+            tenant_id="system",
+        )
+    assert unsupported_agent.provider_accesses == 0
+
+    drift_agent = ProviderTrackingAgent()
+    request = DocumentOpsRequest(task_type="decision_brief")
+    binding = drift_agent.resolve_skill_binding(request)
+    drifted_binding = binding.model_copy(
+        update={"catalog_fingerprint": "0" * 64}
+    )
+    with pytest.raises(SkillBindingMismatchError, match="binding changed"):
+        drift_agent.run(
+            request,
+            request_id="agent-binding-drift",
+            tenant_id="system",
+            expected_skill_binding=drifted_binding,
+        )
+    assert drift_agent.provider_accesses == 0
 
 
 def test_document_ops_agent_records_provider_attempt_before_propagating_failure() -> None:

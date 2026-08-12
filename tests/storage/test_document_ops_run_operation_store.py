@@ -40,6 +40,20 @@ def _request_payload(title: str = "중복 실행 차단") -> dict:
         "source_references": [],
         "skill_name": None,
         "capture_trajectory": True,
+        "skill_binding": _skill_binding(),
+    }
+
+
+def _skill_binding() -> dict:
+    return {
+        "schema_version": "document_ops_skill_binding_v1",
+        "skill_name": "decision-brief",
+        "skill_version": "0.1.0",
+        "risk_level": "medium",
+        "content_sha256": "a" * 64,
+        "catalog_fingerprint": "b" * 64,
+        "code_execution_authorized": False,
+        "external_runtime_authorized": False,
     }
 
 
@@ -48,6 +62,7 @@ def _result() -> dict:
         "task_type": "decision_brief",
         "skill_name": "decision-brief",
         "skill_version": "0.1.0",
+        "skill_binding": _skill_binding(),
         "provider_name": "mock",
         "plan": ["요구사항을 확인합니다."],
         "critique": [],
@@ -141,6 +156,18 @@ def test_agent_run_operation_rejects_changed_payload_and_failed_retry(
             tenant_id="alpha",
             operation_id="agent-run:bound",
             request_payload=_request_payload("다른 요청"),
+        )
+
+    catalog_drift = _request_payload()
+    catalog_drift["skill_binding"] = {
+        **catalog_drift["skill_binding"],
+        "catalog_fingerprint": "c" * 64,
+    }
+    with pytest.raises(DocumentOpsRunOperationConflictError):
+        store.claim(
+            tenant_id="alpha",
+            operation_id="agent-run:bound",
+            request_payload=catalog_drift,
         )
 
     store.fail(claim)

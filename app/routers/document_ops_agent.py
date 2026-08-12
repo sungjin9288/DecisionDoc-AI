@@ -10,6 +10,10 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 
+from app.agents.schemas import (
+    DocumentOpsSkillBinding,
+    document_ops_skill_binding_sha256,
+)
 from app.auth.api_key import require_api_key
 from app.auth.ops_key import require_ops_key
 from app.dependencies import get_tenant_id, get_username
@@ -54,14 +58,32 @@ def _human_feedback(trajectory: dict) -> dict:
     return feedback if isinstance(feedback, dict) else {}
 
 
+def _record_agent_skill_binding(
+    request: Request,
+    binding: DocumentOpsSkillBinding,
+) -> None:
+    request.state.document_ops_agent_skill_binding_sha256 = (
+        document_ops_skill_binding_sha256(binding)
+    )
+
+
 @router.post("/run", dependencies=[Depends(require_not_maintenance), Depends(require_api_key)])
 def run_document_ops_agent(payload: DocumentOpsAgentRunRequest, request: Request) -> dict:
+    request.state.audit_action = "document_ops.agent_run"
+    request.state.document_ops_agent_task_type = payload.task_type
+    request.state.document_ops_agent_operation_replayed = False
+    request.state.document_ops_agent_code_execution_authorized = False
+    request.state.document_ops_agent_external_runtime_authorized = False
     tenant_id = get_tenant_id(request)
     try:
-        return _service(request).run(
+        result = _service(request).run(
             payload.model_dump(),
             tenant_id=tenant_id,
             request_id=request.state.request_id,
+            record_skill_binding=lambda binding: _record_agent_skill_binding(
+                request,
+                binding,
+            ),
             record_provider_usage=lambda provider: record_direct_provider_usage(
                 request,
                 provider,
@@ -76,6 +98,12 @@ def run_document_ops_agent(payload: DocumentOpsAgentRunRequest, request: Request
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    binding = DocumentOpsSkillBinding.model_validate(result["skill_binding"])
+    _record_agent_skill_binding(request, binding)
+    request.state.document_ops_agent_operation_replayed = result.get(
+        "operation_replayed"
+    ) is True
+    return result
 
 
 @router.get("/run-operations/{operation_id}", dependencies=[Depends(require_api_key)])
