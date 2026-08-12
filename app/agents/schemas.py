@@ -17,6 +17,7 @@ class DocumentOpsSkill(BaseModel):
     description: str = Field(..., min_length=1)
     task_types: list[str] = Field(default_factory=list)
     risk_level: str = Field(default="low", min_length=1)
+    content_sha256: str = Field(..., pattern=r"^[0-9a-f]{64}$")
     body: str = Field(..., min_length=1)
     source_path: str = Field(..., min_length=1)
 

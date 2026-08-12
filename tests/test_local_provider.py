@@ -20,12 +20,12 @@ Coverage:
 """
 from __future__ import annotations
 
-import json
-import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 from app.providers.base import ProviderError
 from app.providers.local_provider import LocalProvider
@@ -373,63 +373,47 @@ class TestFactory:
 # I. /local-llm/health endpoint
 # ────────────────────────────────────────────────────────────────────────────
 
-@pytest.fixture(scope="module")
-def client_mock(tmp_path_factory):
-    """TestClient with DECISIONDOC_PROVIDER=mock (local LLM not configured)."""
-    import os
-    from starlette.testclient import TestClient
-    from app.main import create_app
+@pytest.fixture
+def endpoint_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    """Isolated router client with no configured local generation provider."""
+    from app.routers.local_llm import router
 
-    old_env = os.environ.copy()
-    os.environ["DECISIONDOC_PROVIDER"] = "mock"
-    os.environ["DECISIONDOC_ENV"] = "dev"
-    os.environ["DECISIONDOC_MAINTENANCE"] = "0"
-    os.environ["DATA_DIR"] = str(tmp_path_factory.mktemp("local-llm-mock"))
-    os.environ.pop("DECISIONDOC_API_KEY", None)
-    os.environ.pop("DECISIONDOC_API_KEYS", None)
-
-    client = TestClient(create_app())
-    yield client
-
-    os.environ.clear()
-    os.environ.update(old_env)
-
-
-@pytest.fixture(scope="module")
-def client_local(tmp_path_factory):
-    """TestClient with DECISIONDOC_PROVIDER=local."""
-    import os
-    from starlette.testclient import TestClient
-
-    old_env = os.environ.copy()
-    os.environ["DECISIONDOC_PROVIDER"] = "local"
-    os.environ["LOCAL_LLM_BASE_URL"] = "http://localhost:19999/v1"  # nothing listening
-    os.environ["LOCAL_LLM_MODEL"] = "llama3.1:8b"
-
-    from app.main import create_app
-    c = TestClient(create_app())
-
-    # Restore env after yield
-    yield c
-
-    os.environ.clear()
-    os.environ.update(old_env)
+    monkeypatch.setenv("DECISIONDOC_PROVIDER", "mock")
+    monkeypatch.delenv("DECISIONDOC_PROVIDER_GENERATION", raising=False)
+    app = FastAPI()
+    app.include_router(router)
+    return TestClient(app)
 
 
 class TestLocalLLMHealthEndpoint:
-    def test_not_configured_returns_200(self, client_mock):
-        res = client_mock.get("/local-llm/health")
+    def test_not_configured_returns_200(self, endpoint_client):
+        res = endpoint_client.get("/local-llm/health")
         assert res.status_code == 200
         data = res.json()
         assert data["status"] == "not_configured"
 
-    def test_not_configured_message_present(self, client_mock):
-        res = client_mock.get("/local-llm/health")
+    def test_not_configured_message_present(self, endpoint_client):
+        res = endpoint_client.get("/local-llm/health")
         assert "message" in res.json()
 
-    def test_configured_unreachable_returns_503(self, client_local):
-        # The local server at port 19999 is not running
-        res = client_local.get("/local-llm/health")
+    def test_configured_unreachable_returns_503(
+        self,
+        endpoint_client,
+        monkeypatch,
+    ):
+        monkeypatch.setenv("DECISIONDOC_PROVIDER_GENERATION", "local")
+        monkeypatch.setenv("LOCAL_LLM_BASE_URL", "http://localhost:11434/v1")
+        result = {
+            "status": "error",
+            "endpoint": "http://localhost:11434/v1",
+            "error": "Could not connect to local LLM server",
+        }
+        with patch.object(
+            LocalProvider,
+            "health_check",
+            new=AsyncMock(return_value=result),
+        ):
+            res = endpoint_client.get("/local-llm/health")
         assert res.status_code == 503
         assert res.json()["status"] == "error"
 
@@ -439,21 +423,42 @@ class TestLocalLLMHealthEndpoint:
 # ────────────────────────────────────────────────────────────────────────────
 
 class TestLocalLLMModelsEndpoint:
-    def test_models_endpoint_returns_dict(self, client_mock):
-        res = client_mock.get("/local-llm/models")
+    def test_models_endpoint_returns_dict(self, endpoint_client):
+        res = endpoint_client.get("/local-llm/models")
         assert res.status_code == 200
         data = res.json()
-        assert "models" in data
-        assert "current" in data
+        assert data["status"] == "not_configured"
 
-    def test_models_current_uses_env(self, client_mock, monkeypatch):
+    def test_models_current_uses_env(self, endpoint_client, monkeypatch):
+        monkeypatch.setenv("DECISIONDOC_PROVIDER_GENERATION", "local")
         monkeypatch.setenv("LOCAL_LLM_MODEL", "qwen2.5:14b")
-        # Re-request; current model is read from env at request time
-        res = client_mock.get("/local-llm/models")
+        result = {
+            "status": "ok",
+            "model": "qwen2.5:14b",
+            "available_models": ["qwen2.5:14b"],
+        }
+        with patch.object(
+            LocalProvider,
+            "health_check",
+            new=AsyncMock(return_value=result),
+        ):
+            res = endpoint_client.get("/local-llm/models")
         assert res.status_code == 200
+        assert res.json()["current"] == "qwen2.5:14b"
 
-    def test_models_list_is_list(self, client_mock):
-        res = client_mock.get("/local-llm/models")
+    def test_models_list_is_list(self, endpoint_client, monkeypatch):
+        monkeypatch.setenv("DECISIONDOC_PROVIDER_GENERATION", "local")
+        result = {
+            "status": "ok",
+            "model": "llama3.1:8b",
+            "available_models": ["llama3.1:8b"],
+        }
+        with patch.object(
+            LocalProvider,
+            "health_check",
+            new=AsyncMock(return_value=result),
+        ):
+            res = endpoint_client.get("/local-llm/models")
         assert isinstance(res.json()["models"], list)
 
 

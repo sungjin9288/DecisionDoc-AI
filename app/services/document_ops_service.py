@@ -156,6 +156,10 @@ class DocumentOpsService:
                 self._fail_run_operation(claim)
             raise
 
+    def skill_catalog(self) -> dict[str, Any]:
+        """Read the immutable local skill catalog without provider or state access."""
+        return self._agent.skill_catalog()
+
     def _claim_run_operation(
         self,
         *,

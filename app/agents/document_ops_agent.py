@@ -56,6 +56,10 @@ class DocumentOpsAgent:
 
         return get_provider_for_capability("generation")
 
+    def skill_catalog(self) -> dict[str, Any]:
+        """Return the registry's read-only public projection."""
+        return self._skill_registry.catalog()
+
     def run(
         self,
         request: DocumentOpsRequest,

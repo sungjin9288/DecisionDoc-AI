@@ -15,8 +15,8 @@
     },
     {
       "path": "README.md",
-      "sha256": "011922b2db61e71192285f240148be4075d0a3abdc1e026b8fc293791a1c404d",
-      "size_bytes": 81527
+      "sha256": "0d984b81cf6dc957c8c9eebf38e788f0f456b838843c81c5721a9294587cd1a0",
+      "size_bytes": 84107
     },
     {
       "path": "docs/architecture.md",
@@ -30,8 +30,8 @@
     },
     {
       "path": "docs/completion-readiness-runbook.md",
-      "sha256": "be9dca5bade6a59094d2f901a17edbe614c8c2176d30d0beaa6e1227bd8783ce",
-      "size_bytes": 10690
+      "sha256": "1b431d4eb615376a55d15ef972eb7d97ee108061b98701704f4664cc8a4b00b6",
+      "size_bytes": 11555
     },
     {
       "path": "docs/contribution-note.md",
@@ -40,8 +40,8 @@
     },
     {
       "path": "docs/development-plan.md",
-      "sha256": "355a087ac979466abb727dc6ccf23ac54320f6c1471fe6ed73cfb5537fe960d4",
-      "size_bytes": 51727
+      "sha256": "530b9ac993e570339cda798a03a857bc17455b820bb8a8ea5659c249ef0d799b",
+      "size_bytes": 52784
     },
     {
       "path": "docs/evidence-checklist.md",

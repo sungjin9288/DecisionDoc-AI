@@ -153,6 +153,11 @@ DecisionDoc AI의 정보 자산을 보호하고 서비스 연속성을 유지한
   - Worker mutation은 객체별 conditional create/CAS로 확정하고 충돌마다 최신 ownership·schema를 다시 검증한다. 최근 mutation receipt는 64개로 제한해 불확실한 commit 뒤의 successor update도 조정한다. 이 보장은 단일 message 또는 notification object 범위이며 두 객체를 함께 묶는 distributed transaction, 실제 AWS runtime과 외부 SMTP·Slack 전달 성공은 현재 보장 범위가 아니다.
 - 운영 로그
   - 애플리케이션 구조화 로그는 stdout 기준 (Docker는 `docker logs`, AWS는 CloudWatch)
+  - JSON formatter는 출력 직전에 API key, service key, password, secret, signature, token, Authorization field와 같은 이름의 URL query 값을 `[REDACTED]`로 치환한다. Free-form message와 traceback의 credential assignment와 `Authorization` 값도 같은 단계에서 제거한다. 외부 HTTP client의 요청 URL도 이 경계를 통과해야 하며 raw credential을 진단 로그에 남기지 않는다.
+- 무료 local runtime
+  - `DECISIONDOC_FREE_MODE=1`은 provider factory와 cloud provider 생성자에서 OpenAI/Gemini/Claude를 거부하고, bundle/state storage factory에서 S3를 거부한다. `LocalProvider` constructor는 HTTP client 생성 전에 endpoint를 검증하고 `localhost`, `127.0.0.1`, `::1`, `ollama`, `host.docker.internal`만 허용하며 userinfo, query, fragment가 있는 URL은 거부한다.
+  - `/local-llm/health`와 `/local-llm/models`는 generation capability에 local provider가 없으면 provider와 HTTP client를 만들지 않고 `not_configured`를 반환한다. Local provider가 있으면 두 endpoint 모두 `LocalProvider.health_check()` 경로를 사용하며 거부된 설정은 network fallback 없이 `503 configuration_error`로 닫는다.
+  - `run_free_local.py`는 cloud provider/search/G2B live collection/AWS/Statuspage/Stripe/SMTP/Slack/Voice Brief remote 설정을 child environment에서 비우고, inherited AWS profile/container/web-identity source와 metadata/shared config credential lookup을 비활성화한다. Inherited remote 또는 credential-bearing local-LLM URL은 loopback 기본값으로 교체한다. 이는 무료 runner 경계이며 일반 process의 모든 외부 네트워크를 전역 차단한다는 의미는 아니다.
 
 ## 7. 취약점 관리
 - 정기 점검: 분기별 OWASP 점검

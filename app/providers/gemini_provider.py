@@ -5,6 +5,7 @@ from typing import Any
 import anyio
 
 from app.domain.schema import build_bundle_prompt
+from app.free_mode import FreeModeConfigurationError, validate_cloud_provider_disabled
 from app.providers.base import Provider, ProviderError, UsageTokenMixin
 
 
@@ -12,6 +13,10 @@ class GeminiProvider(UsageTokenMixin, Provider):
     name = "gemini"
 
     def __init__(self) -> None:
+        try:
+            validate_cloud_provider_disabled()
+        except FreeModeConfigurationError as exc:
+            raise ProviderError(str(exc)) from exc
         self.api_key = os.getenv("GEMINI_API_KEY", "")
         if not self.api_key:
             raise ProviderError("Provider configuration error.")

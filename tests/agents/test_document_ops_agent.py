@@ -72,6 +72,45 @@ def test_document_ops_agent_runs_policy_planning_with_mock_provider() -> None:
     assert result.trajectory["skill"]["name"] == "policy-planning"
 
 
+def test_document_ops_agent_selects_source_grounded_skill_and_includes_governed_instructions() -> None:
+    prompts: list[str] = []
+
+    class PromptProvider(StaticJsonProvider):
+        def generate_raw(self, prompt: str, *, request_id: str, max_output_tokens: int | None = None) -> str:
+            prompts.append(prompt)
+            return self.raw
+
+    raw = json.dumps(
+        {
+            "plan": ["의사결정 의도와 source mapping을 확인합니다."],
+            "draft": "확인된 근거와 TODO를 구분한 검토 초안입니다.",
+            "evidence_status": {
+                "confirmed": ["source-1"],
+                "assumptions": ["운영 범위는 확인 필요"],
+                "gaps": ["추가 원문 확인 필요"],
+                "source_references": ["source-1"],
+            },
+            "qa": {"hard_gate_pass": False, "warnings": ["review required"]},
+        },
+        ensure_ascii=False,
+    )
+    result = DocumentOpsAgent(provider=PromptProvider(raw)).run(
+        DocumentOpsRequest(
+            task_type="source_grounded_document",
+            requirements={"title": "근거 기반 의사결정", "decision_intent": "검토 범위 결정"},
+            source_references=[{"id": "source-1", "title": "확인된 원문"}],
+        ),
+        request_id="agent-source-grounded",
+        tenant_id="system",
+    )
+
+    assert result.skill_name == "source-grounded-document"
+    assert prompts and "Skill name: source-grounded-document" in prompts[0]
+    assert "decision intent" in prompts[0]
+    assert "source reference" in prompts[0]
+    assert "Non-authorization" in prompts[0]
+
+
 def test_document_ops_agent_records_provider_attempt_before_propagating_failure() -> None:
     provider = FailingProvider()
     recorded: list[str] = []

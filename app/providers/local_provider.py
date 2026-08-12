@@ -23,6 +23,7 @@ from typing import Any
 import httpx
 
 from app.domain.schema import build_bundle_prompt
+from app.free_mode import FreeModeConfigurationError, validate_free_local_llm_url
 from app.providers.base import Provider, ProviderError, UsageTokenMixin
 
 _log = logging.getLogger("decisiondoc.provider.local")
@@ -47,6 +48,10 @@ class LocalProvider(UsageTokenMixin, Provider):
         timeout: int = 300,
         max_retries: int = 2,
     ) -> None:
+        try:
+            validate_free_local_llm_url(base_url)
+        except FreeModeConfigurationError as exc:
+            raise ProviderError(str(exc)) from exc
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.api_key = api_key

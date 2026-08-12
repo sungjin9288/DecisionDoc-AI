@@ -3,6 +3,29 @@
 ## Current milestone
 Milestone 6 completed
 
+## 2026-08-11 current-main live G2B fallback and log redaction
+
+- Latest-main `deploy-smoke [dev]` run `31452991725` used `provider=mock`
+  with procurement smoke enabled. GitHub resolved the configured stage
+  secrets, but AWS OIDC rejected `sts:AssumeRoleWithWebIdentity`. The run
+  stopped before stack inspection, SAM build/deploy, Lambda/API Gateway
+  invocation, and post-deploy smoke, so it is infrastructure-auth failure
+  evidence rather than current AWS runtime proof.
+- The no-AWS fallback then started the real FastAPI app with mock provider,
+  temporary local storage, and the configured live G2B key. It auto-discovered
+  bid `R26BK01664082`, imported and evaluated it, produced a `NO_GO` decision,
+  exercised Decision Council and downstream override gates, and completed the
+  full local smoke. No LLM provider or AWS runtime was called.
+- That live run exposed a credential-hygiene defect: the `httpx` INFO message
+  included the G2B `serviceKey` query value. `JsonLineFormatter` now redacts
+  sensitive query parameters and nested structured fields immediately before
+  serialization. A repeated live G2B smoke completed with the raw key absent
+  and `serviceKey=[REDACTED]` present. The previously logged G2B key should be
+  rotated before the next shared or deployed run.
+- Focused observability/G2B/local-smoke verification passed `88` tests. The
+  current-main AWS deploy/runtime and stage procurement smoke remain unproven
+  until the dev OIDC role trust is repaired and `deploy-smoke` is rerun.
+
 ## Post-milestone Decision Evidence Map and H124-H128 guided review completion
 
 - `decision_evidence_map.v1` is now a deterministic, bounded, read-only project

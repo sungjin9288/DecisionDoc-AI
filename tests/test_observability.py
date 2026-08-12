@@ -195,6 +195,108 @@ def test_json_formatter_includes_traceback_for_exception_records():
     assert "RuntimeError: formatter boom" in payload["traceback"]
 
 
+def test_json_formatter_redacts_sensitive_query_parameters():
+    formatter = JsonLineFormatter()
+    record = logging.getLogger("httpx").makeRecord(
+        name="httpx",
+        level=logging.INFO,
+        fn=__file__,
+        lno=0,
+        msg=(
+            "HTTP Request: GET "
+            "https://example.test/search?serviceKey=g2b-secret&numOfRows=20"
+        ),
+        args=(),
+        exc_info=None,
+    )
+
+    payload = json.loads(formatter.format(record))
+
+    assert "g2b-secret" not in payload["message"]
+    assert "serviceKey=[REDACTED]" in payload["message"]
+    assert "numOfRows=20" in payload["message"]
+
+
+def test_json_formatter_redacts_bearer_authorization_in_message():
+    formatter = JsonLineFormatter()
+    record = logging.getLogger("httpx").makeRecord(
+        name="httpx",
+        level=logging.INFO,
+        fn=__file__,
+        lno=0,
+        msg=(
+            "Retry failed with Authorization: Bearer message-secret "
+            "openai_api_key='message-api-key' password=message-password at upstream"
+        ),
+        args=(),
+        exc_info=None,
+    )
+
+    payload = json.loads(formatter.format(record))
+
+    assert "message-secret" not in payload["message"]
+    assert "message-api-key" not in payload["message"]
+    assert "message-password" not in payload["message"]
+    assert "Authorization: Bearer [REDACTED]" in payload["message"]
+    assert "openai_api_key=[REDACTED]" in payload["message"]
+    assert "password=[REDACTED]" in payload["message"]
+    assert "Retry failed" in payload["message"]
+    assert "at upstream" in payload["message"]
+
+
+def test_json_formatter_redacts_bearer_authorization_in_traceback():
+    formatter = JsonLineFormatter()
+    try:
+        raise RuntimeError(
+            "upstream rejected Authorization: Bearer traceback-secret "
+            "access_token=traceback-token secret: 'traceback-shared-secret'"
+        )
+    except RuntimeError:
+        record = logging.getLogger("decisiondoc.test").makeRecord(
+            name="decisiondoc.test",
+            level=logging.ERROR,
+            fn=__file__,
+            lno=0,
+            msg="Upstream request failed",
+            args=(),
+            exc_info=sys.exc_info(),
+        )
+
+    payload = json.loads(formatter.format(record))
+
+    assert "traceback-secret" not in payload["traceback"]
+    assert "traceback-token" not in payload["traceback"]
+    assert "traceback-shared-secret" not in payload["traceback"]
+    assert "Authorization: Bearer [REDACTED]" in payload["traceback"]
+    assert "access_token=[REDACTED]" in payload["traceback"]
+    assert "secret: [REDACTED]" in payload["traceback"]
+    assert "RuntimeError: upstream rejected" in payload["traceback"]
+
+
+def test_json_formatter_redacts_sensitive_structured_fields():
+    formatter = JsonLineFormatter()
+    record = logging.getLogger("decisiondoc.test").makeRecord(
+        name="decisiondoc.test",
+        level=logging.INFO,
+        fn=__file__,
+        lno=0,
+        msg={
+            "event": "upstream.request",
+            "serviceKey": "g2b-secret",
+            "headers": {"Authorization": "Bearer provider-secret"},
+        },
+        args=(),
+        exc_info=None,
+    )
+
+    payload = json.loads(formatter.format(record))
+
+    assert payload["serviceKey"] == "[REDACTED]"
+    assert payload["headers"]["Authorization"] == "[REDACTED]"
+    assert "g2b-secret" not in json.dumps(payload)
+    assert "provider-secret" not in json.dumps(payload)
+
+
 def test_procurement_logs_include_action_state_and_recommendation(tmp_path, monkeypatch, caplog, capsys):
     caplog.set_level(logging.INFO)
     client = _create_client(tmp_path, monkeypatch, procurement_enabled=True)

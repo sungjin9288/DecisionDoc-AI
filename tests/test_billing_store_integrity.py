@@ -7,6 +7,7 @@ import json
 import time
 from contextlib import nullcontext
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -418,13 +419,14 @@ def test_metered_request_enforces_current_tenant_usage_limit(
 
     client = _client(tmp_path, monkeypatch)
     usage = UsageStore(tmp_path, tenant_id="system")
+    current_timestamp = datetime.now(timezone.utc).isoformat()
     for index in range(21):
         usage.record(
             UsageEvent(
                 event_id=f"event-{index}",
                 tenant_id="system",
                 user_id="user-1",
-                timestamp="2026-07-16T00:00:00+00:00",
+                timestamp=current_timestamp,
                 event_type="doc.generate",
                 bundle_id="tech_decision",
                 tokens_input=1,

@@ -626,6 +626,12 @@ class S3StateBackend(StateBackend):
 
 def get_state_backend(*, data_dir: Path | None = None) -> StateBackend:
     storage_kind = os.getenv("DECISIONDOC_STATE_STORAGE") or os.getenv("DECISIONDOC_STORAGE", "local")
+    from app.free_mode import FreeModeConfigurationError, validate_free_storage_kind
+
+    try:
+        validate_free_storage_kind(storage_kind, state=True)
+    except FreeModeConfigurationError as exc:
+        raise StateBackendError(str(exc)) from exc
     if storage_kind.lower() == "s3":
         bucket = os.getenv("DECISIONDOC_STATE_S3_BUCKET") or os.getenv("DECISIONDOC_S3_BUCKET", "")
         prefix = os.getenv("DECISIONDOC_STATE_S3_PREFIX", "").strip()

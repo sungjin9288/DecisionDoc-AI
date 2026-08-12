@@ -1,6 +1,6 @@
 # DecisionDoc AI — 완성을 위한 기능 개발 계획 (Development Plan)
 
-> 기준일: **2026-07-29** (저장소 점검 [docs/inspection-20260630.md](./inspection-20260630.md), M4 CSP nonce 완료, H128 focused no-cost local verification과 최근 확인한 CI/CD success 기준)
+> 기준일: **2026-08-11** (저장소 점검 [docs/inspection-20260630.md](./inspection-20260630.md), H128 focused no-cost local verification, local live G2B smoke와 current-main deploy-smoke 시도 기준)
 > 원칙: AGENTS.md 정직성 규칙 준수 — 모든 정량 수치는 재현 커맨드를 병기하고, 검증되지 않은 성과·운영 표현은 사용하지 않는다.
 > 상위 방향 문서: [product_direction.md](./product_direction.md) · [product_execution_plan.md](./product_execution_plan.md) · [roadmap.md](./roadmap.md)
 
@@ -12,13 +12,13 @@
 
 | 축 | 현재 | 완성 기준 |
 |----|------|-----------|
-| **기능 검증** | H128 + local demo evidence no-cost gate: focused `42 passed`, authorization/audit/security/infrastructure coupling `178 passed`, full non-live `4,512 passed, 1 skipped, 4 deselected` (2026-07-29) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
+| **기능 검증** | DocumentOps skill catalog + free local runtime no-cost gate: full non-live `4,562 passed, 1 skipped, 4 deselected` (2026-08-12). 2026-08-11 local live G2B smoke 1건 통과 | live LLM 잔여 provider와 G2B durable receipt/stage 경로도 실증 + 증적 |
 | **아키텍처 위생** | ✅ 달성 (2026-07-14: 829줄 상수 모듈을 604줄 facade + 314줄 foundation으로 분리하고 800줄 guard 추가 → 초과 0개). CI advisory Ruff E/F/W와 Bandit medium/high 0건 기준 유지 | 전 모듈 800줄 이하 (전역 코딩 가이드), 계층 간 의존 방향 일관 |
-| **운영 준비성** | Docker/SAM 설정 존재, CSP nonce 부채 해소, GitHub Actions CI/CD success 증적 존재. 단, staging deploy/smoke는 설정 부재로 skip되어 배포 접근성은 미검증 | 배포 절차 재검증 + post-deploy smoke 증적 |
+| **운영 준비성** | Docker/SAM 설정 존재, CSP nonce 부채 해소, 과거 GitHub Actions CI/CD success 증적 존재. 2026-08-11 current-main dev deploy-smoke는 AWS 진입 전 OIDC role assume에서 실패 | OIDC trust 복구 + 배포 절차 재검증 + post-deploy smoke 증적 |
 
 ```bash
 # 재현: 테스트 베이스라인
-pytest tests/ -m "not live" -q     # 2026-07-29 current: 4512 passed, 1 skipped, 4 deselected
+pytest tests/ -m "not live" -q     # 2026-08-12 current: 4562 passed, 1 skipped, 4 deselected
 
 # 재현: CI advisory lint/security 베이스라인
 ruff check app/ --select=E,F,W --ignore=E501
@@ -203,7 +203,7 @@ python3 scripts/count_readme_metrics.py --field router_files      # → 23 (top-
 python3 scripts/count_readme_metrics.py --field service_files     # → 47 (서비스)
 python3 scripts/count_readme_metrics.py --field storage_files     # → 50 (top-level storage modules)
 python3 scripts/count_readme_metrics.py --field middleware_files  # → 12 (미들웨어)
-python3 scripts/count_readme_metrics.py --field route_decorators  # → 289 (라우트)
+python3 scripts/count_readme_metrics.py --field route_decorators  # → 290 (라우트)
 ```
 
 ```text
@@ -299,11 +299,11 @@ Providers (5)    Storage (50 modules)   Ops
 | # | 갭 | 근거 (실측) | 심각도 | 상태 (2026-07-13) |
 |---|-----|------------|--------|--------------------|
 | G1 | **Live provider 부분 실증** — OpenAI 1회 통과, Gemini/Claude/fallback 성공 proof 잔여 | 2026-07-13 M1 blocked receipt | HIGH | 진행 중 (Gemini quota, Anthropic credits 필요) |
-| G2 | **G2B 실데이터 미실증** — collector 코드 존재, `G2B_API_KEY` 없이 비동작 | `app/services/g2b_collector.py` | HIGH | 미착수 (키 필요) |
+| G2 | **G2B stage proof 잔여** — local live 수집·평가 1건은 통과했지만 durable receipt와 AWS stage 경로는 미검증 | `scripts/run_local_procurement_smoke.py`, `docs/specs/public_procurement_copilot/STATUS.md` | HIGH | 부분 완료 (2026-08-11 local live smoke) |
 | G3 | **800줄 초과 모듈** — 계획 수립 시 15개 | `find app -name '*.py' -print0 \| xargs -0 wc -l \| awk '$2 != "total" && $1 > 800 {print}'` | MED | **✅ 해소 및 guard 적용** (2026-07-14, 상수 모듈 drift 재분할 → 초과 0개) |
 | G4 | **excel export 비대칭** — 84줄로 타 export 대비 최소 구현 | `wc -l app/services/excel_service.py` | MED | **완료** (커밋 e9ecabc, 309줄·테스트 14개) |
 | G5 | **CSP nonce 부채** — served HTML `script-src 'unsafe-inline'` 의존 해소 필요 | `app/middleware/security_headers.py`, `app/static/index.html` | MED | **✅ 완료** — inline `on*=` 핸들러 0개, HTML 응답 nonce 기본 on, `DECISIONDOC_CSP_NONCE_ENFORCED=0` local diagnostic opt-out 유지 |
-| G6 | **배포 접근성 미검증** — 최근 확인한 GitHub Actions CD는 성공했지만 staging deploy/smoke와 production deploy는 skip되어 운영 URL 동작 보장 없음 (README §Scope 명시) | GitHub Actions CD `29484598720` success, image build/push passed, deploy/smoke skipped | MED | 미착수 |
+| G6 | **배포 접근성 미검증** — current-main dev deploy-smoke가 AWS OIDC `AssumeRoleWithWebIdentity`에서 차단돼 stack inspection과 runtime smoke에 도달하지 못함 | GitHub Actions `deploy-smoke` run `31452991725` | MED | OIDC trust 복구 필요 |
 | G7 | **모듈 레벨 side-effect** — `app/main.py`의 `app = create_app()`이 import 시점에 `.env`를 로드해 테스트 격리를 해침 | — | MED | **✅ 해결** (2026-07-02, 커밋 0023c7c) — PEP 562 모듈 `__getattr__`로 lazy 생성(캐싱). `uvicorn app.main:app`·Mangum·기존 import 전부 무변경 동작 |
 
 ---
@@ -327,7 +327,8 @@ Providers (5)    Storage (50 modules)   Ops
   2. 산출 결과를 fixture로 고정해 회귀 테스트화 (키 없는 CI에서도 재현).
   3. GO / CONDITIONAL_GO / NO_GO 판정 재현성 확인.
 - DoD: 실데이터 1건의 end-to-end 실행 증적 + 해당 케이스의 키-불필요 회귀 테스트. 입찰 제출·법적 승인은 범위 밖(기존 boundary 유지).
-- 2026-07-14 local 준비: `run_stage_procurement_smoke.py --proof-receipt`가 preflight를 미실행 `blocked` 상태로, 실제 smoke를 `passed` 또는 `failed` 상태로 atomic 기록한다. Host와 안전한 공고 식별자만 남기고 API key, password, URL userinfo/query는 receipt에서 제외한다. 실 G2B 호출은 아직 실행하지 않았다.
+- 2026-07-14 local 준비: `run_stage_procurement_smoke.py --proof-receipt`가 preflight를 미실행 `blocked` 상태로, 실제 smoke를 `passed` 또는 `failed` 상태로 atomic 기록한다. Host와 안전한 공고 식별자만 남기고 API key, password, URL userinfo/query는 receipt에서 제외한다.
+- 2026-08-11 local 실증: real FastAPI app, temporary local storage, mock LLM provider와 live G2B auto-discovery로 공고 `R26BK01664082`를 수집·정규화·평가하고 `NO_GO`, Decision Council, downstream block/override/retry smoke를 통과했다. 이 결과는 no-AWS local evidence이며 M2 durable proof receipt나 deployed stage runtime을 대신하지 않는다.
 
 ### M3 — Export 5종 대칭성 (G4) · 외부 의존 없음 · ✅ 완료 (2026-07-02, 커밋 e9ecabc)
 
@@ -388,6 +389,7 @@ PY
   3. 데모 URL 접근성 확인 후 README Links의 "Demo: (접근 검증 후 추가)" 갱신.
 - DoD: 신규 환경에서 README 절차만으로 배포 재현 + smoke 통과 로그.
 - 2026-07-14 local 준비: `run_deployed_smoke.py --proof-receipt`가 preflight와 실제 deployed smoke의 상태·UTC 시각·runtime host·남은 제한을 validator-compatible receipt로 남긴다. Preflight는 AWS runtime 실행 증거로 취급하지 않으며 실제 runtime은 아직 실행하지 않았다.
+- 2026-08-11 무료 local baseline: `DECISIONDOC_FREE_MODE=1`에서 cloud provider 직접 생성과 factory chain, S3 bundle/state storage, remote local-LLM endpoint를 fail closed로 차단한다. `run_free_local.py`는 mock 또는 loopback Ollama만 선택하고 provider capability, local data root, search/finetune disablement와 cloud secret clearing을 강제한다. Inherited AWS profile/container/web-identity source를 제거하고 metadata/shared config credential lookup도 비활성화한다. 기본 `docker-compose.yml`도 mock/local/free mode로 시작하며 production compose와 SAM 전환은 별도 proof 경계로 유지한다.
 
 ---
 

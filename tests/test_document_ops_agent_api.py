@@ -47,6 +47,46 @@ def test_document_ops_run_requires_api_key(tmp_path, monkeypatch) -> None:
     assert response.status_code == 401
 
 
+def test_document_ops_skill_catalog_requires_api_key_and_does_not_call_provider(tmp_path, monkeypatch) -> None:
+    client = _create_client(tmp_path, monkeypatch)
+    provider = client.app.state.document_ops_service._agent.provider
+    calls = 0
+    original_generate_raw = provider.generate_raw
+
+    def counted_generate_raw(prompt: str, *, request_id: str, max_output_tokens=None) -> str:
+        nonlocal calls
+        calls += 1
+        return original_generate_raw(prompt, request_id=request_id, max_output_tokens=max_output_tokens)
+
+    provider.generate_raw = counted_generate_raw
+    assert client.get("/api/agent/document-ops/skills").status_code == 401
+    response = client.get("/api/agent/document-ops/skills", headers=_api_headers())
+    assert response.status_code == 200
+    body = response.json()
+    assert body["schema_version"] == "document_ops_skill_catalog_v1"
+    assert body["catalog_fingerprint"]
+    assert any(item["name"] == "source-grounded-document" for item in body["skills"])
+    assert all("body" not in item and "source_path" not in item for item in body["skills"])
+    assert calls == 0
+
+
+def test_document_ops_skill_catalog_preserves_local_persistence_bytes(tmp_path, monkeypatch) -> None:
+    client = _create_client(tmp_path, monkeypatch)
+    before = {
+        path.relative_to(tmp_path).as_posix(): path.read_bytes()
+        for path in tmp_path.rglob("*")
+        if path.is_file()
+    }
+    response = client.get("/api/agent/document-ops/skills", headers=_api_headers())
+    after = {
+        path.relative_to(tmp_path).as_posix(): path.read_bytes()
+        for path in tmp_path.rglob("*")
+        if path.is_file()
+    }
+    assert response.status_code == 200
+    assert after == before
+
+
 def test_document_ops_run_can_capture_and_list_trajectory(tmp_path, monkeypatch) -> None:
     client = _create_client(tmp_path, monkeypatch)
 

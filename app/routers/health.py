@@ -23,6 +23,7 @@ from app.config import (
     is_procurement_copilot_enabled,
     is_realtime_events_enabled,
 )
+from app.free_mode import is_free_mode
 from app.maintenance.mode import is_maintenance_mode
 from app.providers.factory import configured_provider_names, configured_provider_routes
 from app.schemas import HealthResponse
@@ -164,6 +165,7 @@ def health(request: Request) -> HealthResponse:
     return HealthResponse(
         status=overall,
         provider=configured_provider,
+        free_mode=is_free_mode(),
         maintenance=maintenance,
         checks=checks,
         provider_routes=provider_routes,

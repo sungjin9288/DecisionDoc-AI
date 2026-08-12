@@ -89,7 +89,7 @@ FastAPI (app/main.py — create_app(), 모듈 레벨 side-effect 없음)
   │     / rate_limit / audit / auth / tenant / billing / metrics
   │     / document_ops_audit / auth_session_retention_audit
   │     billing은 tenant/auth context가 확정된 뒤 metered request를 검사
-  ├─ Routers (23 top-level files, 라우트 289): generate / approvals / projects / knowledge
+  ├─ Routers (23 top-level files, 라우트 290): generate / approvals / projects / knowledge
   │     / report_workflows / auth / sso / admin / audit / billing / dashboard
   │     / history / eval / finetune / local_llm / g2b / templates / health ...
   ▼
@@ -118,7 +118,7 @@ python3 scripts/count_readme_metrics.py --field middleware_files  # → 12
 python3 scripts/count_readme_metrics.py --field router_files      # → 23
 python3 scripts/count_readme_metrics.py --field service_files     # → 47
 python3 scripts/count_readme_metrics.py --field storage_files     # → 50
-python3 scripts/count_readme_metrics.py --field route_decorators  # → 289
+python3 scripts/count_readme_metrics.py --field route_decorators  # → 290
 ```
 
 **설계 불변식**: Provider·Storage는 ABC + factory(환경변수로만 교체) · 모든 파일 쓰기는 atomic write(tmp + fsync + os.replace) · 라우트 핸들러는 `request.app.state.*`로 의존성 접근 · Request 모델은 `strict=True, extra="forbid"` · mock provider는 결정론적(CI 기준 경로).
@@ -133,6 +133,7 @@ python3 scripts/count_readme_metrics.py --field route_decorators  # → 289
 - **LLM provider abstraction** — 특정 모델 종속은 비용·정책 변화에 취약. Mock/OpenAI/Gemini/Claude/Local을 factory + fallback chain으로 추상화해 교체 가능하게 함. `mock`은 테스트·개발에서 결정론적으로 동작하도록 유지.
 - **schema / template / validation 결합** — 문서 유형별 품질 편차를 사람 숙련도가 아니라 구조로 줄이기 위해 BundleSpec/DocumentSpec + Jinja2 + lint 단계를 결합.
 - **storage abstraction (local/S3)** — 로컬 개발과 클라우드 운영을 같은 코드 경로로 지원.
+- **DocumentOps skill registry** — first-party Markdown skill을 strict YAML metadata, content SHA-256, deterministic catalog로 검증하고, 인증된 read-only API에는 instruction body와 source path를 노출하지 않음.
 - **학습 준비 증적은 실행 권한과 분리** — reviewed export부터 freeze, dry-run approval, execution request, audit까지 ID와 SHA-256을 대조한다. stale 또는 변조 artifact는 로컬 governance ready 상태를 차단하며, 이 흐름은 provider API 호출이나 dataset upload를 허용하지 않는다.
 
 ---
@@ -145,27 +146,54 @@ pip install -r requirements.txt
 cp .env.example .env
 bash scripts/install_git_hooks.sh        # commit 전 secret hygiene 검사 hook
 
-# 2. 실행 (로컬)
-python -m uvicorn app.main:app --reload   # http://localhost:8000
+# 2. 무료 실행 (mock provider + local storage)
+python3 scripts/run_free_local.py --provider mock --reload
+# http://localhost:8000
 
-# 3. 실행 (Docker)
+# 3. 무료 실행 (Docker, 기본값이 mock + local storage)
 docker compose up -d
-curl http://localhost:8000/health
+curl http://localhost:3300/health
 ```
 
 > `install_git_hooks.sh`는 `scripts/check_secret_hygiene.py`를 pre-commit으로 걸어, AWS 자격증명이 커밋에 들어가는 것을 차단합니다.
 
-### Environment (주요 그룹)
+`DECISIONDOC_FREE_MODE=1`에서는 OpenAI/Gemini/Claude, S3 storage와 remote
+OpenAI-compatible endpoint를 startup/factory와 `LocalProvider` constructor에서
+HTTP client 생성 전에 거부합니다. 허용 host는 `localhost`, `127.0.0.1`, `::1`,
+`ollama`, `host.docker.internal`이며 URL userinfo, query, fragment는 허용하지
+않습니다. 실제 local LLM으로 생성하려면 Ollama를 먼저 실행한 뒤 같은 runner의
+provider만 바꿉니다.
+`run_free_local.py`는 여기에 더해 inherited AWS credential source, ops key,
+web search, G2B live collection, SMTP/Slack, Stripe, Statuspage, Voice Brief
+remote 설정을 child environment에서 비활성화합니다.
 
-`.env.example`에 **94개** 키가 정의돼 있습니다. 대표 그룹만 정리합니다.
+`GET /local-llm/health`와 `GET /local-llm/models`는 generation provider route에
+`local`이 없으면 provider나 HTTP client를 만들지 않고 동일한
+`status=not_configured` 응답을 반환합니다. Local generation provider가 있으면 두
+endpoint 모두 `LocalProvider.health_check()`를 사용하며, 거부된 free-mode URL은
+network fallback 없이 `503 configuration_error`로 종료됩니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field env_keys  # → 94
+ollama pull llama3.1:8b
+python3 scripts/run_free_local.py --provider local --reload
+```
+
+Local provider는 generation을 담당하고, 지원하지 않는 attachment OCR/vision과
+visual asset generation은 runner가 mock으로 고정합니다. 추후 AWS/cloud provider를
+사용할 때는 production 환경에서 `DECISIONDOC_FREE_MODE=0`을 명시하고 기존
+`docker-compose.prod.yml` 또는 SAM 배포 절차를 사용합니다.
+
+### Environment (주요 그룹)
+
+`.env.example`에 **95개** 키가 정의돼 있습니다. 대표 그룹만 정리합니다.
+
+```bash
+python3 scripts/count_readme_metrics.py --field env_keys  # → 95
 ```
 
 | 그룹 | 대표 키 |
 |------|---------|
-| Runtime/Provider | `DECISIONDOC_PROVIDER`, `DECISIONDOC_ENV`, `DECISIONDOC_TEMPLATE_VERSION` |
+| Runtime/Provider | `DECISIONDOC_FREE_MODE`, `DECISIONDOC_PROVIDER`, `DECISIONDOC_ENV`, `DECISIONDOC_TEMPLATE_VERSION` |
 | Provider Keys | `OPENAI_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `LOCAL_LLM_*` |
 | Auth/Security | `DECISIONDOC_API_KEY(S)`, `DECISIONDOC_OPS_KEY`, `JWT_SECRET_KEY`, `DECISIONDOC_CORS_*` |
 | Storage | `DECISIONDOC_STORAGE`, `DATA_DIR`, `EXPORT_DIR`, `DECISIONDOC_S3_BUCKET`, `AWS_REGION` |
@@ -178,10 +206,10 @@ python3 scripts/count_readme_metrics.py --field env_keys  # → 94
 
 ## API / Usage
 
-FastAPI 라우트는 **289개**입니다.
+FastAPI 라우트는 **290개**입니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field route_decorators  # → 289
+python3 scripts/count_readme_metrics.py --field route_decorators  # → 290
 ```
 
 대표 도메인:
@@ -196,6 +224,7 @@ python3 scripts/count_readme_metrics.py --field route_decorators  # → 289
 | Dashboard | `/overview`, `/bundle-performance`, `/score-history/{bundle_id}` |
 | Billing | `/billing/status`, `/billing/usage`, `/billing/checkout` |
 | Report quality | `/report-workflows/learning/correction-artifacts`, `/report-workflows/learning/correction-artifacts/{artifact_id}`, `/report-workflows/learning/correction-artifacts/pilot-export/preview`, `/report-workflows/learning/correction-artifacts/pilot-export`, `/report-workflows/learning/correction-artifacts/pilot-export/package`, `/report-workflows/learning/correction-artifacts/pilot-package/verify`, `/report-workflows/learning/correction-artifacts/export` |
+| DocumentOps | `GET /api/agent/document-ops/skills`, `POST /api/agent/document-ops/run` |
 | Public procurement | `GET /procurement/reviews`, `/projects/{id}/procurement/evaluate`, `/projects/{id}/procurement/review-packet`, `/projects/{id}/procurement/reviews/{sha}/packet`, `/projects/{id}/procurement/reviews/{sha}/complete`, `/projects/{id}/procurement/reviews/{sha}/reviewed-package`, `/projects/{id}/decision-council/run` |
 | Decision evidence | `GET /projects/{id}/decision-evidence-map?bundle_type=proposal_kr`, `GET /projects/{id}/guided-decision-review-handoff?bundle_type=proposal_kr`, `POST /projects/{id}/guided-decision-review-handoff/recheck`, `POST /projects/{id}/guided-decision-review-handoff/review-disposition` |
 | DocumentOps | `/api/agent/document-ops/trajectories`, `/api/agent/document-ops/trajectories/governance/overview`, `/api/agent/document-ops/trajectories/governance-artifacts/inventory` |
@@ -284,11 +313,11 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **3,719개**, **270개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **3,748개**, **272개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 3719
-python3 scripts/count_readme_metrics.py --field test_files      # → 270
+python3 scripts/count_readme_metrics.py --field test_functions  # → 3748
+python3 scripts/count_readme_metrics.py --field test_files      # → 272
 ```
 
 > 위 수치는 Python AST로 확인한 `test_` 함수 정의 개수입니다. 각 테스트의 현재 pass 여부는 환경 구성 후 `pytest`로 재확인하세요. 검증되지 않은 커버리지·통과율 수치는 표기하지 않습니다.
@@ -317,7 +346,7 @@ bandit -r app/ -x app/providers/mock_provider.py -ll
 
 ## Development Plan — 완성까지 남은 것
 
-현재 전체 no-cost baseline은 `pytest tests/ -m "not live" -q` 기준 `4,512 passed, 1 skipped, 4 deselected`입니다(2026-07-29 실측). 이 수치는 H126-H128 local demo evidence tests를 포함한 mock/local 및 non-live 범위이며 실제 LLM Provider, AWS runtime, G2B 실데이터 검증을 포함하지 않습니다. "완성"을 막는 외부 실증 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
+현재 전체 no-cost baseline은 `pytest tests/ -m "not live" -q` 기준 `4,562 passed, 1 skipped, 4 deselected`입니다(2026-08-12 실측). DocumentOps skill catalog와 free-local fail-closed runtime을 포함한 mock/local 및 non-live 범위이며, 실제 LLM Provider와 AWS runtime 검증은 포함하지 않습니다. G2B 실데이터는 2026-08-11 local FastAPI + mock provider smoke에서 1건을 수집·평가했지만, durable proof receipt와 AWS stage runtime proof는 남아 있습니다. "완성"을 막는 외부 실증 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
 
 ```bash
 python3 scripts/check_completion_readiness.py --print-env-template
@@ -329,16 +358,16 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
 python3 scripts/check_completion_proof_receipt.py --print-template M1
 ```
 
-위 명령은 남은 M1/M2/M6 실행 준비 조건을 로컬에서 점검하고, 저장된 JSON receipt가 현재 계약과 맞는지 확인합니다. `--print-env-template`은 `.env.prod`에 옮겨 적을 입력값만 출력하고, `--print-proof-plan`은 readiness와 no-secret proof receipt 생성·검증 명령을 별도로 출력합니다. M2/M6 smoke runner는 명시한 `--proof-receipt` 경로에 preflight의 미실행 상태와 실제 smoke의 성공·실패를 atomic JSON으로 기록하며 secret 값과 URL query를 보존하지 않습니다. `.env.prod`와 `reports/`는 gitignore된 runtime 경로라서 secret과 receipt를 커밋하지 않습니다. provider API, G2B live API, AWS runtime, dataset upload, training, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않습니다. 실제 proof 이후에는 `scripts/check_completion_proof_receipt.py`로 receipt를 검증하고, 자세한 증적 실행 순서는 [docs/completion-readiness-runbook.md](./docs/completion-readiness-runbook.md)를 따릅니다.
+위 명령은 남은 M1/M2/M6 실행 준비 조건을 로컬에서 점검하고, 저장된 JSON receipt가 현재 계약과 맞는지 확인합니다. `--print-env-template`은 `.env.prod`에 옮겨 적을 입력값만 출력하고, `--print-proof-plan`은 readiness와 no-secret proof receipt 생성·검증 명령을 별도로 출력합니다. M2/M6 smoke runner는 명시한 `--proof-receipt` 경로에 preflight의 미실행 상태와 실제 smoke의 성공·실패를 atomic JSON으로 기록하며 secret 값과 URL query를 보존하지 않습니다. `.env.prod`와 `reports/`는 gitignore된 runtime 경로라서 secret과 receipt를 커밋하지 않습니다. 2026-08-11에는 G2B live API를 local mock-provider smoke로 실행했지만 provider API, AWS runtime, dataset upload, training, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않았습니다. 실제 stage proof 이후에는 `scripts/check_completion_proof_receipt.py`로 receipt를 검증하고, 자세한 증적 실행 순서는 [docs/completion-readiness-runbook.md](./docs/completion-readiness-runbook.md)를 따릅니다.
 
-| 마일스톤 | 내용 | 외부 의존 | 상태 (2026-07-20) |
+| 마일스톤 | 내용 | 외부 의존 | 상태 (2026-08-11) |
 |----------|------|-----------|--------------------|
 | **M1** | Live provider 실증 — openai/gemini/claude 실호출 `-m live` 통과 + 증적 | Gemini quota/billing, Anthropic credits | 보류 — 2026-07-13 OpenAI 1회 통과; 잔여 paid proof는 사용자 요청으로 연기 |
-| **M2** | G2B 실데이터 end-to-end 1건 — 수집→정규화→decision package | `G2B_API_KEY` | 미착수 |
+| **M2** | G2B 실데이터 end-to-end 1건 — 수집→정규화→decision package | `G2B_API_KEY` | local 1건 통과; receipt/stage proof 잔여 |
 | **M3** | excel export를 타 4종 포맷과 동등 수준으로 보강 | 없음 | ✅ 완료 |
 | **M4** | CSP nonce 적용 — served HTML `script-src 'unsafe-inline'` 제거 | 없음 | ✅ 완료 — inline handler 0개, HTML nonce 기본 on, local diagnostic opt-out 유지 |
 | **M5** | 800줄 초과 모듈 분할 (procurement 패키지 분할 패턴 재사용) | 없음 | ✅ 완료 — 2026-07-14 상수 모듈 drift 재분할 및 800줄 guard 추가, 초과 0개 |
-| **M6** | 배포 재검증 + post-deploy smoke 증적 + 데모 URL 접근성 | 배포 환경 | 미착수 |
+| **M6** | 배포 재검증 + post-deploy smoke 증적 + 데모 URL 접근성 | 배포 환경 | dev 시도; AWS OIDC trust 차단, runtime proof 잔여 |
 
 M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidence 정합성 개선을 계속합니다. 외부 실증을 재개할 때는 각 마일스톤의 완료 정의(DoD)와 readiness receipt를 먼저 확인합니다.
 
@@ -347,6 +376,7 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 ## Scope & Limitations
 
 - 완전한 문서관리 시스템이 아니라 **AI-assisted documentation MVP/PoC**입니다.
+- 무료 기본 실행의 mock provider는 결정론적 기능 검증용이며 실제 LLM 품질을 제공하지 않습니다. Ollama local provider는 generation만 지원하고 attachment OCR/vision과 direct visual asset generation은 mock fallback 범위입니다.
 - 운영 URL(예: `admin.decisiondoc.kr`) **접근성은 추가 검증이 필요**하며, 현재 README에서 동작 보장을 하지 않습니다.
 - 실제 사용자 성과 수치·운영 안정성은 검증되지 않았습니다. 검증 범위 밖의 운영 보장은 표기하지 않습니다.
 - 다수 기능이 단독 구현/실험 단계이며, **본인 직접 기여 범위는 포트폴리오·면접 설명 시 별도 정리**가 필요합니다.
@@ -394,4 +424,4 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 289 · 테스트 3,719 · env 키 94 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 290 · 테스트 3,748 · env 키 95 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

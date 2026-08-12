@@ -98,6 +98,12 @@ def get_document_ops_run_operation_status(operation_id: str, request: Request) -
     return status
 
 
+@router.get("/skills", dependencies=[Depends(require_api_key)])
+def list_document_ops_skills(request: Request) -> dict:
+    """Expose only safe registry metadata; this route never calls a provider."""
+    return _service(request).skill_catalog()
+
+
 @router.get("/trajectories", dependencies=[Depends(require_api_key)])
 def list_document_ops_trajectories(
     request: Request,
