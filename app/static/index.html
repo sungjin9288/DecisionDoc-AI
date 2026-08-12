@@ -5657,6 +5657,37 @@
     }
     .docops-chain-item[data-state="pass"] { border-color: rgba(22, 101, 52, .35); }
     .docops-chain-item[data-state="block"] { border-color: rgba(185, 28, 28, .35); }
+    .docops-execution-provenance {
+      display: grid;
+      gap: .4rem;
+      min-width: 0;
+      margin: .65rem 0;
+      color: var(--muted);
+      font-size: .72rem;
+      line-height: 1.45;
+    }
+    .docops-execution-provenance h4 {
+      margin: 0;
+      color: var(--text-strong, #111827);
+      font-size: .76rem;
+    }
+    .docops-execution-provenance dl {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: .35rem .7rem;
+      margin: 0;
+    }
+    .docops-execution-provenance div { min-width: 0; }
+    .docops-execution-provenance dt { font-weight: 800; }
+    .docops-execution-provenance dd {
+      min-width: 0;
+      margin: .08rem 0 0;
+      overflow-wrap: anywhere;
+    }
+    .docops-execution-provenance code {
+      font: inherit;
+      color: var(--text, #1f2937);
+    }
     .docops-trajectory-detail {
       margin-top: .7rem;
       border-top: 1px solid var(--border);
@@ -8013,6 +8044,64 @@
     return 'policy-planning';
   }
 
+  const DOCUMENT_OPS_SKILL_BINDING_KEYS = 'catalog_fingerprint,code_execution_authorized,content_sha256,external_runtime_authorized,risk_level,schema_version,skill_name,skill_version';
+  const DOCUMENT_OPS_SKILL_NAME_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
+  const DOCUMENT_OPS_SKILL_VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+  const DOCUMENT_OPS_SHA256_PATTERN = /^[0-9a-f]{64}$/;
+
+  function documentOpsValidatedSkillBinding(value) {
+    if (
+      !value
+      || typeof value !== 'object'
+      || Array.isArray(value)
+      || Object.keys(value).sort().join(',') !== DOCUMENT_OPS_SKILL_BINDING_KEYS
+      || value.schema_version !== 'document_ops_skill_binding_v1'
+      || typeof value.skill_name !== 'string'
+      || !DOCUMENT_OPS_SKILL_NAME_PATTERN.test(value.skill_name)
+      || typeof value.skill_version !== 'string'
+      || !DOCUMENT_OPS_SKILL_VERSION_PATTERN.test(value.skill_version)
+      || !['low', 'medium', 'high'].includes(value.risk_level)
+      || typeof value.content_sha256 !== 'string'
+      || !DOCUMENT_OPS_SHA256_PATTERN.test(value.content_sha256)
+      || typeof value.catalog_fingerprint !== 'string'
+      || !DOCUMENT_OPS_SHA256_PATTERN.test(value.catalog_fingerprint)
+      || value.code_execution_authorized !== false
+      || value.external_runtime_authorized !== false
+    ) return null;
+    return {
+      skillName: value.skill_name,
+      skillVersion: value.skill_version,
+      riskLevel: value.risk_level,
+      contentSha256: value.content_sha256,
+      catalogFingerprint: value.catalog_fingerprint,
+    };
+  }
+
+  function documentOpsExecutionProvenance(data) {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+    const binding = documentOpsValidatedSkillBinding(data.skill_binding);
+    if (
+      !binding
+      || data.skill_name !== binding.skillName
+      || data.skill_version !== binding.skillVersion
+      || (
+        data.operation_replayed !== undefined
+        && typeof data.operation_replayed !== 'boolean'
+      )
+    ) return null;
+    return {
+      ...binding,
+      replayState: data.operation_replayed === true ? 'exact replay' : 'first run',
+    };
+  }
+
+  function renderDocumentOpsProvenanceVerificationError(resultEl) {
+    if (resultEl) {
+      resultEl.innerHTML = '<div role="alert" style="color:#b91c1c;font-size:.84rem;line-height:1.5;">Agent 응답의 실행 provenance를 검증하지 못했습니다. 결과를 표시하거나 성공 처리하지 않았습니다.</div>';
+    }
+    showNotification('DocumentOps 응답의 실행 provenance를 검증하지 못했습니다.', 'error');
+  }
+
   function documentOpsRequiredField(id, label) {
     const input = $id(id);
     const value = String(input?.value || '').trim();
@@ -8348,8 +8437,9 @@
     return true;
   }
 
-  async function presentDocumentOpsAgentResult(data) {
-    renderDocumentOpsResult(data);
+  async function presentDocumentOpsAgentResult(data, provenance) {
+    if (!provenance) return false;
+    renderDocumentOpsResult(data, provenance);
     await loadDocumentOpsTrajectories({ resetPage: true, resetFilters: true });
     let successMessage = 'DocumentOps 결과를 생성했습니다.';
     if (data.trajectory_saved) {
@@ -8359,6 +8449,7 @@
       successMessage = '저장된 DocumentOps 결과를 안전하게 복구했습니다.';
     }
     showNotification(successMessage, 'success');
+    return true;
   }
 
   async function performDocumentOpsAgentRecovery() {
@@ -8396,12 +8487,17 @@
     try {
       const data = await sendDocumentOpsAgentRequest(pending.payload, pending.tenantId);
       if (_documentOpsPendingRunRecovery !== pending || pending.tenantId !== _currentTenantId) return;
+      const provenance = documentOpsExecutionProvenance(data);
+      if (!provenance) {
+        renderDocumentOpsProvenanceVerificationError($id('document-ops-result'));
+        return;
+      }
       if (data.operation_id !== operationId || data.operation_replayed !== true) {
         renderDocumentOpsRunRecovery(operationId, status);
         showNotification('저장된 Agent 결과의 operation identity를 확인하지 못했습니다.', 'error');
         return;
       }
-      await presentDocumentOpsAgentResult(data);
+      await presentDocumentOpsAgentResult(data, provenance);
       clearDocumentOpsPendingRunMarker(operationId);
       _documentOpsPendingRunRecovery = null;
     } catch (_) {
@@ -8520,6 +8616,15 @@
         }
         recoveredResult = true;
       }
+      const provenance = documentOpsExecutionProvenance(data);
+      if (!provenance) {
+        if (runIsCurrent()) {
+          renderDocumentOpsProvenanceVerificationError(resultEl);
+        } else {
+          showNotification('DocumentOps 응답의 실행 provenance를 검증하지 못했습니다.', 'error');
+        }
+        return;
+      }
       if (!runIsCurrent()) {
         if (data.trajectory_saved === true && tenantId === _currentTenantId) {
           await loadDocumentOpsTrajectories();
@@ -8540,7 +8645,7 @@
       }
       if (payload.operation_id) clearDocumentOpsPendingRunMarker(payload.operation_id);
       _documentOpsPendingRunRecovery = null;
-      await presentDocumentOpsAgentResult(data);
+      await presentDocumentOpsAgentResult(data, provenance);
     } catch (err) {
       if (!runIsCurrent()) {
         showNotification('이전 DocumentOps 실행이 실패했습니다. 현재 결과 화면은 더 최근 실행을 유지합니다.', 'warn');
@@ -8551,9 +8656,23 @@
     }
   }
 
-  function renderDocumentOpsResult(data) {
+  function renderDocumentOpsExecutionProvenance(provenance) {
+    return `<section class="docops-execution-provenance" aria-labelledby="document-ops-provenance-heading">
+      <h4 id="document-ops-provenance-heading">실행 provenance</h4>
+      <dl>
+        <div><dt>Skill</dt><dd>${escapeHtml(provenance.skillName)} · ${escapeHtml(provenance.skillVersion)}</dd></div>
+        <div><dt>Risk</dt><dd>${escapeHtml(provenance.riskLevel)}</dd></div>
+        <div><dt>Content SHA-256</dt><dd><code>${escapeHtml(provenance.contentSha256)}</code></dd></div>
+        <div><dt>Catalog fingerprint</dt><dd><code>${escapeHtml(provenance.catalogFingerprint)}</code></dd></div>
+        <div><dt>Replay state</dt><dd>${escapeHtml(provenance.replayState)}</dd></div>
+        <div><dt>Authority</dt><dd>code execution: not authorized · external runtime: not authorized</dd></div>
+      </dl>
+    </section>`;
+  }
+
+  function renderDocumentOpsResult(data, provenance) {
     const el = $id('document-ops-result');
-    if (!el) return;
+    if (!el || !provenance) return;
     const qa = data?.qa || {};
     const issues = Array.isArray(qa.gate_issues) ? qa.gate_issues : [];
     const warnings = Array.isArray(data?.quality_warnings) ? data.quality_warnings : [];
@@ -8562,11 +8681,12 @@
     el.innerHTML = `
       <div style="display:flex;justify-content:space-between;gap:.75rem;align-items:start;flex-wrap:wrap;margin-bottom:.8rem;">
         <div>
-          <h3 style="margin:0;font-size:1.05rem;font-weight:900;">${escapeHtml(data?.skill_name || 'DocumentOps')}</h3>
+          <h3 style="margin:0;font-size:1.05rem;font-weight:900;">${escapeHtml(provenance.skillName)}</h3>
           <div style="font-size:.78rem;color:var(--muted);margin-top:.2rem;">task=${escapeHtml(data?.task_type || '')} · provider=${escapeHtml(data?.provider_name || '')}</div>
         </div>
         <span style="display:inline-flex;border-radius:999px;padding:.18rem .55rem;font-size:.72rem;font-weight:850;background:${hardPass ? '#dcfce7' : '#fee2e2'};color:${hardPass ? '#15803d' : '#b91c1c'};">${hardPass ? 'QA PASS' : 'QA BLOCKED'}</span>
       </div>
+      ${renderDocumentOpsExecutionProvenance(provenance)}
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:.45rem;margin-bottom:.75rem;">
         ${Object.entries(scores).map(([key, value]) => `<div style="border:1px solid var(--border);border-radius:10px;padding:.5rem;background:rgba(255,255,255,.5);">
           <div style="font-size:.68rem;color:var(--muted);font-weight:800;">${escapeHtml(key)}</div>

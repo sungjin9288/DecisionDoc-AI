@@ -1025,6 +1025,89 @@ def test_index_html_document_ops_agent_run_keeps_the_latest_result():
     assert "_documentOpsLastResult" not in content
 
 
+def test_index_html_document_ops_agent_validates_exact_public_skill_binding():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    start = content.index("function documentOpsValidatedSkillBinding(value)")
+    end = content.index("function documentOpsExecutionProvenance", start)
+    validator = content[start:end]
+    provenance_start = end
+    provenance_end = content.index(
+        "function renderDocumentOpsProvenanceVerificationError",
+        provenance_start,
+    )
+    provenance = content[provenance_start:provenance_end]
+
+    assert (
+        "const DOCUMENT_OPS_SKILL_BINDING_KEYS = "
+        "'catalog_fingerprint,code_execution_authorized,content_sha256,"
+        "external_runtime_authorized,risk_level,schema_version,skill_name,skill_version';"
+    ) in content
+    assert "DOCUMENT_OPS_SKILL_BINDING_KEYS" in validator
+    assert "document_ops_skill_binding_v1" in validator
+    assert "DOCUMENT_OPS_SKILL_NAME_PATTERN" in validator
+    assert "DOCUMENT_OPS_SKILL_VERSION_PATTERN" in validator
+    assert "DOCUMENT_OPS_SHA256_PATTERN" in validator
+    assert "['low', 'medium', 'high']" in validator
+    assert "value.code_execution_authorized !== false" in validator
+    assert "value.external_runtime_authorized !== false" in validator
+    assert "data.skill_name !== binding.skillName" in provenance
+    assert "data.skill_version !== binding.skillVersion" in provenance
+    assert "data.operation_replayed !== undefined" in provenance
+    assert "typeof data.operation_replayed !== 'boolean'" in provenance
+    assert "replayState: data.operation_replayed === true ? 'exact replay' : 'first run'" in provenance
+
+
+def test_index_html_document_ops_agent_rejects_before_success_effects():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    run_start = content.index("async function runDocumentOpsAgent()")
+    run_end = content.index("function renderDocumentOpsExecutionProvenance", run_start)
+    run_block = content[run_start:run_end]
+    recovery_start = content.index("async function performDocumentOpsAgentRecovery()")
+    recovery_end = content.index("async function recoverDocumentOpsAgentRun()", recovery_start)
+    recovery_block = content[recovery_start:recovery_end]
+
+    run_validation = run_block.index("const provenance = documentOpsExecutionProvenance(data);")
+    post_validation = run_block[run_validation:]
+    assert post_validation.index("if (!runIsCurrent()) {") < post_validation.index(
+        "if (payload.operation_id) clearDocumentOpsPendingRunMarker"
+    )
+    assert post_validation.index("if (!runIsCurrent()) {") < post_validation.index(
+        "await presentDocumentOpsAgentResult(data, provenance);"
+    )
+    assert "renderDocumentOpsProvenanceVerificationError(resultEl);" in post_validation
+
+    recovery_validation = recovery_block.index(
+        "const provenance = documentOpsExecutionProvenance(data);"
+    )
+    assert recovery_validation < recovery_block.index("if (data.operation_id !== operationId")
+    assert recovery_validation < recovery_block.index(
+        "await presentDocumentOpsAgentResult(data, provenance);"
+    )
+    assert recovery_validation < recovery_block.index(
+        "clearDocumentOpsPendingRunMarker(operationId);"
+    )
+
+
+def test_index_html_document_ops_agent_renders_only_allowlisted_provenance():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    start = content.index("function renderDocumentOpsExecutionProvenance(provenance)")
+    end = content.index("function renderDocumentOpsResult", start)
+    renderer = content[start:end]
+
+    assert 'class="docops-execution-provenance"' in renderer
+    assert 'aria-labelledby="document-ops-provenance-heading"' in renderer
+    assert "escapeHtml(provenance.skillName)" in renderer
+    assert "escapeHtml(provenance.skillVersion)" in renderer
+    assert "escapeHtml(provenance.riskLevel)" in renderer
+    assert "escapeHtml(provenance.contentSha256)" in renderer
+    assert "escapeHtml(provenance.catalogFingerprint)" in renderer
+    assert "escapeHtml(provenance.replayState)" in renderer
+    assert "code execution: not authorized · external runtime: not authorized" in renderer
+    assert "data." not in renderer
+    for forbidden in ("source_path", "instruction", "credential", "provider", "approval", "publication"):
+        assert forbidden not in renderer
+
+
 def test_index_html_exports_current_generated_docs_before_regenerating():
     content = open("app/static/index.html", encoding="utf-8").read()
     export_blob_fn = re.search(

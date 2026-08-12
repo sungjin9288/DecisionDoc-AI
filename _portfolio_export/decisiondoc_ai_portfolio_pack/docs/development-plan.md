@@ -12,13 +12,13 @@
 
 | 축 | 현재 | 완성 기준 |
 |----|------|-----------|
-| **기능 검증** | DocumentOps strict skill binding + free local runtime no-cost gate: full non-live `4,565 passed, 1 skipped, 4 deselected` (2026-08-12). 2026-08-11 local live G2B smoke 1건 통과 | live LLM 잔여 provider와 G2B durable receipt/stage 경로도 실증 + 증적 |
+| **기능 검증** | DocumentOps browser provenance verification + free local runtime no-cost gate: full non-live `4,569 passed, 1 skipped, 4 deselected` (2026-08-12). 2026-08-11 local live G2B smoke 1건 통과 | live LLM 잔여 provider와 G2B durable receipt/stage 경로도 실증 + 증적 |
 | **아키텍처 위생** | ✅ 달성 (2026-07-14: 829줄 상수 모듈을 604줄 facade + 314줄 foundation으로 분리하고 800줄 guard 추가 → 초과 0개). CI advisory Ruff E/F/W와 Bandit medium/high 0건 기준 유지 | 전 모듈 800줄 이하 (전역 코딩 가이드), 계층 간 의존 방향 일관 |
 | **운영 준비성** | Docker/SAM 설정 존재, CSP nonce 부채 해소, 과거 GitHub Actions CI/CD success 증적 존재. 2026-08-11 current-main dev deploy-smoke는 AWS 진입 전 OIDC role assume에서 실패 | OIDC trust 복구 + 배포 절차 재검증 + post-deploy smoke 증적 |
 
 ```bash
 # 재현: 테스트 베이스라인
-pytest tests/ -m "not live" -q     # 2026-08-12 current: 4565 passed, 1 skipped, 4 deselected
+pytest tests/ -m "not live" -q     # 2026-08-12 current: 4569 passed, 1 skipped, 4 deselected
 
 # 재현: CI advisory lint/security 베이스라인
 ruff check app/ --select=E,F,W --ignore=E501
@@ -34,6 +34,13 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
 ```
 
 2026-08-12 DocumentOps strict skill binding focused gate는 registry·Agent·API·operation store·audit `143 passed`였다. 이는 mock provider와 local/fake-S3 범위의 재측정이며 위 full non-live baseline, live provider 품질 또는 AWS runtime 증거를 대체하지 않는다.
+
+같은 날짜 browser binding boundary의 static focused command는 `4 passed`, local Chromium focused command는 `9 passed`였다. Static check는 exact eight-field binding validator, top-level skill/version agreement, invalid response의 pre-success 차단과 allowlisted provenance renderer를 검사한다. Chromium check는 valid first run과 exact replay, malformed·authority-widened·mismatched response rejection, 기존 Agent recovery 흐름을 검증했고 desktop과 390px mobile screenshot에서 provenance overlap과 horizontal overflow가 없음을 확인했다. Browser console과 page error도 비어 있었다. 이 결과는 local loopback과 mock response 범위이며 live provider나 배포 runtime 증거를 대체하지 않는다.
+
+```bash
+python3 -m pytest -q tests/test_infrastructure.py -k document_ops_agent --tb=short
+python3 -m pytest -q tests/e2e/test_main_flow.py -k document_ops_agent --tb=short
+```
 
 ### H120 local slice
 

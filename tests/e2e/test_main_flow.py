@@ -4364,8 +4364,20 @@ def test_document_ops_agent_run_keeps_the_latest_result_and_observes_stale_compl
             JSON.stringify(body),
             { status, headers: { 'Content-Type': 'application/json' } },
           );
+          const skillBinding = skillName => ({
+            schema_version: 'document_ops_skill_binding_v1',
+            skill_name: skillName,
+            skill_version: '1.2.3',
+            risk_level: 'low',
+            content_sha256: 'a'.repeat(64),
+            catalog_fingerprint: 'b'.repeat(64),
+            code_execution_authorized: false,
+            external_runtime_authorized: false,
+          });
           const agentResult = (suffix, taskType) => ({
             skill_name: `skill-${suffix}`,
+            skill_version: '1.2.3',
+            skill_binding: skillBinding(`skill-${suffix}`),
             task_type: taskType,
             provider_name: 'mock',
             plan: [`plan-${suffix}`],
@@ -4507,8 +4519,20 @@ def test_document_ops_agent_button_sends_one_retry_identity_for_captured_run(pag
             JSON.stringify(body),
             { status: 200, headers: { 'Content-Type': 'application/json' } },
           );
+          const skillBinding = {
+            schema_version: 'document_ops_skill_binding_v1',
+            skill_name: 'decision-brief',
+            skill_version: '1.2.3',
+            risk_level: 'low',
+            content_sha256: 'a'.repeat(64),
+            catalog_fingerprint: 'b'.repeat(64),
+            code_execution_authorized: false,
+            external_runtime_authorized: false,
+          };
           const agentResult = {
             skill_name: 'decision-brief',
+            skill_version: '1.2.3',
+            skill_binding: skillBinding,
             task_type: 'decision_brief',
             provider_name: 'mock',
             plan: ['plan'],
@@ -4592,6 +4616,171 @@ def test_document_ops_agent_button_sends_one_retry_identity_for_captured_run(pag
     assert result["disabledAfter"] is False
 
 
+def test_document_ops_agent_renders_verified_provenance_and_rejects_invalid_bindings(page, tmp_path):
+    console_errors: list[str] = []
+    page_errors: list[str] = []
+    page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
+    page.on("pageerror", lambda error: page_errors.append(str(error)))
+    page.locator('[data-page="document-ops-page"]').click()
+    page.wait_for_timeout(250)
+
+    result = page.evaluate(
+        """async () => {
+          const nativeFetch = window.fetch;
+          const response = body => new Response(
+            JSON.stringify(body),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+          const binding = {
+            schema_version: 'document_ops_skill_binding_v1',
+            skill_name: 'decision-brief',
+            skill_version: '1.2.3',
+            risk_level: 'medium',
+            content_sha256: 'a'.repeat(64),
+            catalog_fingerprint: 'b'.repeat(64),
+            code_execution_authorized: false,
+            external_runtime_authorized: false,
+          };
+          const agentResult = (skillBinding, overrides = {}) => ({
+            skill_name: 'decision-brief',
+            skill_version: '1.2.3',
+            skill_binding: skillBinding,
+            task_type: 'decision_brief',
+            provider_name: 'mock',
+            plan: ['verified plan'],
+            draft: 'verified draft',
+            qa: { hard_gate_pass: true, scores: {}, gate_issues: [] },
+            evidence_status: {
+              confirmed: [], assumptions: [], gaps: [], source_references: [],
+            },
+            quality_warnings: [],
+            trajectory_id: 'verified-trajectory',
+            trajectory_saved: true,
+            ...overrides,
+          });
+          const responses = [
+            agentResult(binding),
+            agentResult({ ...binding, content_sha256: 'A'.repeat(64) }, {
+              draft: 'untrusted malformed draft',
+              plan: ['untrusted malformed plan'],
+            }),
+            agentResult({ ...binding, source_path: 'secret-local-source-path' }, {
+              draft: 'untrusted extra draft',
+            }),
+            agentResult(null, {
+              draft: 'untrusted missing draft',
+            }),
+            agentResult({ ...binding, code_execution_authorized: true }, {
+              draft: 'untrusted authority draft',
+            }),
+            agentResult(binding, {
+              skill_version: '9.9.9',
+              draft: 'untrusted mismatch draft',
+            }),
+            agentResult(binding, {
+              operation_replayed: 'false',
+              draft: 'untrusted replay-state draft',
+            }),
+          ];
+          const trajectoryFetches = [];
+          window.fetch = (input, options = {}) => {
+            const url = String(input || '');
+            if (url === '/api/agent/document-ops/run') {
+              return Promise.resolve(response(responses.shift()));
+            }
+            if (url === '/api/agent/document-ops/trajectories/stats') {
+              trajectoryFetches.push(url);
+              return Promise.resolve(response({
+                total_records: 1,
+                accepted_records: 0,
+                pending_records: 1,
+                export_count: 0,
+              }));
+            }
+            if (url.startsWith('/api/agent/document-ops/trajectories?')) {
+              trajectoryFetches.push(url);
+              return Promise.resolve(response({
+                trajectories: [], total: 0, offset: 0, returned: 0,
+                has_more: false, order: 'newest',
+              }));
+            }
+            return nativeFetch(input, options);
+          };
+          const button = document.querySelector('[data-docops-action="run-agent"]');
+          document.querySelector('#docops-title').value = 'Binding verification';
+          document.querySelector('#docops-capture-trajectory').checked = false;
+          const run = async () => {
+            document.querySelector('#notification-container').replaceChildren();
+            button.click();
+            while (button.disabled) {
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
+            return {
+              result: document.querySelector('#document-ops-result').textContent,
+              notification: document.querySelector('#notification-container').textContent,
+              trajectoryFetchCount: trajectoryFetches.length,
+            };
+          };
+          window.__documentOpsBindingTest = {
+            run,
+            restore: () => { window.fetch = nativeFetch; },
+          };
+          return run();
+        }"""
+    )
+
+    assert "실행 provenance" in result["result"]
+    assert "decision-brief · 1.2.3" in result["result"]
+    assert "medium" in result["result"]
+    assert "a" * 64 in result["result"]
+    assert "b" * 64 in result["result"]
+    assert "first run" in result["result"]
+    assert "code execution: not authorized" in result["result"]
+    assert result["trajectoryFetchCount"] == 2
+
+    page.set_viewport_size({"width": 1440, "height": 1000})
+    page.screenshot(path=str(tmp_path / "document-ops-provenance-desktop.png"), full_page=True)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.screenshot(path=str(tmp_path / "document-ops-provenance-mobile.png"), full_page=True)
+    assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth")
+
+    invalid_results = page.evaluate(
+        """async () => {
+          const test = window.__documentOpsBindingTest;
+          try {
+            return [
+              await test.run(), await test.run(), await test.run(), await test.run(), await test.run(),
+              await test.run(),
+            ];
+          } finally {
+            test.restore();
+            delete window.__documentOpsBindingTest;
+          }
+        }"""
+    )
+    for invalid in invalid_results:
+        assert "실행 provenance를 검증하지 못했습니다" in invalid["result"]
+        assert "실행 provenance를 검증하지 못했습니다" in invalid["notification"]
+        assert "생성했습니다" not in invalid["notification"]
+        assert "저장했습니다" not in invalid["notification"]
+        assert "복구했습니다" not in invalid["notification"]
+        assert invalid["trajectoryFetchCount"] == result["trajectoryFetchCount"]
+        for untrusted in (
+            "untrusted malformed draft",
+            "untrusted malformed plan",
+            "untrusted extra draft",
+            "untrusted missing draft",
+            "untrusted authority draft",
+            "untrusted mismatch draft",
+            "untrusted replay-state draft",
+            "secret-local-source-path",
+        ):
+            assert untrusted not in invalid["result"]
+
+    assert page_errors == []
+    assert console_errors == []
+
+
 def test_document_ops_agent_recovers_a_lost_success_with_the_same_operation_identity(page):
     page.locator('[data-page="document-ops-page"]').click()
     page.wait_for_timeout(250)
@@ -4610,8 +4799,20 @@ def test_document_ops_agent_recovers_a_lost_success_with_the_same_operation_iden
             JSON.stringify(body),
             { status: 200, headers: { 'Content-Type': 'application/json' } },
           );
+          const skillBinding = {
+            schema_version: 'document_ops_skill_binding_v1',
+            skill_name: 'decision-brief',
+            skill_version: '1.2.3',
+            risk_level: 'low',
+            content_sha256: 'a'.repeat(64),
+            catalog_fingerprint: 'b'.repeat(64),
+            code_execution_authorized: false,
+            external_runtime_authorized: false,
+          };
           const agentResult = {
             skill_name: 'decision-brief',
+            skill_version: '1.2.3',
+            skill_binding: skillBinding,
             task_type: 'decision_brief',
             provider_name: 'mock',
             plan: ['plan'],
@@ -4708,6 +4909,8 @@ def test_document_ops_agent_recovers_a_lost_success_with_the_same_operation_iden
     assert result["statusTenant"] == result["originalTenant"]
     assert result["replayTenant"] == result["originalTenant"]
     assert "recovered exact replay" in result["resultText"]
+    assert "실행 provenance" in result["resultText"]
+    assert "exact replay" in result["resultText"]
     assert "replay" in result["resultText"]
     assert result["disabledAfter"] is False
 
@@ -4726,6 +4929,16 @@ def test_document_ops_agent_rechecks_pending_operation_before_exact_replay(page)
             JSON.stringify(body),
             { status: 200, headers: { 'Content-Type': 'application/json' } },
           );
+          const skillBinding = {
+            schema_version: 'document_ops_skill_binding_v1',
+            skill_name: 'decision-brief',
+            skill_version: '1.2.3',
+            risk_level: 'low',
+            content_sha256: 'a'.repeat(64),
+            catalog_fingerprint: 'b'.repeat(64),
+            code_execution_authorized: false,
+            external_runtime_authorized: false,
+          };
           try {
             window.fetch = (input, options = {}) => {
               const url = String(input || '');
@@ -4737,6 +4950,8 @@ def test_document_ops_agent_rechecks_pending_operation_before_exact_replay(page)
                 }
                 return Promise.resolve(response({
                   skill_name: 'decision-brief',
+                  skill_version: '1.2.3',
+                  skill_binding: skillBinding,
                   task_type: 'decision_brief',
                   provider_name: 'mock',
                   plan: ['plan'],
