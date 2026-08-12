@@ -7707,6 +7707,249 @@ def test_document_ops_comparison_file_intake_validates_bytes_response_and_stale_
     assert console_errors == []
 
 
+@pytest.mark.parametrize(
+    "failure_mode",
+    ["missing_hash", "wrong_hash", "invalid_utf8", "invalid_json", "invalid_schema"],
+)
+def test_document_ops_comparison_change_set_rejects_untrusted_bytes_before_agent_post(
+    page,
+    failure_mode,
+):
+    page.locator('[data-page="document-ops-page"]').click()
+    page.locator("#docops-task-type").select_option("document_comparison_review")
+    page.locator("#docops-title").fill(f"Rejected {failure_mode}")
+    page.locator("#docops-baseline-document").fill("baseline\nold")
+    page.locator("#docops-candidate-document").fill("baseline\nnew")
+    page.locator("#docops-capture-trajectory").uncheck()
+
+    result = page.evaluate(
+        r"""async mode => {
+          const nativeFetch = window.fetch;
+          const endpoint = '/api/agent/document-ops/comparison-documents/change-set';
+          const requestBody = JSON.stringify({
+            schema_version: 'document_ops_comparison_change_set_request_v1',
+            baseline_document_text: document.querySelector('#docops-baseline-document').value,
+            candidate_document_text: document.querySelector('#docops-candidate-document').value,
+            comparison_criteria: [],
+          });
+          const trusted = await nativeFetch(endpoint, {
+            method: 'POST',
+            headers: { ...getAuthHeaders(_currentTenantId), 'Content-Type': 'application/json' },
+            body: requestBody,
+          });
+          const trustedBytes = new Uint8Array(await trusted.arrayBuffer());
+          const trustedText = new TextDecoder().decode(trustedBytes);
+          let agentPosts = 0;
+          try {
+            window.fetch = async (input, options = {}) => {
+              const url = String(input || '');
+              if (url === '/api/agent/document-ops/run') {
+                agentPosts += 1;
+                return new Response('{}', { status: 500 });
+              }
+              if (url !== endpoint) return nativeFetch(input, options);
+              const headers = new Headers(trusted.headers);
+              let bytes = trustedBytes;
+              if (mode === 'missing_hash') headers.delete(DOCUMENT_OPS_COMPARISON_CHANGE_SET_HASH_HEADER);
+              if (mode === 'wrong_hash') headers.set(DOCUMENT_OPS_COMPARISON_CHANGE_SET_HASH_HEADER, '0'.repeat(64));
+              if (mode === 'invalid_utf8') bytes = new Uint8Array([0xff, 0xfe, 0xfd]);
+              if (mode === 'invalid_json') bytes = new TextEncoder().encode('not-json\n');
+              if (mode === 'invalid_schema') {
+                const value = JSON.parse(trustedText);
+                value.unexpected = true;
+                bytes = new TextEncoder().encode(`${JSON.stringify(value)}\n`);
+              }
+              if (!['missing_hash', 'wrong_hash'].includes(mode)) {
+                headers.set(
+                  DOCUMENT_OPS_COMPARISON_CHANGE_SET_HASH_HEADER,
+                  await documentOpsSha256Bytes(bytes),
+                );
+              }
+              return new Response(bytes, { status: 200, headers });
+            };
+            document.querySelector('#notification-container').replaceChildren();
+            await runDocumentOpsAgent();
+            return {
+              agentPosts,
+              notification: document.querySelector('#notification-container').textContent,
+              evidence: _documentOpsVerifiedComparisonChangeSet,
+              downloadDisabled: document.querySelector('#document-ops-comparison-change-set-download').disabled,
+            };
+          } finally {
+            window.fetch = nativeFetch;
+          }
+        }""",
+        failure_mode,
+    )
+
+    assert result["agentPosts"] == 0
+    assert result["evidence"] is None
+    assert result["downloadDisabled"] is True
+    assert "검증 실패" in result["notification"]
+
+
+def test_document_ops_comparison_change_set_keeps_only_current_exact_download_and_layout(
+    page,
+    tmp_path,
+):
+    console_errors: list[str] = []
+    page_errors: list[str] = []
+    page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
+    page.on("pageerror", lambda error: page_errors.append(str(error)))
+    page.locator('[data-page="document-ops-page"]').click()
+    page.locator("#docops-task-type").select_option("document_comparison_review")
+    page.locator("#docops-title").fill("Exact change set download")
+    page.locator("#docops-baseline-document").fill(
+        "same\ndelete-only\nanchor-a\nreplace-old\nanchor-b\ntail"
+    )
+    page.locator("#docops-candidate-document").fill(
+        "same\nanchor-a\nreplace-new\nanchor-b\ninsert-only\ntail"
+    )
+    page.locator("#docops-capture-trajectory").uncheck()
+    page.locator('[data-docops-action="run-agent"]').click()
+    _wait_until_text_contains(page, "#document-ops-comparison-change-set", "Verified line change set")
+    _wait_until_text_contains(page, "#document-ops-result", "비교 context", timeout_ms=10000)
+
+    expected_bytes = page.evaluate(
+        "() => Array.from(_documentOpsVerifiedComparisonChangeSet.exactBytes)",
+    )
+    stale_url = page.evaluate("() => _documentOpsVerifiedComparisonChangeSet.objectUrl")
+    page.evaluate(
+        """() => {
+          window.__comparisonRevokedUrls = [];
+          window.__comparisonNativeRevokeObjectUrl = URL.revokeObjectURL;
+          URL.revokeObjectURL = value => {
+            window.__comparisonRevokedUrls.push(value);
+            window.__comparisonNativeRevokeObjectUrl.call(URL, value);
+          };
+        }"""
+    )
+    with page.expect_download() as download_info:
+        page.locator("#document-ops-comparison-change-set-download").click()
+    download = download_info.value
+    assert download.suggested_filename == "document-ops-comparison-change-set.json"
+    assert download.path().read_bytes() == bytes(expected_bytes)
+
+    panel = page.locator("#document-ops-comparison-change-set")
+    assert panel.is_visible()
+    assert panel.locator('[data-comparison-opcode="identical"]').count() >= 1
+    assert panel.locator('[data-comparison-opcode="add"]').count() == 1
+    assert panel.locator('[data-comparison-opcode="remove"]').count() == 1
+    assert panel.locator('[data-comparison-opcode="replace"]').count() == 1
+    assert panel.locator('[data-comparison-opcode="identical"]').first.is_visible()
+    assert panel.locator('[data-comparison-opcode="add"]').is_visible()
+    assert panel.locator('[data-comparison-opcode="remove"]').is_visible()
+    assert panel.locator('[data-comparison-opcode="replace"]').is_visible()
+    assert "authority all false" in panel.inner_text()
+    assert page.locator("#document-ops-comparison-change-set-download").is_visible()
+    assert page.locator("#document-ops-comparison-change-set-download").is_enabled()
+
+    page.set_viewport_size({"width": 1440, "height": 1000})
+    assert panel.is_visible()
+    page.screenshot(path=str(tmp_path / "document-ops-change-set-desktop.png"), full_page=True)
+    page.set_viewport_size({"width": 390, "height": 844})
+    assert panel.is_visible()
+    assert panel.locator('[data-comparison-opcode="replace"]').is_visible()
+    assert page.locator("#document-ops-comparison-change-set-download").is_visible()
+    page.screenshot(path=str(tmp_path / "document-ops-change-set-mobile.png"), full_page=True)
+    assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth")
+
+    page.locator("#docops-comparison-criteria").fill("security")
+    assert page.evaluate("() => _documentOpsVerifiedComparisonChangeSet") is None
+    assert page.evaluate("() => window.__comparisonRevokedUrls").count(stale_url) == 1
+    assert page.locator("#document-ops-comparison-change-set-download").is_disabled()
+    assert page_errors == []
+    assert console_errors == []
+
+
+def test_document_ops_comparison_change_set_discards_reverse_order_task_and_auth_stale_work(page):
+    page.locator('[data-page="document-ops-page"]').click()
+    page.locator("#docops-task-type").select_option("document_comparison_review")
+    page.locator("#docops-title").fill("Stale change set guard")
+    page.locator("#docops-baseline-document").fill("same\nfirst-old")
+    page.locator("#docops-candidate-document").fill("same\nnew")
+    page.locator("#docops-capture-trajectory").uncheck()
+
+    result = page.evaluate(
+        r"""async () => {
+          const nativeFetch = window.fetch;
+          const endpoint = '/api/agent/document-ops/comparison-documents/change-set';
+          const pending = [];
+          let agentPosts = 0;
+          const waitForPending = async count => {
+            for (let index = 0; index < 200 && pending.length < count; index += 1) {
+              await new Promise(resolve => setTimeout(resolve, 5));
+            }
+            if (pending.length < count) throw new Error(`missing deferred request ${count}`);
+          };
+          const fulfill = async request => {
+            const response = await nativeFetch(request.input, request.options);
+            const bytes = await response.arrayBuffer();
+            request.resolve(new Response(bytes, { status: response.status, headers: response.headers }));
+          };
+          try {
+            window.fetch = (input, options = {}) => {
+              const url = String(input || '');
+              if (url === endpoint) {
+                return new Promise(resolve => pending.push({ resolve, input, options }));
+              }
+              if (url === '/api/agent/document-ops/run') agentPosts += 1;
+              return nativeFetch(input, options);
+            };
+
+            const firstRun = runDocumentOpsAgent();
+            await waitForPending(1);
+            const baseline = document.querySelector('#docops-baseline-document');
+            baseline.value = 'same\ncurrent-old';
+            baseline.dispatchEvent(new Event('input', { bubbles: true }));
+            const secondRun = runDocumentOpsAgent();
+            await waitForPending(2);
+            await fulfill(pending[1]);
+            await secondRun;
+            await fulfill(pending[0]);
+            await firstRun;
+            const reverseOrder = {
+              agentPosts,
+              baseline: _documentOpsVerifiedComparisonChangeSet?.snapshot?.baseline,
+            };
+
+            pending.splice(0);
+            const taskRun = runDocumentOpsAgent();
+            await waitForPending(1);
+            const taskSelect = document.querySelector('#docops-task-type');
+            taskSelect.value = 'policy_planning_brief';
+            taskSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            await fulfill(pending[0]);
+            await taskRun;
+            const afterTaskInvalidation = agentPosts;
+
+            taskSelect.value = 'document_comparison_review';
+            taskSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            pending.splice(0);
+            const authRun = runDocumentOpsAgent();
+            await waitForPending(1);
+            _authSessionRevision += 1;
+            invalidateDocumentOpsComparisonIntake({ clearFileText: false, reason: 'auth test revision' });
+            await fulfill(pending[0]);
+            await authRun;
+            return {
+              reverseOrder,
+              afterTaskInvalidation,
+              afterAuthInvalidation: agentPosts,
+              evidence: _documentOpsVerifiedComparisonChangeSet,
+            };
+          } finally {
+            window.fetch = nativeFetch;
+          }
+        }"""
+    )
+
+    assert result["reverseOrder"] == {"agentPosts": 1, "baseline": "same\ncurrent-old"}
+    assert result["afterTaskInvalidation"] == 1
+    assert result["afterAuthInvalidation"] == 1
+    assert result["evidence"] is None
+
+
 # ── 생성 플로우 ───────────────────────────────────────────────────────────────
 
 def test_generate_flow_produces_results(page):

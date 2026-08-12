@@ -7023,7 +7023,11 @@
         <textarea id="docops-candidate-document" class="gov-input" rows="5" maxlength="20000" placeholder="변경 후보 원문을 입력하세요." style="width:100%;resize:vertical;"></textarea>
         <label style="display:block;font-size:.8rem;font-weight:700;margin:.55rem 0 .25rem;" for="docops-comparison-criteria">Comparison criteria</label>
         <textarea id="docops-comparison-criteria" class="gov-input" rows="3" maxlength="960" placeholder="선택: 한 줄에 하나씩, 최대 8개" style="width:100%;resize:vertical;"></textarea>
-        <p style="margin:.45rem 0 0;font-size:.72rem;color:var(--muted);line-height:1.45;">원문은 이번 비교 요청에만 사용합니다. 저장된 context에는 hash, 동일 여부, 기준만 남습니다.</p>
+        <div id="document-ops-comparison-change-set" aria-live="polite" style="margin-top:.65rem;border:1px solid var(--border);border-radius:12px;padding:.7rem;background:rgba(255,255,255,.55);font-size:.74rem;line-height:1.5;overflow-wrap:anywhere;">
+          Agent 실행 전에 line change set을 검증합니다.
+        </div>
+        <button id="document-ops-comparison-change-set-download" type="button" class="action-btn" disabled style="margin-top:.45rem;">검증된 change set JSON 다운로드</button>
+        <p style="margin:.45rem 0 0;font-size:.72rem;color:var(--muted);line-height:1.45;">원문은 이번 비교 요청에만 사용합니다. Change set은 page memory에만 유지하며 의미·정책·법적·운영 판단 권한을 만들지 않습니다.</p>
       </div>
       <label style="display:flex;align-items:center;gap:.45rem;font-size:.82rem;color:var(--muted);margin:.8rem 0;">
         <input id="docops-capture-trajectory" type="checkbox" checked>
@@ -8042,6 +8046,8 @@
   let _documentOpsComparisonModeActive = false;
   const _documentOpsComparisonIntakeVersion = { baseline: 0, candidate: 0 };
   const _documentOpsComparisonFileProvenance = { baseline: null, candidate: null };
+  let _documentOpsComparisonChangeSetVersion = 0;
+  let _documentOpsVerifiedComparisonChangeSet = null;
   const _documentOpsReviewDrafts = new Map();
 
   function documentOpsReviewDraftKey(
@@ -8081,6 +8087,12 @@
   const DOCUMENT_OPS_SHA256_PATTERN = /^[0-9a-f]{64}$/;
   const DOCUMENT_OPS_COMPARISON_CONTEXT_KEYS = 'baseline_sha256,candidate_sha256,comparison_criteria,documents_identical,raw_content_included,schema_version';
   const DOCUMENT_OPS_COMPARISON_DOCUMENT_KEYS = 'content_may_be_truncated,extracted_char_count,extracted_text,extracted_text_sha256,extraction_mode,filename,persisted,provider_called,schema_version,source_sha256,source_size_bytes';
+  const DOCUMENT_OPS_COMPARISON_CHANGE_SET_KEYS = 'added_line_count,authority,baseline_line_count,baseline_replaced_line_count,baseline_sha256,candidate_line_count,candidate_replaced_line_count,candidate_sha256,comparison_criteria,documents_identical,equal_line_count,hunks,hunks_truncated,removed_line_count,replaced_line_count,schema_version,total_hunk_count';
+  const DOCUMENT_OPS_COMPARISON_HUNK_KEYS = 'baseline_end,baseline_lines,baseline_start,candidate_end,candidate_lines,candidate_start,opcode';
+  const DOCUMENT_OPS_COMPARISON_AUTHORITY_KEYS = 'approval,code_execution,external_effect,external_runtime,persistence,provider_call,semantic';
+  const DOCUMENT_OPS_COMPARISON_CHANGE_SET_HASH_HEADER = 'X-DecisionDoc-Document-Comparison-SHA256';
+  const DOCUMENT_OPS_COMPARISON_CHANGE_SET_FILENAME = 'document-ops-comparison-change-set.json';
+  const DOCUMENT_OPS_COMPARISON_HUNK_LINE_LIMIT = 200;
   const DOCUMENT_OPS_COMPARISON_MAX_SOURCE_BYTES = 20 * 1024 * 1024;
   const DOCUMENT_OPS_COMPARISON_EXTRACTION_MODE = 'deterministic_local_existing_parser';
   const DOCUMENT_OPS_COMPARISON_MAX_EXTRACTED_CHARS = 12000;
@@ -8241,6 +8253,311 @@
     return documentOpsSha256Bytes(new TextEncoder().encode(value));
   }
 
+  function documentOpsComparisonSourceLines(value) {
+    const lines = String(value || '').split(/\r\n|[\n\v\f\r\x1c-\x1e\x85\u2028\u2029]/);
+    if (lines.length && lines[lines.length - 1] === '') lines.pop();
+    return lines;
+  }
+
+  function documentOpsComparisonChangeSetSnapshot() {
+    return {
+      taskType: documentOpsSelectedTaskType(),
+      baseline: String($id('docops-baseline-document')?.value || ''),
+      candidate: String($id('docops-candidate-document')?.value || ''),
+      criteria: documentOpsComparisonCriteria(),
+      tenantId: _currentTenantId,
+      authRevision: _authSessionRevision,
+    };
+  }
+
+  function documentOpsComparisonSnapshotIsCurrent(snapshot) {
+    const current = documentOpsComparisonChangeSetSnapshot();
+    return snapshot?.taskType === 'document_comparison_review'
+      && current.taskType === snapshot.taskType
+      && current.baseline === snapshot.baseline
+      && current.candidate === snapshot.candidate
+      && JSON.stringify(current.criteria) === JSON.stringify(snapshot.criteria)
+      && current.tenantId === snapshot.tenantId
+      && current.authRevision === snapshot.authRevision;
+  }
+
+  function renderDocumentOpsComparisonChangeSetInvalid(reason) {
+    const el = $id('document-ops-comparison-change-set');
+    if (el) el.innerHTML = `<div role="status" style="color:var(--muted);">${escapeHtml(reason)}</div>`;
+    const download = $id('document-ops-comparison-change-set-download');
+    if (download) download.disabled = true;
+  }
+
+  function invalidateDocumentOpsComparisonChangeSet(reason = '비교 입력이 변경되어 change set 증거가 무효화되었습니다.') {
+    _documentOpsComparisonChangeSetVersion += 1;
+    if (_documentOpsVerifiedComparisonChangeSet?.objectUrl) {
+      URL.revokeObjectURL(_documentOpsVerifiedComparisonChangeSet.objectUrl);
+    }
+    _documentOpsVerifiedComparisonChangeSet = null;
+    renderDocumentOpsComparisonChangeSetInvalid(reason);
+  }
+
+  function renderDocumentOpsComparisonChangeSet(verified) {
+    const el = $id('document-ops-comparison-change-set');
+    if (!el) return;
+    const value = verified.value;
+    const hunkHtml = value.hunks.map((hunk, index) => {
+      const label = hunk.opcode === 'equal'
+        ? 'identical'
+        : hunk.opcode === 'insert'
+          ? 'add'
+          : hunk.opcode === 'delete'
+            ? 'remove'
+            : 'replace';
+      const baselineText = hunk.baseline_lines.length ? hunk.baseline_lines.map(line => escapeHtml(line)).join('\n') : '(none)';
+      const candidateText = hunk.candidate_lines.length ? hunk.candidate_lines.map(line => escapeHtml(line)).join('\n') : '(none)';
+      return `<section data-comparison-opcode="${escapeHtml(label)}" style="border:1px solid var(--border);border-radius:10px;padding:.55rem;margin-top:.5rem;min-width:0;">
+        <div style="font-weight:900;">${escapeHtml(label)} #${index + 1}</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.45rem;margin-top:.4rem;min-width:0;">
+          <div style="min-width:0;"><strong>Baseline [${hunk.baseline_start}, ${hunk.baseline_end})</strong><pre style="white-space:pre-wrap;overflow-wrap:anywhere;margin:.25rem 0 0;max-height:12rem;overflow:auto;">${baselineText}</pre></div>
+          <div style="min-width:0;"><strong>Candidate [${hunk.candidate_start}, ${hunk.candidate_end})</strong><pre style="white-space:pre-wrap;overflow-wrap:anywhere;margin:.25rem 0 0;max-height:12rem;overflow:auto;">${candidateText}</pre></div>
+        </div>
+      </section>`;
+    }).join('');
+    el.innerHTML = `<div style="font-weight:900;color:#166534;">Verified line change set · ${value.documents_identical ? 'identical' : 'changed'}</div>
+      <div style="margin-top:.25rem;color:var(--muted);">equal ${value.equal_line_count} · add ${value.added_line_count} · remove ${value.removed_line_count} · replace ${value.replaced_line_count} · hunks ${value.hunks.length}/${value.total_hunk_count}${value.hunks_truncated ? ' (truncated)' : ''} · authority all false</div>
+      ${hunkHtml}`;
+    const download = $id('document-ops-comparison-change-set-download');
+    if (download) download.disabled = false;
+  }
+
+  async function documentOpsValidatedComparisonChangeSet(value, baseline, candidate, criteria) {
+    if (
+      !value
+      || typeof value !== 'object'
+      || Array.isArray(value)
+      || Object.keys(value).sort().join(',') !== DOCUMENT_OPS_COMPARISON_CHANGE_SET_KEYS
+      || value.schema_version !== 'document_ops_comparison_change_set_v1'
+      || typeof value.baseline_sha256 !== 'string'
+      || !DOCUMENT_OPS_SHA256_PATTERN.test(value.baseline_sha256)
+      || typeof value.candidate_sha256 !== 'string'
+      || !DOCUMENT_OPS_SHA256_PATTERN.test(value.candidate_sha256)
+      || typeof value.documents_identical !== 'boolean'
+      || !documentOpsComparisonCriteriaAreNormalized(value.comparison_criteria)
+      || JSON.stringify(value.comparison_criteria) !== JSON.stringify(criteria)
+      || !value.authority
+      || typeof value.authority !== 'object'
+      || Array.isArray(value.authority)
+      || Object.keys(value.authority).sort().join(',') !== DOCUMENT_OPS_COMPARISON_AUTHORITY_KEYS
+      || !Object.values(value.authority).every(item => item === false)
+      || !Number.isInteger(value.total_hunk_count)
+      || value.total_hunk_count < 1
+      || typeof value.hunks_truncated !== 'boolean'
+      || !Array.isArray(value.hunks)
+      || !value.hunks.length
+      || value.hunks.length > value.total_hunk_count
+    ) return null;
+
+    const countKeys = [
+      'baseline_line_count', 'candidate_line_count', 'equal_line_count',
+      'added_line_count', 'removed_line_count', 'baseline_replaced_line_count',
+      'candidate_replaced_line_count', 'replaced_line_count',
+    ];
+    if (!countKeys.every(key => Number.isInteger(value[key]) && value[key] >= 0)) return null;
+    const baselineLines = documentOpsComparisonSourceLines(baseline);
+    const candidateLines = documentOpsComparisonSourceLines(candidate);
+    if (value.baseline_line_count !== baselineLines.length || value.candidate_line_count !== candidateLines.length) return null;
+    try {
+      const [baselineSha256, candidateSha256] = await Promise.all([
+        documentOpsSha256Text(baseline),
+        documentOpsSha256Text(candidate),
+      ]);
+      if (
+        value.baseline_sha256 !== baselineSha256
+        || value.candidate_sha256 !== candidateSha256
+        || value.documents_identical !== (baseline === candidate)
+      ) return null;
+    } catch (_) {
+      return null;
+    }
+
+    if (
+      value.replaced_line_count !== Math.max(value.baseline_replaced_line_count, value.candidate_replaced_line_count)
+      || value.baseline_line_count !== value.equal_line_count + value.removed_line_count + value.baseline_replaced_line_count
+      || value.candidate_line_count !== value.equal_line_count + value.added_line_count + value.candidate_replaced_line_count
+    ) return null;
+    let baselineCursor = 0;
+    let candidateCursor = 0;
+    let equalCount = 0;
+    let addedCount = 0;
+    let removedCount = 0;
+    let baselineReplaced = 0;
+    let candidateReplaced = 0;
+    let exposedLineCount = 0;
+    for (const hunk of value.hunks) {
+      if (
+        !hunk
+        || typeof hunk !== 'object'
+        || Array.isArray(hunk)
+        || Object.keys(hunk).sort().join(',') !== DOCUMENT_OPS_COMPARISON_HUNK_KEYS
+        || !['equal', 'insert', 'delete', 'replace'].includes(hunk.opcode)
+        || !['baseline_start', 'baseline_end', 'candidate_start', 'candidate_end'].every(key => Number.isInteger(hunk[key]) && hunk[key] >= 0)
+        || hunk.baseline_start !== baselineCursor
+        || hunk.candidate_start !== candidateCursor
+        || hunk.baseline_end < hunk.baseline_start
+        || hunk.candidate_end < hunk.candidate_start
+        || !Array.isArray(hunk.baseline_lines)
+        || !Array.isArray(hunk.candidate_lines)
+        || !hunk.baseline_lines.every(line => typeof line === 'string')
+        || !hunk.candidate_lines.every(line => typeof line === 'string')
+      ) return null;
+      const baselineCount = hunk.baseline_end - hunk.baseline_start;
+      const candidateCount = hunk.candidate_end - hunk.candidate_start;
+      const included = hunk.baseline_lines.length + hunk.candidate_lines.length;
+      if (
+        hunk.baseline_lines.length !== baselineCount
+        || hunk.candidate_lines.length !== candidateCount
+        || JSON.stringify(hunk.baseline_lines) !== JSON.stringify(baselineLines.slice(hunk.baseline_start, hunk.baseline_start + hunk.baseline_lines.length))
+        || JSON.stringify(hunk.candidate_lines) !== JSON.stringify(candidateLines.slice(hunk.candidate_start, hunk.candidate_start + hunk.candidate_lines.length))
+        || (hunk.opcode === 'equal' && (baselineCount <= 0 || baselineCount !== candidateCount || JSON.stringify(hunk.baseline_lines) !== JSON.stringify(hunk.candidate_lines)))
+        || (hunk.opcode === 'insert' && (baselineCount !== 0 || candidateCount <= 0))
+        || (hunk.opcode === 'delete' && (baselineCount <= 0 || candidateCount !== 0))
+        || (hunk.opcode === 'replace' && (baselineCount <= 0 || candidateCount <= 0))
+      ) return null;
+      exposedLineCount += included;
+      baselineCursor = hunk.baseline_end;
+      candidateCursor = hunk.candidate_end;
+      if (hunk.opcode === 'equal') equalCount += baselineCount;
+      else if (hunk.opcode === 'insert') addedCount += candidateCount;
+      else if (hunk.opcode === 'delete') removedCount += baselineCount;
+      else {
+        baselineReplaced += baselineCount;
+        candidateReplaced += candidateCount;
+      }
+    }
+    if (exposedLineCount > DOCUMENT_OPS_COMPARISON_HUNK_LINE_LIMIT) return null;
+    if (value.hunks_truncated) {
+      if (![DOCUMENT_OPS_COMPARISON_HUNK_LINE_LIMIT - 1, DOCUMENT_OPS_COMPARISON_HUNK_LINE_LIMIT].includes(exposedLineCount)) return null;
+      if (
+        equalCount > value.equal_line_count
+        || addedCount > value.added_line_count
+        || removedCount > value.removed_line_count
+        || baselineReplaced > value.baseline_replaced_line_count
+        || candidateReplaced > value.candidate_replaced_line_count
+        || (
+          baselineCursor === baselineLines.length
+          && candidateCursor === candidateLines.length
+          && value.hunks.length === value.total_hunk_count
+        )
+      ) return null;
+    } else if (
+      value.hunks.length !== value.total_hunk_count
+      || baselineCursor !== baselineLines.length
+      || candidateCursor !== candidateLines.length
+      || value.equal_line_count !== equalCount
+      || value.added_line_count !== addedCount
+      || value.removed_line_count !== removedCount
+      || value.baseline_replaced_line_count !== baselineReplaced
+      || value.candidate_replaced_line_count !== candidateReplaced
+    ) return null;
+    return value;
+  }
+
+  function documentOpsComparisonEvidenceMatchesPayload(payload, tenantId) {
+    const verified = _documentOpsVerifiedComparisonChangeSet;
+    const requirements = payload?.requirements;
+    return payload?.task_type !== 'document_comparison_review' || Boolean(
+      verified
+      && tenantId === verified.snapshot.tenantId
+      && documentOpsComparisonSnapshotIsCurrent(verified.snapshot)
+      && requirements?.baseline_document_text === verified.snapshot.baseline
+      && requirements?.candidate_document_text === verified.snapshot.candidate
+      && JSON.stringify(requirements?.comparison_criteria) === JSON.stringify(verified.snapshot.criteria)
+    );
+  }
+
+  async function verifyDocumentOpsComparisonChangeSet(payload, tenantId) {
+    invalidateDocumentOpsComparisonChangeSet('Line change set을 검증하는 중…');
+    const generation = _documentOpsComparisonChangeSetVersion;
+    const snapshot = documentOpsComparisonChangeSetSnapshot();
+    const current = () => generation === _documentOpsComparisonChangeSetVersion
+      && tenantId === _currentTenantId
+      && documentOpsComparisonSnapshotIsCurrent(snapshot);
+    try {
+      const response = await fetch('/api/agent/document-ops/comparison-documents/change-set', {
+        method: 'POST',
+        headers: { ...getAuthHeaders(tenantId), 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({
+          schema_version: 'document_ops_comparison_change_set_request_v1',
+          baseline_document_text: snapshot.baseline,
+          candidate_document_text: snapshot.candidate,
+          comparison_criteria: snapshot.criteria,
+        }),
+      });
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (!current()) return null;
+      const expectedHash = String(response.headers.get(DOCUMENT_OPS_COMPARISON_CHANGE_SET_HASH_HEADER) || '').toLowerCase();
+      const contentDisposition = String(response.headers.get('Content-Disposition') || '');
+      if (
+        !response.ok
+        || !String(response.headers.get('Content-Type') || '').toLowerCase().startsWith('application/json')
+        || String(response.headers.get('Cache-Control') || '').toLowerCase() !== 'no-store'
+        || String(response.headers.get('X-Content-Type-Options') || '').toLowerCase() !== 'nosniff'
+        || contentDisposition !== `attachment; filename="${DOCUMENT_OPS_COMPARISON_CHANGE_SET_FILENAME}"`
+        || !DOCUMENT_OPS_SHA256_PATTERN.test(expectedHash)
+        || await documentOpsSha256Bytes(bytes) !== expectedHash
+      ) throw new Error('change set response headers or exact body hash are invalid');
+      let decoded;
+      try {
+        decoded = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+      } catch (_) {
+        throw new Error('change set response is not valid UTF-8');
+      }
+      let value;
+      try {
+        value = JSON.parse(decoded);
+      } catch (_) {
+        throw new Error('change set response is not valid JSON');
+      }
+      if (decoded !== `${JSON.stringify(value)}\n`) throw new Error('change set response is not canonical JSON');
+      const validated = await documentOpsValidatedComparisonChangeSet(
+        value,
+        snapshot.baseline,
+        snapshot.candidate,
+        snapshot.criteria,
+      );
+      if (!validated) throw new Error('change set response schema or source binding is invalid');
+      if (!current()) return null;
+      const exactBytes = bytes.slice();
+      const objectUrl = URL.createObjectURL(new Blob([exactBytes], { type: 'application/json' }));
+      _documentOpsVerifiedComparisonChangeSet = {
+        value: validated,
+        exactBytes,
+        exactBodySha256: expectedHash,
+        objectUrl,
+        snapshot,
+      };
+      renderDocumentOpsComparisonChangeSet(_documentOpsVerifiedComparisonChangeSet);
+      return _documentOpsVerifiedComparisonChangeSet;
+    } catch (error) {
+      if (!current()) return null;
+      invalidateDocumentOpsComparisonChangeSet('Change set 검증 실패: Agent 요청을 시작하지 않았습니다.');
+      showNotification(`DocumentOps change set 검증 실패: ${error?.message || error}`, 'error');
+      return null;
+    }
+  }
+
+  function downloadVerifiedDocumentOpsComparisonChangeSet() {
+    const verified = _documentOpsVerifiedComparisonChangeSet;
+    if (!verified || !documentOpsComparisonSnapshotIsCurrent(verified.snapshot)) {
+      invalidateDocumentOpsComparisonChangeSet();
+      showNotification('현재 입력에 결속된 verified change set이 없습니다.', 'warn');
+      return;
+    }
+    const link = document.createElement('a');
+    link.href = verified.objectUrl;
+    link.download = DOCUMENT_OPS_COMPARISON_CHANGE_SET_FILENAME;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
+
   async function documentOpsValidatedComparisonDocument(value, file, sourceSha256) {
     if (
       !value
@@ -8284,6 +8601,7 @@
   }
 
   function invalidateDocumentOpsComparisonFileProvenance(slot, { clearFileText = false, reason = '직접 입력' } = {}) {
+    invalidateDocumentOpsComparisonChangeSet(`${reason}: change set 증거 무효화`);
     _documentOpsComparisonIntakeVersion[slot] += 1;
     const provenance = _documentOpsComparisonFileProvenance[slot];
     const textInput = documentOpsComparisonTextInput(slot);
@@ -8642,6 +8960,9 @@
   }
 
   async function sendDocumentOpsAgentRequest(payload, tenantId) {
+    if (!documentOpsComparisonEvidenceMatchesPayload(payload, tenantId)) {
+      throw new Error('현재 입력에 결속된 verified change set이 없어 Agent 요청을 시작하지 않았습니다.');
+    }
     const res = await fetch('/api/agent/document-ops/run', {
       method: 'POST',
       headers: { ...getAuthHeaders(tenantId), 'Content-Type': 'application/json' },
@@ -8882,6 +9203,11 @@
       skill_name: skillName || null,
       capture_trajectory: !!$id('docops-capture-trajectory')?.checked,
     };
+    if (comparisonMode) {
+      const verifiedChangeSet = await verifyDocumentOpsComparisonChangeSet(payload, tenantId);
+      if (!verifiedChangeSet || !runIsCurrent()) return;
+      if (resultEl) resultEl.innerHTML = '<div style="color:var(--muted);font-size:.86rem;">Verified change set을 사용해 Agent 실행 중...</div>';
+    }
     if (payload.capture_trajectory) {
       payload.operation_id = createDocumentOpsOperationId('agent-run');
       const blockingMarker = await claimDocumentOpsPendingRunMarker(
@@ -11009,6 +11335,7 @@
       void extractDocumentOpsComparisonFile(slot);
     });
     documentOpsComparisonTextInput(slot)?.addEventListener('input', () => {
+      invalidateDocumentOpsComparisonChangeSet('직접 편집: change set 증거 무효화');
       if (_documentOpsComparisonFileProvenance[slot]) {
         invalidateDocumentOpsComparisonFileProvenance(slot, { reason: '직접 편집' });
         const fileInput = documentOpsComparisonFileInput(slot);
@@ -11017,6 +11344,12 @@
         setDocumentOpsComparisonFileStatus(slot, '직접 입력 · file provenance 없음');
       }
     });
+  });
+  $id('docops-comparison-criteria')?.addEventListener('input', () => {
+    invalidateDocumentOpsComparisonChangeSet('Comparison criteria 변경: change set 증거 무효화');
+  });
+  $id('document-ops-comparison-change-set-download')?.addEventListener('click', () => {
+    downloadVerifiedDocumentOpsComparisonChangeSet();
   });
   syncDocumentOpsComparisonControls();
 

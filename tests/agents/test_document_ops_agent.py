@@ -11,6 +11,11 @@ from app.agents.schemas import DocumentOpsRequest
 from app.agents.skill_registry import SkillNotFoundError
 from app.providers.base import Provider, ProviderError
 from app.providers.mock_provider import MockProvider
+from app.schemas.document_ops import (
+    DocumentOpsComparisonChangeSetRequest,
+    DocumentOpsComparisonChangeSetResponse,
+)
+from app.services.document_ops_comparison import build_document_ops_comparison_change_set
 from app.storage.trajectory_store import TrajectoryStore
 
 
@@ -248,6 +253,162 @@ def test_document_comparison_request_omits_criteria_as_an_empty_normalized_list(
 
     assert request.comparison_context is not None
     assert request.comparison_context.comparison_criteria == []
+
+
+def test_document_comparison_change_set_keeps_complete_long_identical_counts_with_bounded_hunks() -> None:
+    document = "\n".join(f"repeated-{index % 5}" for index in range(500))
+
+    result = build_document_ops_comparison_change_set(
+        DocumentOpsComparisonChangeSetRequest(
+            baseline_document_text=document,
+            candidate_document_text=document,
+        )
+    )
+
+    assert result.documents_identical is True
+    assert result.baseline_line_count == result.candidate_line_count == 500
+    assert result.equal_line_count == 500
+    assert result.added_line_count == result.removed_line_count == result.replaced_line_count == 0
+    assert result.total_hunk_count == 1
+    assert result.hunks_truncated is True
+    assert len(result.hunks) == 1
+    assert result.hunks[0].opcode == "equal"
+    assert len(result.hunks[0].baseline_lines) + len(result.hunks[0].candidate_lines) == 200
+    assert result.hunks[0].baseline_end == result.hunks[0].candidate_end == 100
+
+
+def test_document_comparison_change_set_aggregates_asymmetric_replace_sides_before_max() -> None:
+    baseline = "same\nA1\nA2\nA3\nanchor\nB1\ntail"
+    candidate = "same\nX1\nanchor\nY1\nY2\nY3\ntail"
+
+    result = build_document_ops_comparison_change_set(
+        DocumentOpsComparisonChangeSetRequest(
+            baseline_document_text=baseline,
+            candidate_document_text=candidate,
+            comparison_criteria=[" replacement balance "],
+        )
+    )
+
+    replace_hunks = [hunk for hunk in result.hunks if hunk.opcode == "replace"]
+    assert [
+        (hunk.baseline_end - hunk.baseline_start, hunk.candidate_end - hunk.candidate_start)
+        for hunk in replace_hunks
+    ] == [(3, 1), (1, 3)]
+    assert result.baseline_replaced_line_count == 4
+    assert result.candidate_replaced_line_count == 4
+    assert result.replaced_line_count == 4
+    assert result.comparison_criteria == ["replacement balance"]
+
+
+def test_document_comparison_change_set_applies_one_global_contiguous_hunk_budget() -> None:
+    baseline = "\n".join(f"line-{index}" for index in range(150))
+    candidate = "\n".join(
+        value
+        for index in range(150)
+        for value in (f"line-{index}", f"add-{index}")
+    )
+
+    result = build_document_ops_comparison_change_set(
+        DocumentOpsComparisonChangeSetRequest(
+            baseline_document_text=baseline,
+            candidate_document_text=candidate,
+        )
+    )
+
+    assert result.total_hunk_count == 300
+    assert result.hunks_truncated is True
+    assert len(result.hunks) < result.total_hunk_count
+    assert sum(
+        len(hunk.baseline_lines) + len(hunk.candidate_lines)
+        for hunk in result.hunks
+    ) == 200
+    baseline_cursor = candidate_cursor = 0
+    for hunk in result.hunks:
+        assert hunk.baseline_start == baseline_cursor
+        assert hunk.candidate_start == candidate_cursor
+        assert hunk.baseline_end - hunk.baseline_start == len(hunk.baseline_lines)
+        assert hunk.candidate_end - hunk.candidate_start == len(hunk.candidate_lines)
+        baseline_cursor = hunk.baseline_end
+        candidate_cursor = hunk.candidate_end
+    assert result.baseline_line_count == 150
+    assert result.candidate_line_count == 300
+    assert result.equal_line_count == 150
+    assert result.added_line_count == 150
+
+
+def test_document_comparison_change_set_models_reject_invalid_request_and_response_contracts() -> None:
+    with pytest.raises(ValueError):
+        DocumentOpsComparisonChangeSetRequest(
+            baseline_document_text="invalid-\ud800",
+            candidate_document_text="candidate",
+        )
+    with pytest.raises(ValueError):
+        DocumentOpsComparisonChangeSetRequest(
+            baseline_document_text="baseline",
+            candidate_document_text="candidate",
+            comparison_criteria=["same", " same "],
+        )
+    with pytest.raises(ValueError):
+        DocumentOpsComparisonChangeSetRequest.model_validate(
+            {
+                "baseline_document_text": "baseline",
+                "candidate_document_text": "candidate",
+                "unknown": True,
+            }
+        )
+
+    valid = build_document_ops_comparison_change_set(
+        DocumentOpsComparisonChangeSetRequest(
+            baseline_document_text="same\nold\ntail",
+            candidate_document_text="same\nnew\ntail",
+        )
+    ).model_dump()
+    invalid_payloads: list[dict] = []
+
+    impossible_counts = json.loads(json.dumps(valid))
+    impossible_counts["baseline_line_count"] += 1
+    invalid_payloads.append(impossible_counts)
+
+    inconsistent_identical = json.loads(json.dumps(valid))
+    inconsistent_identical["documents_identical"] = True
+    invalid_payloads.append(inconsistent_identical)
+
+    incoherent_truncation = json.loads(json.dumps(valid))
+    incoherent_truncation["hunks_truncated"] = True
+    invalid_payloads.append(incoherent_truncation)
+
+    invalid_opcode_sides = json.loads(json.dumps(valid))
+    replace_index = next(
+        index for index, hunk in enumerate(invalid_opcode_sides["hunks"])
+        if hunk["opcode"] == "replace"
+    )
+    invalid_opcode_sides["hunks"][replace_index]["opcode"] = "insert"
+    invalid_payloads.append(invalid_opcode_sides)
+
+    discontinuous = json.loads(json.dumps(valid))
+    discontinuous["hunks"][1]["baseline_start"] += 1
+    invalid_payloads.append(discontinuous)
+
+    incomplete = json.loads(json.dumps(valid))
+    incomplete["hunks"] = incomplete["hunks"][:-1]
+    invalid_payloads.append(incomplete)
+
+    unknown_response = json.loads(json.dumps(valid))
+    unknown_response["unknown"] = True
+    invalid_payloads.append(unknown_response)
+
+    invalid_utf8_criterion = json.loads(json.dumps(valid))
+    invalid_utf8_criterion["comparison_criteria"] = ["invalid-\ud800"]
+    invalid_payloads.append(invalid_utf8_criterion)
+
+    invalid_utf8_source_line = json.loads(json.dumps(valid))
+    invalid_utf8_source_line["hunks"][0]["baseline_lines"][0] = "invalid-\ud800"
+    invalid_utf8_source_line["hunks"][0]["candidate_lines"][0] = "invalid-\ud800"
+    invalid_payloads.append(invalid_utf8_source_line)
+
+    for payload in invalid_payloads:
+        with pytest.raises(ValueError):
+            DocumentOpsComparisonChangeSetResponse.model_validate(payload)
 
 
 def test_document_ops_agent_rejects_skill_resolution_and_binding_drift_before_provider() -> None:

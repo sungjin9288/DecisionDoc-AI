@@ -4210,6 +4210,73 @@ def test_document_ops_comparison_file_intake_stays_local_strict_and_ephemeral():
     assert 'id="docops-candidate-document"' in comparison_controls
 
 
+def test_document_ops_comparison_change_set_has_one_pure_diff_and_pre_provider_browser_gate():
+    root = Path(__file__).resolve().parents[1]
+    service = (root / "app" / "services" / "document_ops_comparison.py").read_text(
+        encoding="utf-8",
+    )
+    provider = (root / "app" / "providers" / "mock" / "provider.py").read_text(
+        encoding="utf-8",
+    )
+    schema = (root / "app" / "schemas" / "document_ops.py").read_text(encoding="utf-8")
+    router = (root / "app" / "routers" / "document_ops_agent.py").read_text(
+        encoding="utf-8",
+    )
+    page = (root / "app" / "static" / "index.html").read_text(encoding="utf-8")
+
+    assert service.count("difflib.SequenceMatcher(") == 1
+    assert "autojunk=False" in service
+    assert "MAX_COMBINED_HUNK_LINES = 200" in service
+    assert "get_provider" not in service
+    assert "app.storage" not in service
+    assert "import logging" not in service
+    assert "difflib" not in provider
+    assert "build_document_ops_comparison_change_set" in provider
+    assert "total_hunk_count" in schema
+    assert "hunks_truncated" in schema
+    for authority_key in (
+        "approval",
+        "code_execution",
+        "external_effect",
+        "external_runtime",
+        "persistence",
+        "provider_call",
+        "semantic",
+    ):
+        assert f"{authority_key}: Literal[False]" in schema
+
+    assert '"/comparison-documents/change-set"' in router
+    assert "canonical_document_ops_comparison_change_set_bytes" in router
+    assert '"X-DecisionDoc-Document-Comparison-SHA256"' in router
+    assert '"X-Content-Type-Options": "nosniff"' in router
+    assert 'attachment; filename="document-ops-comparison-change-set.json"' in router
+    assert "document_ops.comparison_change_set" in router
+
+    verify_start = page.index("async function verifyDocumentOpsComparisonChangeSet")
+    verify_end = page.index("function downloadVerifiedDocumentOpsComparisonChangeSet", verify_start)
+    verify_block = page[verify_start:verify_end]
+    send_start = page.index("async function sendDocumentOpsAgentRequest")
+    send_end = page.index("function renderDocumentOpsRunRecovery", send_start)
+    send_block = page[send_start:send_end]
+    for marker in (
+        "response.arrayBuffer()",
+        "new TextDecoder('utf-8', { fatal: true })",
+        "DOCUMENT_OPS_COMPARISON_CHANGE_SET_HASH_HEADER",
+        "documentOpsValidatedComparisonChangeSet",
+        "documentOpsComparisonSnapshotIsCurrent",
+        "URL.createObjectURL",
+        "exactBytes",
+    ):
+        assert marker in verify_block
+    assert "response.json()" not in verify_block
+    assert "documentOpsComparisonEvidenceMatchesPayload" in send_block
+    assert send_block.index("documentOpsComparisonEvidenceMatchesPayload") < send_block.index(
+        "fetch('/api/agent/document-ops/run'",
+    )
+    assert "URL.revokeObjectURL" in page
+    assert 'id="document-ops-comparison-change-set-download"' in page
+
+
 def test_primary_smoke_modules_stay_within_800_line_guide():
     root = Path(__file__).resolve().parents[1]
     module_paths = (

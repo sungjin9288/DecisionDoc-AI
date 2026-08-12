@@ -7,12 +7,13 @@ direction — including slide-by-slide PPT construction guides — even without
 a real API key.
 """
 import base64
-import difflib
 from typing import Any
 
 from app.providers.base import Provider
 from app.providers.mock.registry import _CONTENT_BUILDERS
 from app.providers.mock.shared import _ctx_excerpt, _extract_document_ops_payload
+from app.schemas.document_ops import DocumentOpsComparisonChangeSetRequest
+from app.services.document_ops_comparison import build_document_ops_comparison_change_set
 
 
 _MOCK_PNG_BASE64 = (
@@ -214,7 +215,11 @@ class MockProvider(Provider):
                 criteria = [str(item).strip() for item in criteria if isinstance(item, str) and item.strip()] if isinstance(criteria, list) else []
                 criteria_label = ", ".join(criteria) if criteria else "입력된 두 문서"
                 identical = baseline.encode("utf-8") == candidate.encode("utf-8")
-                line_delta = _document_comparison_line_delta(baseline, candidate)
+                line_delta = _document_comparison_line_delta(
+                    baseline,
+                    candidate,
+                    criteria=criteria,
+                )
                 observed = (
                     "두 입력의 exact UTF-8 bytes가 동일하여 텍스트 변경은 관찰되지 않았습니다."
                     if identical
@@ -475,24 +480,25 @@ class MockProvider(Provider):
         }
 
 
-def _document_comparison_line_delta(baseline: str, candidate: str) -> str:
-    """Describe only line-level structure without retaining source text."""
-    additions = 0
-    removals = 0
-    replacements = 0
-    matcher = difflib.SequenceMatcher(a=baseline.splitlines(), b=candidate.splitlines(), autojunk=False)
-    for tag, baseline_start, baseline_end, candidate_start, candidate_end in matcher.get_opcodes():
-        if tag == "insert":
-            additions += candidate_end - candidate_start
-        elif tag == "delete":
-            removals += baseline_end - baseline_start
-        elif tag == "replace":
-            replacements += max(baseline_end - baseline_start, candidate_end - candidate_start)
+def _document_comparison_line_delta(
+    baseline: str,
+    candidate: str,
+    *,
+    criteria: list[str] | None = None,
+) -> str:
+    """Describe the shared deterministic change set without retaining source text."""
+    change_set = build_document_ops_comparison_change_set(
+        DocumentOpsComparisonChangeSetRequest(
+            baseline_document_text=baseline,
+            candidate_document_text=candidate,
+            comparison_criteria=criteria or [],
+        )
+    )
     parts = []
-    if additions:
-        parts.append(f"{additions}개 행 추가")
-    if removals:
-        parts.append(f"{removals}개 행 삭제")
-    if replacements:
-        parts.append(f"{replacements}개 행 교체")
+    if change_set.added_line_count:
+        parts.append(f"{change_set.added_line_count}개 행 추가")
+    if change_set.removed_line_count:
+        parts.append(f"{change_set.removed_line_count}개 행 삭제")
+    if change_set.replaced_line_count:
+        parts.append(f"{change_set.replaced_line_count}개 행 교체")
     return ", ".join(parts) if parts else "byte-level 차이"

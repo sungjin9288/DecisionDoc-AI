@@ -1,6 +1,7 @@
 """Internal DocumentOps agent endpoints."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -24,6 +25,8 @@ from app.middleware.document_ops_audit import (
 )
 from app.schemas import (
     DocumentOpsAgentRunRequest,
+    DocumentOpsComparisonChangeSetRequest,
+    DocumentOpsComparisonChangeSetResponse,
     DocumentOpsComparisonDocumentResponse,
     DocumentOpsDatasetFreezeRequest,
     DocumentOpsTrainingAuditExportRequest,
@@ -45,6 +48,10 @@ from app.services.document_ops_comparison_intake import (
     ComparisonDocumentIntakeError,
     MAX_COMPARISON_DOCUMENT_BYTES,
     extract_comparison_document,
+)
+from app.services.document_ops_comparison import (
+    build_document_ops_comparison_change_set,
+    canonical_document_ops_comparison_change_set_bytes,
 )
 
 router = APIRouter(prefix="/api/agent/document-ops", tags=["document-ops-agent"])
@@ -70,6 +77,32 @@ def _record_agent_skill_binding(
 ) -> None:
     request.state.document_ops_agent_skill_binding_sha256 = (
         document_ops_skill_binding_sha256(binding)
+    )
+
+
+@router.post(
+    "/comparison-documents/change-set",
+    dependencies=[Depends(require_not_maintenance), Depends(require_api_key)],
+    response_model=DocumentOpsComparisonChangeSetResponse,
+)
+def create_document_ops_comparison_change_set(
+    payload: DocumentOpsComparisonChangeSetRequest,
+    request: Request,
+) -> Response:
+    """Return deterministic, ephemeral line evidence without provider or storage effects."""
+    request.state.audit_action = "document_ops.comparison_change_set"
+    result = build_document_ops_comparison_change_set(payload)
+    body = canonical_document_ops_comparison_change_set_bytes(result)
+    body_sha256 = hashlib.sha256(body).hexdigest()
+    return Response(
+        content=body,
+        media_type="application/json",
+        headers={
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Disposition": 'attachment; filename="document-ops-comparison-change-set.json"',
+            "X-DecisionDoc-Document-Comparison-SHA256": body_sha256,
+        },
     )
 
 

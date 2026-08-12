@@ -176,6 +176,148 @@ def test_document_ops_comparison_document_extract_respects_maintenance_boundary(
     assert response.status_code == 503
 
 
+def test_document_ops_comparison_change_set_is_canonical_ephemeral_and_provider_free(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    client = _create_client(tmp_path, monkeypatch)
+    endpoint = "/api/agent/document-ops/comparison-documents/change-set"
+    baseline = "same\nA1\nA2\nA3\nanchor\nB1\ntail"
+    candidate = "same\nX1\nanchor\nY1\nY2\nY3\ntail"
+    payload = {
+        "schema_version": "document_ops_comparison_change_set_request_v1",
+        "baseline_document_text": baseline,
+        "candidate_document_text": candidate,
+        "comparison_criteria": [" line changes "],
+    }
+    provider = client.app.state.document_ops_service._agent.provider
+
+    def provider_must_not_run(*args, **kwargs):
+        raise AssertionError("comparison change set must not call a provider")
+
+    provider.generate_raw = provider_must_not_run
+    client.app.state.document_ops_service._agent._provider = provider
+
+    assert client.post(endpoint, json=payload).status_code == 401
+    response = client.post(endpoint, headers=_api_headers(), json=payload)
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/json"
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["content-disposition"] == (
+        'attachment; filename="document-ops-comparison-change-set.json"'
+    )
+    assert response.headers["x-decisiondoc-document-comparison-sha256"] == hashlib.sha256(
+        response.content
+    ).hexdigest()
+    body = response.json()
+    assert response.content == (
+        json.dumps(
+            body,
+            ensure_ascii=False,
+            sort_keys=True,
+            allow_nan=False,
+            separators=(",", ":"),
+        )
+        + "\n"
+    ).encode("utf-8")
+    assert body["schema_version"] == "document_ops_comparison_change_set_v1"
+    assert body["baseline_sha256"] == hashlib.sha256(baseline.encode("utf-8")).hexdigest()
+    assert body["candidate_sha256"] == hashlib.sha256(candidate.encode("utf-8")).hexdigest()
+    assert body["baseline_line_count"] == body["candidate_line_count"] == 7
+    assert body["equal_line_count"] == 3
+    assert body["baseline_replaced_line_count"] == 4
+    assert body["candidate_replaced_line_count"] == 4
+    assert body["replaced_line_count"] == 4
+    assert body["authority"] == {
+        "approval": False,
+        "code_execution": False,
+        "external_effect": False,
+        "external_runtime": False,
+        "persistence": False,
+        "provider_call": False,
+        "semantic": False,
+    }
+    assert body["total_hunk_count"] == len(body["hunks"])
+    assert body["hunks_truncated"] is False
+    assert [(hunk["baseline_start"], hunk["baseline_end"]) for hunk in body["hunks"]][0][0] == 0
+    assert body["hunks"][-1]["baseline_end"] == body["baseline_line_count"]
+    assert body["hunks"][-1]["candidate_end"] == body["candidate_line_count"]
+
+    from app.storage.audit_store import AuditStore
+
+    audits = AuditStore("system").query(filters={"action": "document_ops.comparison_change_set"})
+    assert len(audits) == 1
+    serialized_audit = json.dumps(audits[0], ensure_ascii=False)
+    for sensitive in (
+        baseline,
+        candidate,
+        body["baseline_sha256"],
+        body["candidate_sha256"],
+        response.content.decode("utf-8"),
+    ):
+        assert sensitive not in serialized_audit
+    assert not list((tmp_path / "tenants" / "system" / "document_ops_agent_operations").glob("*.json"))
+
+
+def test_document_ops_comparison_change_set_rejects_invalid_input_before_effects(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    client = _create_client(tmp_path, monkeypatch)
+    endpoint = "/api/agent/document-ops/comparison-documents/change-set"
+    provider = client.app.state.document_ops_service._agent.provider
+    provider_calls = 0
+
+    def counted_provider(*args, **kwargs):
+        nonlocal provider_calls
+        provider_calls += 1
+        raise AssertionError("invalid comparison input reached provider")
+
+    provider.generate_raw = counted_provider
+    client.app.state.document_ops_service._agent._provider = provider
+    invalid_payloads = (
+        {
+            "baseline_document_text": "baseline",
+            "candidate_document_text": "candidate",
+            "comparison_criteria": ["same", " same "],
+        },
+        {
+            "baseline_document_text": "baseline",
+            "candidate_document_text": "candidate",
+            "unknown": True,
+        },
+        {
+            "baseline_document_text": " ",
+            "candidate_document_text": "candidate",
+        },
+    )
+    for payload in invalid_payloads:
+        response = client.post(endpoint, headers=_api_headers(), json=payload)
+        assert response.status_code == 422
+
+    invalid_utf8 = client.post(
+        endpoint,
+        headers={**_api_headers(), "Content-Type": "application/json"},
+        content=b'{"baseline_document_text":"\xff","candidate_document_text":"candidate"}',
+    )
+    assert invalid_utf8.status_code >= 400
+    assert provider_calls == 0
+    assert not list((tmp_path / "tenants" / "system" / "document_ops_agent_operations").glob("*.json"))
+
+    monkeypatch.setenv("DECISIONDOC_MAINTENANCE", "1")
+    maintenance = client.post(
+        endpoint,
+        headers=_api_headers(),
+        json={
+            "baseline_document_text": "baseline",
+            "candidate_document_text": "candidate",
+        },
+    )
+    assert maintenance.status_code == 503
+
+
 def test_document_ops_skill_catalog_requires_api_key_and_does_not_call_provider(tmp_path, monkeypatch) -> None:
     client = _create_client(tmp_path, monkeypatch)
     provider = client.app.state.document_ops_service._agent.provider

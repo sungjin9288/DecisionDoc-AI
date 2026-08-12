@@ -88,6 +88,19 @@ python3 -m pytest -q tests/test_infrastructure.py -k comparison_file_intake --tb
 python3 -m pytest -q tests/e2e/test_main_flow.py -k comparison_file_intake --tb=short
 ```
 
+### DocumentOps verified comparison change set
+
+`POST /api/agent/document-ops/comparison-documents/change-set` 회귀는 strict request/response가 invalid UTF-8·criteria·unknown field·count/identity/truncation drift·invalid opcode side·discontinuous range·incomplete non-truncated coverage를 거부하는지 확인한다. 하나의 `SequenceMatcher(autojunk=False)`가 API와 mock provider에 full splitlines count와 aggregate를 제공해야 하며, multiple replace opcode의 `replaced_line_count`는 3→1 뒤 1→3 사례에서도 aggregate baseline/candidate replacement 합의 최댓값이어야 한다. Long-identical 및 alternating source는 response 전체의 exposed baseline/candidate line 합계 200, contiguous zero-prefix, clipped first over-budget hunk의 exact range/array, full aggregate, coherent `total_hunk_count`/`hunks_truncated`를 고정한다. API는 exact route auth/maintenance gate, canonical UTF-8 JSON bytes와 body-bound `X-DecisionDoc-Document-Comparison-SHA256`, `no-store`, `nosniff`, safe filename, all-false authority, provider/storage/operation effect 0건과 raw-content audit redaction을 검증한다.
+
+Real Chromium은 missing/wrong body hash, malformed UTF-8, malformed JSON, malformed schema를 서로 독립적으로 주입하고 모두 Agent POST 0건인지 확인한다. Valid response는 exact bytes만 download하고 readable equal/add/remove/replace panel과 hunk가 실제 visible인 상태에서 desktop 및 390px screenshot·overflow·console/page error를 먼저 검사한다. 그 뒤 criteria edit가 evidence를 지우고 stale object URL을 한 번 revoke하며 download를 disable하는지 확인한다. 별도 reverse-order 회귀는 newer response만 Agent POST로 이어지고 task/auth invalidation 및 late completion이 evidence를 복구하지 못하는지 확인한다.
+
+```bash
+python3 -m pytest -q tests/agents/test_document_ops_agent.py -k comparison --tb=short
+python3 -m pytest -q tests/test_document_ops_agent_api.py -k comparison --tb=short
+python3 -m pytest -q tests/test_infrastructure.py -k document_ops --tb=short
+python3 -m pytest -q tests/e2e/test_main_flow.py -k comparison_change_set --tb=short
+```
+
 ### 대표 bundle 구조 품질 evidence
 
 ```bash

@@ -60,6 +60,7 @@ LLM이 만든 결과를 단발성 텍스트가 아니라 **업무 산출물**로
 | DocumentOps 검토 작업대 | tenant-scoped trajectory JSONL을 선택된 local/S3 `StateBackend`의 단일 conditional create/CAS authority로 관리한다. Append와 사람 review는 충돌 시 최신 record 집합에 최대 32회 재적용하고, private append/incarnation identity와 최근 64개 review receipt로 commit 응답 유실 뒤 successor mutation을 조정한다. Expected review version은 최신 CAS state에서 비교해 오래 열린 화면의 덮어쓰기를 `409`로 차단하며 private metadata는 목록·상세·SFT source에 노출하지 않는다. 검색·필터·정렬, summary-first 상세 조회, 사용자·tenant·trajectory별 page-memory 초안, signed tenant context, 민감 본문을 제외한 audit 추적도 유지한다. Freeze·dry-run approval·execution request·audit export는 optional `operation_id`와 private payload hash를 metadata CAS에 결속해 동일 payload replay를 원래 verified artifact로 수렴시키고 다른 payload 재사용을 `409`로 차단한다. Trajectory capture를 선택한 Agent run도 provider 호출 전에 private shared-backend claim을 선점해 exact replay는 저장된 결과를 반환하고, 실행 중·불확실한 이전 시도는 자동 재호출하지 않는다. Browser는 각 write에 UUID를 보내고 pending 동안 initiating control을 single-flight로 잠근다. Captured run의 응답을 잃으면 operation/schema/state가 결속된 redacted status만 `no-store`로 읽고, terminal success가 확인된 경우에만 같은 operation ID와 payload를 replay한다. Mismatched·unavailable·running 상태는 payload를 page memory에 보존해 Agent 버튼과 상태 재확인 버튼이 새 실행 대신 같은 operation을 다시 확인하며, 두 control은 recovery promise 하나를 공유한다. Captured POST 직전에는 payload를 제외한 schema·tenant·operation ID marker만 tenant-scoped same-origin browser storage에 기록한다. Shared storage가 가능하면 tenant-scoped Web Lock 안에서 marker claim을 직렬화해 동시 tab 중 하나만 POST를 시작하고, 나머지 tab과 tab-close 뒤 다시 연 화면은 같은 status만 확인한다. 서로 다른 tenant marker는 같은 origin에서도 독립적으로 유지하며 tenant 전환은 이전 tenant marker만 정리한다. Shared storage가 막히면 기존 tab-scoped fallback을 유지한다. Operator가 backend 실행은 취소되지 않는다는 경고를 확인해 상태 추적을 명시적으로 종료해야 새 operation을 시작할 수 있다. |
 | DocumentOps source-grounded·문서 비교 검토 | first-party Markdown skill registry가 task별 skill을 strict binding으로 고정한다. `document_comparison_review`는 두 원문의 exact UTF-8 SHA-256, 동일 여부와 선택 비교 기준만 담은 `document_ops_comparison_context_v1`을 반환·trajectory·exact replay에 연결하고 원문은 trajectory input에서 redaction한다. 결과는 관찰된 텍스트 변화와 조건부 해석, 근거/가정·결정/트레이드오프·거버넌스 경계·권고·사람 재확인 질문을 분리하며 approval, provider·training·publication authority를 만들지 않는다. |
 | DocumentOps comparison file intake | `document_comparison_review`에서 기존 local attachment parser로 한 파일씩 server memory에서만 텍스트를 추출한다. Browser는 selected-file bytes와 returned text의 SHA-256, filename basename, size/count, strict response key set 및 `provider_called=false`/`persisted=false`를 확인한 뒤에만 textarea를 채우며, 파일 변경·직접 편집·task/tenant/auth context 변경은 page-memory provenance를 무효화한다. |
+| DocumentOps verified line change set | 인증·maintenance gate 뒤 하나의 `SequenceMatcher(autojunk=False)`가 전체 aggregate와 zero-based half-open hunk를 계산한다. 응답 전체에서 양쪽 exposed line 합계를 200으로 제한하고 contiguous zero-prefix만 내보내며 첫 초과 hunk만 clip한다. Browser는 canonical UTF-8 bytes와 `X-DecisionDoc-Document-Comparison-SHA256`, strict schema, source hash/line/range/count, all-false authority와 current task·tenant·auth·criteria를 검증한 뒤에만 Agent POST와 exact-byte download를 허용한다. Provider call과 persistence는 없다. |
 
 ---
 
@@ -91,11 +92,11 @@ FastAPI (app/main.py — create_app(), 모듈 레벨 side-effect 없음)
   │     / rate_limit / audit / auth / tenant / billing / metrics
   │     / document_ops_audit / auth_session_retention_audit
   │     billing은 tenant/auth context가 확정된 뒤 metered request를 검사
-  ├─ Routers (23 top-level files, 라우트 291): generate / approvals / projects / knowledge
+  ├─ Routers (23 top-level files, 라우트 292): generate / approvals / projects / knowledge
   │     / report_workflows / auth / sso / admin / audit / billing / dashboard
   │     / history / eval / finetune / local_llm / g2b / templates / health ...
   ▼
-Services (48) — 도메인 오케스트레이션
+Services (49) — 도메인 오케스트레이션
   ├─ generation_service ─ 핵심 파이프라인:
   │     요청 → 캐시 → Provider.generate_bundle() → 스키마 검증
   │        → Stabilizer → Storage 저장 → Jinja2 렌더 → Lint → 반환
@@ -118,9 +119,9 @@ Providers (5)    Storage (50 modules)   Ops
 ```bash
 python3 scripts/count_readme_metrics.py --field middleware_files  # → 12
 python3 scripts/count_readme_metrics.py --field router_files      # → 23
-python3 scripts/count_readme_metrics.py --field service_files     # → 48
+python3 scripts/count_readme_metrics.py --field service_files     # → 49
 python3 scripts/count_readme_metrics.py --field storage_files     # → 50
-python3 scripts/count_readme_metrics.py --field route_decorators  # → 291
+python3 scripts/count_readme_metrics.py --field route_decorators  # → 292
 ```
 
 **설계 불변식**: Provider·Storage는 ABC + factory(환경변수로만 교체) · 모든 파일 쓰기는 atomic write(tmp + fsync + os.replace) · 라우트 핸들러는 `request.app.state.*`로 의존성 접근 · Request 모델은 `strict=True, extra="forbid"` · mock provider는 결정론적(CI 기준 경로).
@@ -209,10 +210,10 @@ python3 scripts/count_readme_metrics.py --field env_keys  # → 95
 
 ## API / Usage
 
-FastAPI 라우트는 **291개**입니다.
+FastAPI 라우트는 **292개**입니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field route_decorators  # → 291
+python3 scripts/count_readme_metrics.py --field route_decorators  # → 292
 ```
 
 대표 도메인:
@@ -227,7 +228,7 @@ python3 scripts/count_readme_metrics.py --field route_decorators  # → 291
 | Dashboard | `/overview`, `/bundle-performance`, `/score-history/{bundle_id}` |
 | Billing | `/billing/status`, `/billing/usage`, `/billing/checkout` |
 | Report quality | `/report-workflows/learning/correction-artifacts`, `/report-workflows/learning/correction-artifacts/{artifact_id}`, `/report-workflows/learning/correction-artifacts/pilot-export/preview`, `/report-workflows/learning/correction-artifacts/pilot-export`, `/report-workflows/learning/correction-artifacts/pilot-export/package`, `/report-workflows/learning/correction-artifacts/pilot-package/verify`, `/report-workflows/learning/correction-artifacts/export` |
-| DocumentOps | `GET /api/agent/document-ops/skills`, `POST /api/agent/document-ops/run` |
+| DocumentOps | `GET /api/agent/document-ops/skills`, `POST /api/agent/document-ops/run`, `POST /api/agent/document-ops/comparison-documents/change-set` |
 | Public procurement | `GET /procurement/reviews`, `/projects/{id}/procurement/evaluate`, `/projects/{id}/procurement/review-packet`, `/projects/{id}/procurement/reviews/{sha}/packet`, `/projects/{id}/procurement/reviews/{sha}/complete`, `/projects/{id}/procurement/reviews/{sha}/reviewed-package`, `/projects/{id}/decision-council/run` |
 | Decision evidence | `GET /projects/{id}/decision-evidence-map?bundle_type=proposal_kr`, `GET /projects/{id}/guided-decision-review-handoff?bundle_type=proposal_kr`, `POST /projects/{id}/guided-decision-review-handoff/recheck`, `POST /projects/{id}/guided-decision-review-handoff/review-disposition` |
 | DocumentOps | `/api/agent/document-ops/trajectories`, `/api/agent/document-ops/trajectories/governance/overview`, `/api/agent/document-ops/trajectories/governance-artifacts/inventory` |
@@ -316,10 +317,10 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **3,771개**, **272개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **3,781개**, **272개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 3771
+python3 scripts/count_readme_metrics.py --field test_functions  # → 3781
 python3 scripts/count_readme_metrics.py --field test_files      # → 272
 ```
 
@@ -399,7 +400,7 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 - 다수 기능이 단독 구현/실험 단계이며, **본인 직접 기여 범위는 포트폴리오·면접 설명 시 별도 정리**가 필요합니다.
 - 공공조달(G2B) 연동은 외부 API 키·실데이터에 의존하므로, 키 없이는 해당 흐름이 동작하지 않습니다.
 - Live provider proof는 2026-07-13 OpenAI 1회만 통과했습니다. Gemini는 API quota, Claude는 account credits로 blocked이며 성공 fallback proof도 남아 있습니다.
-- DocumentOps 문서 비교는 제공된 두 입력의 exact UTF-8 byte와 line-level text difference만 관찰합니다. 의미·정책·법적 효력·운영 영향은 입력만으로 확정하지 않으며 사람이 재확인해야 합니다. 현재 증거는 mock/local backend와 local Chromium 범위이고 live provider, AWS runtime, 외부 publication 또는 approval 완료를 증명하지 않습니다.
+- DocumentOps 문서 비교는 제공된 두 입력의 exact UTF-8 byte와 line-level text difference만 관찰합니다. Verified change set은 전체 aggregate count를 유지하지만 response의 exposed line은 양쪽 합계 200인 contiguous zero-prefix로 제한하고, `hunks_truncated=true`이면 뒤쪽 hunk는 내려받은 evidence에 포함되지 않습니다. All-false authority는 approval, code execution, external effect/runtime, persistence, provider call 또는 semantic 판단을 허용하지 않습니다. 의미·정책·법적 효력·운영 영향은 입력만으로 확정하지 않으며 사람이 재확인해야 합니다. 현재 증거는 mock/local backend와 local Chromium 범위이고 live provider, AWS runtime, 외부 publication 또는 approval 완료를 증명하지 않습니다.
 - 비교 파일 intake는 기존 지원 parser와 20 MB upload/12,000-character extraction cap을 재사용합니다. legacy binary `.hwp`, 빈·읽을 수 없는 문서와 지원하지 않는 형식은 `422`로 닫고, remote OCR, provider fallback, local/S3 storage write, training, deployment 또는 approval authority는 제공하지 않습니다. 이 application cap은 public deployment의 multipart edge limit와 rate limit을 대신하지 않습니다.
 - H119 retention registry는 deterministic H118 receipt를 변경하지 않습니다. Current session-bound admin JWT만 exact H118 source를 immutable canonical record로 저장할 수 있고, Ops Key와 legacy sessionless admin은 접근할 수 없습니다. Wrapper record만 reviewer identity/persistence를 true로 하며 approval, execution, policy, deletion, scheduler, mass-revoke authority는 모두 false입니다.
 - 로그인 token pair는 persisted session ID에 결속되고 `/auth/logout`은 현재 session만 폐기합니다. 본인 profile에서 각 active session에 최대 40자의 직접 지정 기기 이름을 저장·삭제하고, 다른 로그인 하나, 현재 browser를 제외한 active snapshot, 또는 current를 포함한 snapshot 전체를 종료할 수 있습니다. 이름은 audit에 복사하지 않고 session state/inventory에도 User-Agent·IP 필드를 자동 결합하지 않습니다. Admin/Ops retention 화면은 한 번의 strict inspection에서 30/90/180/365일 aggregate를 비교하고 새로고침 외 mutation control을 두지 않습니다. Browser가 `auth-session-retention-comparison.v1`, `read_only=true`, `deletion_authorized=false`, `snapshot_atomic=false`, `requires_recheck_before_mutation=true`, 정책 순서·count·timestamp consistency를 검증하지 못하면 결과를 표시하지 않습니다. `auth-session-retention-review-handoff.v2`는 tenant에 결속되며, 검증한 handoff만 page memory에 보관해 `auth-session-retention-recheck-receipt.v1`으로 fresh aggregate를 재확인할 수 있습니다. `auth-session-retention-review-disposition-receipt.v1`은 그 verified recheck receipt에 `acknowledged_unchanged`, `new_handoff_required`, `review_deferred` 중 하나를 deterministic하게 연결하지만 reviewer identity, approval, execution, policy, deletion, scheduler, mass revoke authority를 만들지 않으며 server-side에 저장하지 않습니다. `unchanged`는 aggregate equivalence일 뿐 session set identity나 mutation safety를 의미하지 않으며, changed 결과도 새 handoff가 필요하다는 read-only 검증 결과입니다. 실제 delete, scheduler, retention policy apply는 이 흐름에 포함되지 않습니다. Prefix 전체는 bulk mutation 전에 검증하지만 일괄 종료는 여러 session object를 순서대로 CAS하는 non-atomic 작업입니다. 전체 종료는 current를 마지막에 쓰므로 다른 session write가 실패하면 현재 browser를 보존하지만 일부 다른 session은 이미 종료됐을 수 있습니다. Current revoke 응답을 잃은 경우에도 server session은 종료됐을 수 있으며 browser는 다음 request에서 재로그인이 필요합니다. 요청 시작 뒤 생긴 session은 다음 조회·종료 대상입니다. 같은 session을 복사한 다른 browser/device는 다음 protected request·refresh 또는 열린 SSE의 최대 15초 recheck에서 거부됩니다. Legacy sessionless token의 exact logout·목록·label·선택/일괄 종료, admin mass revoke, 만료 state 자동 GC, 즉시 cross-device push와 15초보다 짧은 termination SLA는 제공하지 않습니다.
@@ -445,4 +446,4 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 291 · 테스트 3,771 · env 키 95 등)는 소스 코드에서 직접 카운트했으며, 테스트 수 재현은 `python3 scripts/count_readme_metrics.py --field test_functions`를 사용합니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 292 · 테스트 3,781 · env 키 95 등)는 소스 코드에서 직접 카운트했으며, 테스트 수 재현은 `python3 scripts/count_readme_metrics.py --field test_functions`를 사용합니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

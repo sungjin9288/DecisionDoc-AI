@@ -15,13 +15,13 @@
     },
     {
       "path": "README.md",
-      "sha256": "4f0dfa65de63710972cd9404dd4837485c009c4ce69f6f179a7f19c767901cb6",
-      "size_bytes": 89508
+      "sha256": "fcb4890490b81e32e663a57cb51e86bde841d8261455c943d2efaac06953d1fa",
+      "size_bytes": 90600
     },
     {
       "path": "docs/architecture.md",
-      "sha256": "f303d5c0d35e568f49ff907746dbcc5fedecc45c354853f309af9ab6c2e152a2",
-      "size_bytes": 52725
+      "sha256": "cc5eafa336c09455b297ccc64058f8ce1d6cd0c820f8e0207675efd180878de0",
+      "size_bytes": 54892
     },
     {
       "path": "docs/case-study.md",
@@ -40,8 +40,8 @@
     },
     {
       "path": "docs/development-plan.md",
-      "sha256": "393820d240532e9bd094f9cbc118a3607a55626a28a7653876489563b1c81563",
-      "size_bytes": 57093
+      "sha256": "d3c4f39f746abbdbcaaa4030a086af0538f8e82ea8768b0d3aaac9c608fd6b37",
+      "size_bytes": 58321
     },
     {
       "path": "docs/evidence-checklist.md",
