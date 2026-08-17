@@ -111,6 +111,7 @@ def test_generate_export_zip_audits_safe_download(tmp_path, monkeypatch):
         "export-audit-source",
         [{"doc_type": "adr", "markdown": "private export body"}],
         "private export title",
+        source_store=client.app.state.generation_export_source_store,
     )
     response = client.get(
         "/generate/export-zip?request_id=export-audit-source",

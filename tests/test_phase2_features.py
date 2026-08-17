@@ -73,11 +73,14 @@ def test_export_zip_missing_context():
 
 def test_export_zip_invalid_format():
     token = _token()
-    # nonexistent-id will 404 before format validation, so seed the cache first
+    # Seed a durable source so this still exercises format validation.
     from app.routers.generate import _store_zip_docs
 
     _store_zip_docs(
-        "zip-fmt-test", [{"doc_type": "adr", "markdown": "# Test"}], "테스트"
+        "zip-fmt-test",
+        [{"doc_type": "adr", "markdown": "# Test"}],
+        "테스트",
+        source_store=client.app.state.generation_export_source_store,
     )
     res = client.get(
         "/generate/export-zip?request_id=zip-fmt-test&formats=invalid",
@@ -87,14 +90,15 @@ def test_export_zip_invalid_format():
     assert res.status_code == 400
 
 
-def test_export_zip_returns_zip_with_valid_cache():
-    """When docs are cached and format is valid, endpoint returns application/zip."""
+def test_export_zip_returns_zip_with_valid_durable_source():
+    """A durable source and valid format return an application/zip response."""
     from app.routers.generate import _store_zip_docs
 
     _store_zip_docs(
         "zip-valid-test",
         [{"doc_type": "onepager", "markdown": "# 제목\n본문 내용"}],
         "테스트 문서",
+        source_store=client.app.state.generation_export_source_store,
     )
     token = _token()
     res = client.get(
@@ -114,6 +118,7 @@ def test_export_zip_content_disposition():
         "zip-cd-test",
         [{"doc_type": "onepager", "markdown": "# 내용"}],
         "My Document",
+        source_store=client.app.state.generation_export_source_store,
     )
     token = _token()
     res = client.get(
@@ -133,6 +138,7 @@ def test_export_zip_hwp_uses_hwpx_extension():
         "zip-hwp-extension-test",
         [{"doc_type": "onepager", "markdown": "# 내용"}],
         "한글 문서",
+        source_store=client.app.state.generation_export_source_store,
     )
     token = _token()
     res = client.get(
@@ -147,13 +153,21 @@ def test_export_zip_hwp_uses_hwpx_extension():
         assert zipfile.is_zipfile(io.BytesIO(zf.read("artifacts/document.hwpx")))
 
 
-def test_zip_cache_store_and_retrieve():
-    """_store_zip_docs / _get_zip_docs round-trip."""
+def test_zip_source_store_and_retrieve():
+    """_store_zip_docs / _get_zip_docs use the app's durable source store."""
     from app.routers.generate import _store_zip_docs, _get_zip_docs
 
     docs = [{"doc_type": "adr", "markdown": "# ADR"}]
-    _store_zip_docs("cache-roundtrip", docs, "타이틀")
-    result = _get_zip_docs("cache-roundtrip")
+    _store_zip_docs(
+        "cache-roundtrip",
+        docs,
+        "타이틀",
+        source_store=client.app.state.generation_export_source_store,
+    )
+    result = _get_zip_docs(
+        "cache-roundtrip",
+        source_store=client.app.state.generation_export_source_store,
+    )
     assert result is not None
     retrieved_docs, retrieved_title = result
     assert retrieved_docs == docs
@@ -163,7 +177,10 @@ def test_zip_cache_store_and_retrieve():
 def test_zip_cache_missing_returns_none():
     from app.routers.generate import _get_zip_docs
 
-    assert _get_zip_docs("definitely-not-stored-id") is None
+    assert _get_zip_docs(
+        "definitely-not-stored-id",
+        source_store=client.app.state.generation_export_source_store,
+    ) is None
 
 
 # ── Feature 2: G2B deadline alerts ───────────────────────────────────────────

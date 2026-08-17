@@ -10,6 +10,7 @@ from app.auth.api_key import require_api_key
 from app.dependencies import require_auth as _require_auth
 from app.maintenance.mode import require_not_maintenance
 from app.routers.generate._shared import _get_zip_docs
+from app.storage.generation_export_source_store import GenerationExportSourceUnavailableError
 from app.services.generation_export_packet import (
     ExportFormatInvalidError,
     GenerationExportPacketError,
@@ -41,7 +42,20 @@ async def export_zip(request: Request, request_id: str, formats: str = "docx") -
         )
 
     tenant_id = getattr(request.state, "tenant_id", "system") or "system"
-    cached = _get_zip_docs(request_id, tenant_id=tenant_id)
+    try:
+        cached = _get_zip_docs(
+            request_id,
+            tenant_id=tenant_id,
+            source_store=request.app.state.generation_export_source_store,
+        )
+    except GenerationExportSourceUnavailableError:
+        logger.warning("Generation export source unavailable request_id=%s", response_request_id)
+        return _export_packet_error(
+            request_id=response_request_id,
+            status_code=503,
+            code="EXPORT_SOURCE_UNAVAILABLE",
+            message="Export source is temporarily unavailable.",
+        )
     if cached is None:
         return _export_packet_error(
             request_id=response_request_id,

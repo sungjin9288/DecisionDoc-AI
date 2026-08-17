@@ -29,7 +29,7 @@ from app.services.attachment_service import (
     AttachmentError,
     MAX_TOTAL_CHARS,
 )
-from app.services.generation_export_cache import generation_export_cache
+from app.storage.generation_export_source_store import GenerationExportSourceStore
 
 logger = logging.getLogger("decisiondoc.generate")
 
@@ -229,10 +229,9 @@ def _generate_visual_assets_for_docs(
     return assets
 
 
-# ── ZIP export in-memory cache ────────────────────────────────────────────────
+# ── Durable ZIP export source authority ───────────────────────────────────────
 # Legacy helper names remain re-exported from ``app.routers.generate`` for
-# existing callers, while the backing cache now enforces tenant/TTL/LRU rules.
-_zip_docs_cache = generation_export_cache
+# callers that seed or read sources in focused route tests.
 
 
 def _store_zip_docs(
@@ -241,9 +240,10 @@ def _store_zip_docs(
     title: str,
     *,
     tenant_id: str = "system",
+    source_store: GenerationExportSourceStore,
 ) -> None:
-    """Store one generated source for a later tenant-bound ZIP export."""
-    generation_export_cache.store(
+    """Persist one generated source for a later tenant-bound ZIP export."""
+    source_store.store(
         tenant_id=tenant_id,
         request_id=request_id,
         docs=docs,
@@ -255,9 +255,10 @@ def _get_zip_docs(
     request_id: str,
     *,
     tenant_id: str = "system",
+    source_store: GenerationExportSourceStore,
 ) -> tuple[list[dict], str] | None:
-    """Retrieve a tenant-bound generated source, or None without disclosure."""
-    return generation_export_cache.get(tenant_id=tenant_id, request_id=request_id)
+    """Retrieve a tenant-bound durable source, or None without disclosure."""
+    return source_store.get(tenant_id=tenant_id, request_id=request_id)
 
 
 def _get_low_rating_threshold() -> int:
@@ -724,15 +725,16 @@ def _run_generate(req: GenerateRequest, request: Request) -> GenerateResponse:
     _mark_procurement_downstream_resolved_context(req, request, tenant_id=tenant_id)
     _mark_decision_council_handoff_context(req, request, tenant_id=tenant_id)
     result = service.generate_documents(req, request_id=request_id, tenant_id=tenant_id)
-    _apply_generate_state(request, result, template_version)
-    log_event(logger, _build_generate_log_event(request, result, request_id, template_version))
     metadata = result["metadata"]
+    _apply_generate_state(request, result, template_version)
     _store_zip_docs(
         request_id,
         result["docs"],
         req.title,
         tenant_id=tenant_id,
+        source_store=request.app.state.generation_export_source_store,
     )
+    log_event(logger, _build_generate_log_event(request, result, request_id, template_version))
 
     # 이력 자동 저장 (fire-and-forget)
     try:

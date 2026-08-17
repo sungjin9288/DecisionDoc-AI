@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import struct
 import subprocess
 import sys
@@ -10,7 +11,6 @@ import zipfile
 import pytest
 from fastapi.testclient import TestClient
 
-from app.services.generation_export_cache import GenerationExportCache, generation_export_cache
 from app.services.generation_export_packet import (
     AUTHORITY_FALSE,
     MANIFEST_PATH,
@@ -245,29 +245,8 @@ def test_sync_converters_run_off_the_event_loop(monkeypatch):
     assert observed == ["<lambda>", "<lambda>", "<lambda>", "<lambda>"]
 
 
-def test_generation_export_cache_is_tenant_scoped_deep_copied_ttl_bounded_and_lru():
-    now = [100.0]
-    cache = GenerationExportCache(ttl_seconds=60, max_entries=2, clock=lambda: now[0])
-    source_docs = [{"doc_type": "adr", "markdown": "original"}]
-    cache.store(tenant_id="tenant-a", request_id="one", docs=source_docs, title="one")
-    source_docs[0]["markdown"] = "changed after store"
-    cached = cache.get(tenant_id="tenant-a", request_id="one")
-    assert cached == ([{"doc_type": "adr", "markdown": "original"}], "one")
-    assert cache.get(tenant_id="tenant-b", request_id="one") is None
-
-    cached[0][0]["markdown"] = "changed after read"
-    assert cache.get(tenant_id="tenant-a", request_id="one")[0][0]["markdown"] == "original"
-    cache.store(tenant_id="tenant-a", request_id="two", docs=DOCS, title="two")
-    assert cache.get(tenant_id="tenant-a", request_id="one") is not None
-    cache.store(tenant_id="tenant-a", request_id="three", docs=DOCS, title="three")
-    assert cache.get(tenant_id="tenant-a", request_id="two") is None
-    now[0] += 60
-    assert cache.get(tenant_id="tenant-a", request_id="one") is None
-
-
 @pytest.fixture
 def packet_client(tmp_path, monkeypatch):
-    generation_export_cache.clear()
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.setenv("DECISIONDOC_PROVIDER", "mock")
     monkeypatch.setenv("DECISIONDOC_ENV", "dev")
@@ -281,7 +260,6 @@ def packet_client(tmp_path, monkeypatch):
 
     with TestClient(create_app()) as client:
         yield client
-    generation_export_cache.clear()
 
 
 def _auth_headers(client: TestClient, *, tenant_id: str = "system") -> dict[str, str]:
@@ -308,11 +286,21 @@ def _auth_headers(client: TestClient, *, tenant_id: str = "system") -> dict[str,
     return {"Authorization": f"Bearer {token}"}
 
 
-def test_generate_and_stream_populate_source_cache(packet_client):
+def test_generate_and_stream_persist_one_durable_source_each(packet_client, monkeypatch):
     headers = _auth_headers(packet_client)
+    source_store = packet_client.app.state.generation_export_source_store
+    original_store = source_store.store
+    calls: list[str] = []
+
+    def tracked_store(**kwargs):
+        calls.append(kwargs["request_id"])
+        return original_store(**kwargs)
+
+    monkeypatch.setattr(source_store, "store", tracked_store)
     generated = packet_client.post("/generate", json={"title": "cache", "goal": "cache test"}, headers=headers)
     assert generated.status_code == 200
-    assert generation_export_cache.get(tenant_id="system", request_id=generated.json()["request_id"]) is not None
+    generated_request_id = generated.json()["request_id"]
+    assert source_store.get(tenant_id="system", request_id=generated_request_id) is not None
 
     streamed = packet_client.post("/generate/stream", json={"title": "stream", "goal": "stream test"}, headers=headers)
     assert streamed.status_code == 200
@@ -322,14 +310,178 @@ def test_generate_and_stream_populate_source_cache(packet_client):
         for line in streamed.text.splitlines()
         if line.startswith("data: {") and '"request_id"' in line
     )
-    assert generation_export_cache.get(tenant_id="system", request_id=json.loads(request_id)["request_id"]) is not None
+    streamed_request_id = json.loads(request_id)["request_id"]
+    assert source_store.get(tenant_id="system", request_id=streamed_request_id) is not None
+    assert calls == [generated_request_id, streamed_request_id]
+
+    from app.main import create_app
+
+    with TestClient(create_app()) as independent_client:
+        response = independent_client.get(
+            f"/generate/export-zip?request_id={generated_request_id}&formats=docx",
+            headers=headers,
+        )
+    assert response.status_code == 200
+    assert verify_generation_export_packet(response.content)["verified"] is True
+
+
+def test_generate_source_failure_is_generic_and_retains_observability(packet_client, monkeypatch, caplog):
+    from app.storage.generation_export_source_store import GenerationExportSourceUnavailableError
+
+    headers = _auth_headers(packet_client)
+    calls = 0
+    secret_body = "rendered source that must never reach an error response"
+
+    def generated_once(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        return {
+            "docs": [{"doc_type": "adr", "markdown": secret_body}],
+            "metadata": {
+                "bundle_id": "source-failure",
+                "provider": "mock",
+                "schema_version": "v1",
+                "cache_hit": False,
+                "doc_count": 1,
+                "llm_prompt_tokens": 11,
+                "llm_output_tokens": 13,
+                "llm_total_tokens": 24,
+                "timings_ms": {
+                    "provider_ms": 17,
+                    "render_ms": 19,
+                    "lints_ms": 23,
+                    "validator_ms": 29,
+                },
+            },
+        }
+
+    monkeypatch.setattr(packet_client.app.state.service, "generate_documents", generated_once)
+    monkeypatch.setattr(
+        packet_client.app.state.generation_export_source_store,
+        "store",
+        lambda **_kwargs: (_ for _ in ()).throw(GenerationExportSourceUnavailableError("hidden")),
+    )
+    caplog.set_level(logging.INFO)
+
+    response = packet_client.post(
+        "/generate",
+        json={"title": "secret title", "goal": "source persistence failure"},
+        headers=headers,
+    )
+    assert response.status_code == 503
+    assert response.json()["code"] == "EXPORT_SOURCE_UNAVAILABLE"
+    assert secret_body not in response.text
+    assert calls == 1
+    events = [record.msg for record in caplog.records if isinstance(record.msg, dict)]
+    assert not any(event.get("event") == "generate.completed" for event in events)
+    completed = next(event for event in events if event.get("event") == "request.completed")
+    assert completed["request_id"] == response.json()["request_id"]
+    for key, value in {
+        "method": "POST",
+        "path": "/generate",
+        "status_code": 503,
+        "provider": "mock",
+        "schema_version": "v1",
+        "cache_hit": False,
+        "doc_count": 1,
+        "llm_prompt_tokens": 11,
+        "llm_output_tokens": 13,
+        "llm_total_tokens": 24,
+        "error_code": "EXPORT_SOURCE_UNAVAILABLE",
+        "provider_ms": 17,
+        "render_ms": 19,
+        "lints_ms": 23,
+        "validator_ms": 29,
+        "template_version": "v1",
+    }.items():
+        assert completed[key] == value
+
+
+def test_stream_source_failure_ends_before_complete_and_retains_observability(
+    packet_client, monkeypatch, caplog
+):
+    from app.storage.generation_export_source_store import GenerationExportSourceUnavailableError
+
+    headers = _auth_headers(packet_client)
+    calls = 0
+    secret_body = "streamed source that must never reach an error response"
+
+    def generated_once(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        return {
+            "docs": [{"doc_type": "adr", "markdown": secret_body}],
+            "metadata": {
+                "bundle_id": "stream-source-failure",
+                "provider": "mock",
+                "schema_version": "v1",
+                "cache_hit": False,
+                "doc_count": 1,
+                "llm_prompt_tokens": 31,
+                "llm_output_tokens": 37,
+                "llm_total_tokens": 68,
+                "timings_ms": {
+                    "provider_ms": 41,
+                    "render_ms": 43,
+                    "lints_ms": 47,
+                    "validator_ms": 53,
+                },
+            },
+        }
+
+    monkeypatch.setattr(packet_client.app.state.service, "generate_documents", generated_once)
+    monkeypatch.setattr(
+        packet_client.app.state.generation_export_source_store,
+        "store",
+        lambda **_kwargs: (_ for _ in ()).throw(GenerationExportSourceUnavailableError("hidden")),
+    )
+    caplog.set_level(logging.INFO)
+    response = packet_client.post(
+        "/generate/stream",
+        json={"title": "secret title", "goal": "source persistence failure"},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    assert "EXPORT_SOURCE_UNAVAILABLE" in response.text
+    assert "event: complete" not in response.text
+    assert "secret title" not in response.text
+    assert secret_body not in response.text
+    assert calls == 1
+    events = [record.msg for record in caplog.records if isinstance(record.msg, dict)]
+    assert not any(event.get("event") == "generate.completed" for event in events)
+    completed = next(event for event in events if event.get("event") == "request.completed")
+    for key, value in {
+        "method": "POST",
+        "path": "/generate/stream",
+        "status_code": 200,
+        "provider": "mock",
+        "schema_version": "v1",
+        "cache_hit": False,
+        "doc_count": 1,
+        "llm_prompt_tokens": 31,
+        "llm_output_tokens": 37,
+        "llm_total_tokens": 68,
+        "error_code": "EXPORT_SOURCE_UNAVAILABLE",
+        "provider_ms": 41,
+        "render_ms": 43,
+        "lints_ms": 47,
+        "validator_ms": 53,
+        "template_version": "v1",
+    }.items():
+        assert completed[key] == value
 
 
 def test_export_route_delivers_verified_packet_headers_and_hides_source_on_failure(packet_client, monkeypatch):
     headers = _auth_headers(packet_client)
     from app.routers.generate import _store_zip_docs
 
-    _store_zip_docs("route-source", DOCS, "unsafe/route title", tenant_id="system")
+    _store_zip_docs(
+        "route-source",
+        DOCS,
+        "unsafe/route title",
+        tenant_id="system",
+        source_store=packet_client.app.state.generation_export_source_store,
+    )
     response = packet_client.get(
         "/generate/export-zip?request_id=route-source&formats=HWP,docx,docx",
         headers=headers,
@@ -395,6 +547,26 @@ def test_export_route_delivers_verified_packet_headers_and_hides_source_on_failu
     assert failed.status_code == 500
     assert failed.json()["code"] == "EXPORT_PACKET_FAILED"
     assert "unsafe" not in failed.text
+
+    source_store = packet_client.app.state.generation_export_source_store
+    index = json.loads(
+        packet_client.app.state.state_backend.read_text(
+            source_store.index_path(tenant_id="system")
+        )
+        or "{}"
+    )
+    object_path = source_store.object_path(
+        tenant_id="system",
+        object_sha256=index["sources"][0]["object_sha256"],
+    )
+    packet_client.app.state.state_backend.delete(object_path)
+    unavailable = packet_client.get(
+        "/generate/export-zip?request_id=route-source",
+        headers=headers,
+    )
+    assert unavailable.status_code == 503
+    assert unavailable.json()["code"] == "EXPORT_SOURCE_UNAVAILABLE"
+    assert "unsafe" not in unavailable.text
 
 
 def test_standalone_verifier_is_read_only_and_reports_verified_packet(tmp_path):

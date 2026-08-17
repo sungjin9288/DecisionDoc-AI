@@ -96,7 +96,7 @@ FastAPI (app/main.py — create_app(), 모듈 레벨 side-effect 없음)
   │     / report_workflows / auth / sso / admin / audit / billing / dashboard
   │     / history / eval / finetune / local_llm / g2b / templates / health ...
   ▼
-Services (51) — 도메인 오케스트레이션
+Services (50) — 도메인 오케스트레이션
   ├─ generation_service ─ 핵심 파이프라인:
   │     요청 → 캐시 → Provider.generate_bundle() → 스키마 검증
   │        → Stabilizer → Storage 저장 → Jinja2 렌더 → Lint → 반환
@@ -107,7 +107,7 @@ Services (51) — 도메인 오케스트레이션
   │
   ├────────────────┬─────────────────────┐
   ▼                ▼                     ▼
-Providers (5)    Storage (50 modules)   Ops
+Providers (5)    Storage (51 modules)   Ops
   factory +        factory +             CloudWatch 조사
   fallback chain   Local / S3            Statuspage 연동
   mock/openai/     (atomic write 공통)   eval / eval_live
@@ -119,8 +119,8 @@ Providers (5)    Storage (50 modules)   Ops
 ```bash
 python3 scripts/count_readme_metrics.py --field middleware_files  # → 12
 python3 scripts/count_readme_metrics.py --field router_files      # → 23
-python3 scripts/count_readme_metrics.py --field service_files     # → 51
-python3 scripts/count_readme_metrics.py --field storage_files     # → 50
+python3 scripts/count_readme_metrics.py --field service_files     # → 50
+python3 scripts/count_readme_metrics.py --field storage_files     # → 51
 python3 scripts/count_readme_metrics.py --field route_decorators  # → 292
 ```
 
@@ -317,11 +317,11 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **3,801개**, **274개 파일**입니다 (Python AST `test_` definition 기준 카운트이며 pass 수가 아닙니다). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **3,813개**, **275개 파일**입니다 (Python AST `test_` definition 기준 카운트이며 pass 수가 아닙니다). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 3801
-python3 scripts/count_readme_metrics.py --field test_files      # → 274
+python3 scripts/count_readme_metrics.py --field test_functions  # → 3813
+python3 scripts/count_readme_metrics.py --field test_files      # → 275
 ```
 
 > 위 수치는 Python AST로 확인한 `test_` 함수 정의 개수입니다. 각 테스트의 현재 pass 여부는 환경 구성 후 `pytest`로 재확인하세요. 검증되지 않은 커버리지·통과율 수치는 표기하지 않습니다.
@@ -350,7 +350,13 @@ bandit -r app/ -x app/providers/mock_provider.py -ll
 
 ## Development Plan — 완성까지 남은 것
 
-현재 전체 no-cost baseline은 `pytest tests/ -m "not live" -q` 기준 `4,569 passed, 1 skipped, 4 deselected`입니다(2026-08-12 실측). DocumentOps browser provenance verification과 free-local fail-closed runtime을 포함한 mock/local 및 non-live 범위이며, 실제 LLM Provider와 AWS runtime 검증은 포함하지 않습니다. G2B 실데이터는 2026-08-11 local FastAPI + mock provider smoke에서 1건을 수집·평가했지만, durable proof receipt와 AWS stage runtime proof는 남아 있습니다. "완성"을 막는 외부 실증 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
+현재 전체 no-cost backend baseline은 아래 명령 기준 `4,576 passed, 4 deselected`입니다(2026-08-17 실측). DocumentOps browser provenance verification과 free-local fail-closed runtime을 포함한 mock/local 및 non-live 범위이며, 실제 LLM Provider와 AWS runtime 검증은 포함하지 않습니다.
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 pytest tests/ -q --ignore=tests/e2e -m 'not live' --tb=short --disable-warnings
+```
+
+G2B 실데이터는 2026-08-11 local FastAPI + mock provider smoke에서 1건을 수집·평가했지만, durable proof receipt와 AWS stage runtime proof는 남아 있습니다. "완성"을 막는 외부 실증 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
 
 DocumentOps strict skill binding 변경의 focused no-cost 검증은 2026-08-12에 registry·Agent·API·operation store·audit 대상 `143 passed`였습니다. 이 수치는 아래 focused command의 local mock/backend 결과이며 전체 non-live baseline을 다시 측정한 값은 아닙니다.
 
@@ -397,6 +403,7 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 - 무료 기본 실행의 mock provider는 결정론적 기능 검증용이며 실제 LLM 품질을 제공하지 않습니다. Ollama local provider는 generation만 지원하고 attachment OCR/vision과 direct visual asset generation은 mock fallback 범위입니다.
 - 운영 URL(예: `admin.decisiondoc.kr`) **접근성은 추가 검증이 필요**하며, 현재 README에서 동작 보장을 하지 않습니다.
 - 실제 사용자 성과 수치·운영 안정성은 검증되지 않았습니다. 검증 범위 밖의 운영 보장은 표기하지 않습니다.
+- `/generate/export-zip`의 rendered source는 선택된 local/S3 `StateBackend`에 tenant별로 최대 1시간 보존됩니다. immutable content-addressed object와 CAS index가 restart·독립 worker 재다운로드를 지원하지만, 최대 500개 reference, source당 8 MiB, tenant당 64 MiB를 넘으면 oldest-first로 reference만 축출합니다. 이 보존은 packet archive·human review·approval을 저장하거나 증명하지 않으며 `packet_persisted=false`는 그대로입니다.
 - 다수 기능이 단독 구현/실험 단계이며, **본인 직접 기여 범위는 포트폴리오·면접 설명 시 별도 정리**가 필요합니다.
 - 공공조달(G2B) 연동은 외부 API 키·실데이터에 의존하므로, 키 없이는 해당 흐름이 동작하지 않습니다.
 - Live provider proof는 2026-07-13 OpenAI 1회만 통과했습니다. Gemini는 API quota, Claude는 account credits로 blocked이며 성공 fallback proof도 남아 있습니다.
@@ -446,4 +453,4 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 292 · 테스트 3,801 · env 키 95 등)는 소스 코드에서 직접 카운트했으며, 테스트 수는 Python AST `test_` 정의 기준이고 pass 수가 아닙니다. 재현은 `python3 scripts/count_readme_metrics.py --field test_functions`를 사용합니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 292 · 테스트 3,813 · env 키 95 등)는 소스 코드에서 직접 카운트했으며, 테스트 수는 Python AST `test_` 정의 기준이고 pass 수가 아닙니다. 재현은 `python3 scripts/count_readme_metrics.py --field test_functions`를 사용합니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

@@ -85,7 +85,6 @@ from app.routers.generate._shared import (
     _run_generate,
     _score_to_grade,
     _store_zip_docs,
-    _zip_docs_cache,
 )
 
 from app.routers.generate.core import router as _core_router

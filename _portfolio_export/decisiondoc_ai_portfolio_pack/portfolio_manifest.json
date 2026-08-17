@@ -15,13 +15,13 @@
     },
     {
       "path": "README.md",
-      "sha256": "5e399d6ddcbc20ebc26887adf6412a829298733b931a0bdfa06b639d27e356f7",
-      "size_bytes": 90725
+      "sha256": "c7c966957ff5839c765aafe8900414ab12b6f57da1fa9359180871676a29d771",
+      "size_bytes": 91323
     },
     {
       "path": "docs/architecture.md",
-      "sha256": "90da9df70b17d15fa6aa262fb9f0c9f674eea1dd3b5ee0c4f786518a372542c1",
-      "size_bytes": 56460
+      "sha256": "da36253906fabbe8185444148cde5b66ea506f0e73b1cc9164d422dfe20b740f",
+      "size_bytes": 57585
     },
     {
       "path": "docs/case-study.md",
@@ -40,8 +40,8 @@
     },
     {
       "path": "docs/development-plan.md",
-      "sha256": "83bd7b450318983687d6043ad1111a410fd51deb60cd21e541c98cd5e8ca27a5",
-      "size_bytes": 58543
+      "sha256": "0353959691680180c12f92d0b16aaa781240f19155e37126ebd29b94fa27bea0",
+      "size_bytes": 58946
     },
     {
       "path": "docs/evidence-checklist.md",
@@ -75,13 +75,13 @@
     },
     {
       "path": "docs/product_direction.md",
-      "sha256": "c9f4899d9054852ff96949ee4bee6dcd549c21652e4bb9228055a2808e0a1b32",
-      "size_bytes": 28462
+      "sha256": "7d7c8ab45da2e768e6fc7623bd9b6f8b2f8541cefbcce8e1fefad3490b01cb8d",
+      "size_bytes": 28761
     },
     {
       "path": "docs/product_execution_plan.md",
-      "sha256": "a76cdb04a07cb7649594fecb4b1bb0bc3cfbaed6cf7fcc317240df15f6d59b2f",
-      "size_bytes": 36419
+      "sha256": "4bd137e38bd3ecd09778d37810b440c324d063964e0dbb485f7cad337f1f3b64",
+      "size_bytes": 36962
     },
     {
       "path": "docs/product_local_demo_runbook.md",

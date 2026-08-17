@@ -374,7 +374,9 @@ Browser profile은 session ID를 DOM에 기록하지 않고 current/other, user 
 
 ## Generated Export Review Packet
 
-`POST /generate`와 successful `POST /generate/stream`은 signed tenant ID와 source request ID를 key로 하는 process-local cache에 rendered docs와 title의 deep copy를 넣는다. Cache는 lock으로 보호하며 1시간 TTL, 500-entry LRU cap을 적용한다. 따라서 cache는 durability, cross-process replay, restart recovery를 제공하지 않으며 missing·expired·foreign source는 export route에서 같은 `404`로만 보인다.
+`POST /generate`와 successful `POST /generate/stream`은 provider 재시도 없이 한 번 `GenerationExportSourceStore`에 rendered docs와 title을 저장한 뒤 완료한다. Store는 selected local/S3 `StateBackend`의 `tenants/{tenant_id}/generation_export_sources/objects/{sha256}.json` immutable object를 conditional create하고, request ID·object SHA-256·size·UTC epoch timestamp를 담은 tenant `index.json`만 conditional create/CAS로 갱신한다. 따라서 같은 local `DATA_DIR` 또는 같은 S3 backend를 보는 restart·독립 worker도 source를 읽을 수 있다.
+
+Source reference는 고정 1시간 TTL, tenant당 최대 500개, source당 8 MiB, referenced byte 합계 64 MiB로 제한한다. 각 index CAS attempt는 clock을 한 번만 읽어 active-reference filtering, candidate `stored_at`, lost-response read-back에 같은 UTC epoch를 사용하므로 정확히 1시간 지난 request ID는 새 retention window로 재결속된다. 쓰기는 expired reference를 제외하고 `(stored_at, request_id, object_sha256)` 순으로 oldest-first 축출하며, 동일 request/content는 idempotent이고 다른 content 재사용은 기존 bytes를 바꾸지 않고 fail closed한다. Missing·expired·foreign source는 같은 no-store `404`로만 보이고, corrupt index·missing/tampered referenced object·backend failure는 source 내용을 노출하지 않는 `503 EXPORT_SOURCE_UNAVAILABLE`으로 닫는다. Index에 남지 않은 immutable orphan의 자동 GC와 index/object를 묶는 distributed transaction은 제공하지 않는다.
 
 `GET /generate/export-zip`은 기존 maintenance, API-key, JWT auth gate 뒤에서 canonical `docx,pdf,xlsx,hwp,pptx` format set을 parse한다. `hwp` token은 fixed `artifacts/document.hwpx`로 매핑되며 title은 archive path나 response filename에 사용되지 않는다. Service는 모든 conversion을 memory에서 완료한 뒤 `decisiondoc.generate_export_review_packet.v1` manifest와 deterministic ZIP을 build하고, ZIP bytes alone verifier가 member order/path, metadata, canonical JSON, hashes, size limits와 false authority boundary를 다시 검증한 뒤에만 response를 만든다.
 

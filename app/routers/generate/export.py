@@ -50,6 +50,7 @@ from app.services.pptx_service import build_pptx_from_docs
 from app.services.generation.context_store import record_direct_provider_usage
 from app.services.visual_asset_service import requires_provider_visuals
 from app.storage.usage_store import UsageStoreError
+from app.storage.generation_export_source_store import GenerationExportSourceStoreError
 
 from app.routers.generate._shared import (
     _apply_generate_state,
@@ -329,13 +330,22 @@ async def generate_stream(
 
             if event_type == "done":
                 result = data
-                _store_zip_docs(
-                    request_id,
-                    result["docs"],
-                    payload.title,
-                    tenant_id=tenant_id,
-                )
                 _apply_generate_state(request, result, template_version)
+                try:
+                    _store_zip_docs(
+                        request_id,
+                        result["docs"],
+                        payload.title,
+                        tenant_id=tenant_id,
+                        source_store=request.app.state.generation_export_source_store,
+                    )
+                except GenerationExportSourceStoreError:
+                    request.state.error_code = "EXPORT_SOURCE_UNAVAILABLE"
+                    yield (
+                        "event: error\ndata: "
+                        f"{json.dumps({'code': 'EXPORT_SOURCE_UNAVAILABLE', 'message': 'Export source could not be persisted.'})}\n\n"
+                    )
+                    return
                 log_event(
                     logger,
                     _build_generate_log_event(request, result, request_id, template_version),

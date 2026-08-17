@@ -1,6 +1,6 @@
 # DecisionDoc AI — 완성을 위한 기능 개발 계획 (Development Plan)
 
-> 기준일: **2026-08-12** (저장소 점검 [docs/inspection-20260630.md](./inspection-20260630.md), DocumentOps strict skill binding focused no-cost verification, local live G2B smoke와 current-main deploy-smoke 시도 기준)
+> 기준일: **2026-08-17** (저장소 점검 [docs/inspection-20260630.md](./inspection-20260630.md), DocumentOps strict skill binding focused no-cost verification, local live G2B smoke와 current-main deploy-smoke 시도 기준)
 > 원칙: AGENTS.md 정직성 규칙 준수 — 모든 정량 수치는 재현 커맨드를 병기하고, 검증되지 않은 성과·운영 표현은 사용하지 않는다.
 > 상위 방향 문서: [product_direction.md](./product_direction.md) · [product_execution_plan.md](./product_execution_plan.md) · [roadmap.md](./roadmap.md)
 
@@ -12,13 +12,14 @@
 
 | 축 | 현재 | 완성 기준 |
 |----|------|-----------|
-| **기능 검증** | DocumentOps browser provenance verification + free local runtime no-cost gate: full non-live `4,569 passed, 1 skipped, 4 deselected` (2026-08-12). 2026-08-11 local live G2B smoke 1건 통과 | live LLM 잔여 provider와 G2B durable receipt/stage 경로도 실증 + 증적 |
+| **기능 검증** | DocumentOps browser provenance verification + free local runtime no-cost gate: full non-live `4,576 passed, 4 deselected` (2026-08-17). 2026-08-11 local live G2B smoke 1건 통과 | live LLM 잔여 provider와 G2B durable receipt/stage 경로도 실증 + 증적 |
 | **아키텍처 위생** | ✅ 달성 (2026-07-14: 829줄 상수 모듈을 604줄 facade + 314줄 foundation으로 분리하고 800줄 guard 추가 → 초과 0개). CI advisory Ruff E/F/W와 Bandit medium/high 0건 기준 유지 | 전 모듈 800줄 이하 (전역 코딩 가이드), 계층 간 의존 방향 일관 |
 | **운영 준비성** | Docker/SAM 설정 존재, CSP nonce 부채 해소, 과거 GitHub Actions CI/CD success 증적 존재. 2026-08-11 current-main dev deploy-smoke는 AWS 진입 전 OIDC role assume에서 실패 | OIDC trust 복구 + 배포 절차 재검증 + post-deploy smoke 증적 |
 
 ```bash
 # 재현: 테스트 베이스라인
-pytest tests/ -m "not live" -q     # 2026-08-12 current: 4569 passed, 1 skipped, 4 deselected
+PYTHONDONTWRITEBYTECODE=1 pytest tests/ -q --ignore=tests/e2e -m 'not live' --tb=short --disable-warnings
+# 2026-08-17 current: 4576 passed, 4 deselected
 
 # 재현: CI advisory lint/security 베이스라인
 ruff check app/ tests/ --select=E,F,W --ignore=E501
@@ -223,12 +224,12 @@ promotion, deployment와 service resume은 실행하지 않았다.
 
 ```bash
 python3 scripts/count_readme_metrics.py --field router_files      # → 23 (top-level 라우터 파일)
-python3 scripts/count_readme_metrics.py --field service_files     # → 51 (서비스)
-python3 scripts/count_readme_metrics.py --field storage_files     # → 50 (top-level storage modules)
+python3 scripts/count_readme_metrics.py --field service_files     # → 50 (서비스)
+python3 scripts/count_readme_metrics.py --field storage_files     # → 51 (top-level storage modules)
 python3 scripts/count_readme_metrics.py --field middleware_files  # → 12 (미들웨어)
 python3 scripts/count_readme_metrics.py --field route_decorators  # → 292 (라우트)
-python3 scripts/count_readme_metrics.py --field test_files        # → 274 (테스트 파일)
-python3 scripts/count_readme_metrics.py --field test_functions    # → 3801 (Python AST test_ 정의; pass 수 아님)
+python3 scripts/count_readme_metrics.py --field test_files        # → 275 (테스트 파일)
+python3 scripts/count_readme_metrics.py --field test_functions    # → 3813 (Python AST test_ 정의; pass 수 아님)
 ```
 
 ```text
@@ -250,7 +251,7 @@ FastAPI (app/main.py — create_app(), 모듈 레벨 side-effect 없음)
   │     templates / styles / messages / notifications / events / health
   │
   ▼
-Services (47) — 도메인 오케스트레이션
+Services (50) — 도메인 오케스트레이션
   ├─ generation_service ─ 핵심 파이프라인:
   │     요청 → 캐시 → Provider.generate_bundle() → 스키마 검증
   │        → Stabilizer → Storage 저장 → Jinja2 렌더 → Lint → 반환
@@ -261,7 +262,7 @@ Services (47) — 도메인 오케스트레이션
   │
   ├────────────────┬─────────────────────┐
   ▼                ▼                     ▼
-Providers (5)    Storage (50 modules)   Ops
+Providers (5)    Storage (51 modules)   Ops
   factory +        factory +             CloudWatch 조사
   fallback chain   Local / S3            Statuspage 연동
   mock / openai    (atomic write 공통)   eval / eval_live
@@ -330,6 +331,10 @@ Providers (5)    Storage (50 modules)   Ops
 | G5 | **CSP nonce 부채** — served HTML `script-src 'unsafe-inline'` 의존 해소 필요 | `app/middleware/security_headers.py`, `app/static/index.html` | MED | **✅ 완료** — inline `on*=` 핸들러 0개, HTML 응답 nonce 기본 on, `DECISIONDOC_CSP_NONCE_ENFORCED=0` local diagnostic opt-out 유지 |
 | G6 | **배포 접근성 미검증** — current-main dev deploy-smoke가 AWS OIDC `AssumeRoleWithWebIdentity`에서 차단돼 stack inspection과 runtime smoke에 도달하지 못함 | GitHub Actions `deploy-smoke` run `31452991725` | MED | OIDC trust 복구 필요 |
 | G7 | **모듈 레벨 side-effect** — `app/main.py`의 `app = create_app()`이 import 시점에 `.env`를 로드해 테스트 격리를 해침 | — | MED | **✅ 해결** (2026-07-02, 커밋 0023c7c) — PEP 562 모듈 `__getattr__`로 lazy 생성(캐싱). `uvicorn app.main:app`·Mangum·기존 import 전부 무변경 동작 |
+
+---
+
+생성 export packet의 source는 이제 selected local/S3 backend에 bounded durable state로 보존되어 restart·독립 worker 재다운로드를 지원한다. 이는 local implementation/integrity 범위를 보강한 것이며 M1 live provider, M2 G2B stage receipt, M6 AWS deploy/runtime proof의 외부 실증 갭을 해소하지 않는다.
 
 ---
 
