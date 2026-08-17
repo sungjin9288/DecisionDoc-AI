@@ -1,5 +1,4 @@
 """Tests for POST /generate/refine endpoint."""
-import pytest
 from fastapi.testclient import TestClient
 
 

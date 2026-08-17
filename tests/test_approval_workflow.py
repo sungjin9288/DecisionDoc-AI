@@ -18,10 +18,8 @@ Covers:
 from __future__ import annotations
 
 import json
-import tempfile
 import threading
 import time
-from dataclasses import asdict
 from pathlib import Path
 
 import pytest
@@ -169,7 +167,7 @@ class TestApprovalStoreRead:
 
     def test_list_sorted_newest_first(self, tmp_path):
         store = _store(tmp_path)
-        r1 = _create_rec(store, title="첫째")
+        _create_rec(store, title="첫째")
         time.sleep(0.01)
         r2 = _create_rec(store, title="둘째")
         recs = store.list_by_tenant("t1")
@@ -848,9 +846,10 @@ class TestListFilters:
         assert all(a["status"] == "in_review" for a in in_review)
 
     def test_list_with_role_filter(self, client):
-        r = client.post("/approvals", json={
+        created = client.post("/approvals", json={
             "title": "역할 테스트", "drafter": "특별기안자", "docs": DOCS
-        }, headers=HEADERS).json()
+        }, headers=HEADERS)
+        assert created.status_code == 200
         res = client.get("/approvals?username=특별기안자&role=drafter", headers=HEADERS)
         assert res.status_code == 200
         recs = res.json()["approvals"]

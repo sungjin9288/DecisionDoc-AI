@@ -15,8 +15,8 @@
     },
     {
       "path": "README.md",
-      "sha256": "fcb4890490b81e32e663a57cb51e86bde841d8261455c943d2efaac06953d1fa",
-      "size_bytes": 90600
+      "sha256": "6b793d417f494edec35be809a8e9be21e238636c972a96cf8ffa135ae37b6c3f",
+      "size_bytes": 90618
     },
     {
       "path": "docs/architecture.md",
@@ -40,8 +40,8 @@
     },
     {
       "path": "docs/development-plan.md",
-      "sha256": "d3c4f39f746abbdbcaaa4030a086af0538f8e82ea8768b0d3aaac9c608fd6b37",
-      "size_bytes": 58321
+      "sha256": "c4b820a9b36a206a6cb72782fec4e88b698e79edf50ef9551a9c69a092a86571",
+      "size_bytes": 58328
     },
     {
       "path": "docs/evidence-checklist.md",
@@ -55,8 +55,8 @@
     },
     {
       "path": "docs/implementation-evidence.md",
-      "sha256": "58d762dc6bbc1aff3e63dc8a683ec56efed4b2f012fe2c065712302b375dbe20",
-      "size_bytes": 41618
+      "sha256": "d06eb2786d64a013f4f5e673efe3cc02040ac632dc87e8876aa7bf24abf3e652",
+      "size_bytes": 41636
     },
     {
       "path": "docs/inspection-20260630.md",

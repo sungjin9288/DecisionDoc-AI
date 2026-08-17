@@ -10,12 +10,9 @@ Covers:
 from __future__ import annotations
 
 import io
-import json
 import sys
-import types
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────

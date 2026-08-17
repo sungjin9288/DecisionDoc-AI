@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from scripts.finalize_uat_session import (
-    build_uat_summary_markdown,
     finalize_uat_session,
     summarize_uat_payload,
 )

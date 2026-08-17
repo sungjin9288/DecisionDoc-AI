@@ -21,7 +21,7 @@
 pytest tests/ -m "not live" -q     # 2026-08-12 current: 4569 passed, 1 skipped, 4 deselected
 
 # 재현: CI advisory lint/security 베이스라인
-ruff check app/ --select=E,F,W --ignore=E501
+ruff check app/ tests/ --select=E,F,W --ignore=E501
 bandit -r app/ -x app/providers/mock_provider.py -ll
 
 # 재현: 남은 외부 실증 준비 조건 점검(외부 호출 없음)

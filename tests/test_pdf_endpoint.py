@@ -1,5 +1,4 @@
 """Tests for POST /generate/pdf endpoint and pdf_service."""
-import pytest
 
 from tests.async_helper import run_async
 

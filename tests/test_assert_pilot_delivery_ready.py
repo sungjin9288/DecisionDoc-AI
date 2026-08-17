@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from scripts.assert_pilot_delivery_ready import assert_pilot_delivery_ready
 

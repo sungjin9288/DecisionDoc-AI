@@ -3,8 +3,6 @@
 PromptOverrideStore, feedback trigger, prompt injection, few-shot quality를 검증합니다.
 """
 import json
-import os
-from pathlib import Path
 
 import pytest
 

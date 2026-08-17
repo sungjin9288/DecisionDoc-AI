@@ -1,6 +1,5 @@
 """Tests for /templates CRUD endpoints."""
 import uuid
-import pytest
 from fastapi.testclient import TestClient
 
 

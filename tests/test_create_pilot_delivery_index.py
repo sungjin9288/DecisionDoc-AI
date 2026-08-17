@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 
 from scripts.create_pilot_delivery_index import (
     build_pilot_delivery_payload,

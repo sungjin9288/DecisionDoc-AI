@@ -88,9 +88,6 @@ def test_run_procurement_stale_share_demo_starts_server_and_runs_seed_and_verify
         )
         return fake_process
 
-    def _fake_run_child(command, *, env):
-        child_commands.append((list(command), dict(env)))
-
     def _fake_wait(
         base_url: str,
         *,

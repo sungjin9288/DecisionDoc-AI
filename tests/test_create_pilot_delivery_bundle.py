@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 import zipfile
 
 from scripts.create_pilot_delivery_bundle import (

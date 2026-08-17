@@ -99,11 +99,11 @@ pytest tests/ -m "not live" -q
 ### CI advisory lint / security scan
 
 ```bash
-ruff check app/ --select=E,F,W --ignore=E501
+ruff check app/ tests/ --select=E,F,W --ignore=E501
 bandit -r app/ -x app/providers/mock_provider.py -ll
 ```
 
-결과(2026-07-09 로컬 실측): `ruff`는 `All checks passed!`, `bandit -ll`은 `No issues identified`. `bandit -ll`은 medium/high severity 기준이며 low severity 항목 전체 해소를 의미하지 않는다.
+결과(2026-08-17 로컬 실측): 위 `ruff` 명령은 `All checks passed!`, `bandit -ll`은 `No issues identified`. `bandit -ll`은 medium/high severity 기준이며 low severity 항목 전체 해소를 의미하지 않는다.
 
 ### Local server
 

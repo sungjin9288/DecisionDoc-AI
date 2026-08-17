@@ -151,8 +151,17 @@ def test_send_alert_with_mock_webhook():
             ))
             mock_post.assert_called_once()
             call_kwargs = mock_post.call_args
-            payload = call_kwargs.kwargs.get("json") or call_kwargs.args[1] if len(call_kwargs.args) > 1 else {}
-            # Accept both positional and keyword call styles
+            assert call_kwargs.args == ("https://hooks.slack.com/test",)
+            payload = call_kwargs.kwargs["json"]
+            assert payload["username"] == "DecisionDoc Monitor"
+            assert payload["icon_emoji"] == ":robot_face:"
+            attachment = payload["attachments"][0]
+            assert attachment["color"] == "#F44336"
+            assert attachment["blocks"][0]["text"]["text"] == "🚨 Test"
+            assert attachment["blocks"][1]["text"]["text"] == "Test message"
+            assert attachment["blocks"][2]["fields"] == [
+                {"type": "mrkdwn", "text": "*key*\nvalue"}
+            ]
     finally:
         os.environ.pop("SLACK_WEBHOOK_URL", None)
 

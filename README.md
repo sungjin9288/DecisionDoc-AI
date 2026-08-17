@@ -340,11 +340,11 @@ ZIP은 로컬 전달용으로 생성되어 git에 포함되지 않습니다. Tra
 CI advisory와 동일한 code quality / security scan:
 
 ```bash
-ruff check app/ --select=E,F,W --ignore=E501
+ruff check app/ tests/ --select=E,F,W --ignore=E501
 bandit -r app/ -x app/providers/mock_provider.py -ll
 ```
 
-2026-07-14 로컬 기준 `ruff`는 `All checks passed!`, `bandit -ll`은 `No issues identified`입니다. Bandit `-ll`은 medium/high severity 기준이며, low severity 항목 전체 해소를 의미하지 않습니다.
+2026-08-17 로컬 기준 위 `ruff` 명령은 `All checks passed!`, `bandit -ll`은 `No issues identified`입니다. Bandit `-ll`은 medium/high severity 기준이며, low severity 항목 전체 해소를 의미하지 않습니다.
 
 ---
 

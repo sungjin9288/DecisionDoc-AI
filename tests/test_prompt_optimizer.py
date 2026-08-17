@@ -1,9 +1,7 @@
 """Tests for app/services/prompt_optimizer.py."""
-import pytest
 from app.services.prompt_optimizer import (
     analyze_feedback_patterns,
     generate_prompt_improvement,
-    FeedbackPattern,
     OptimizationReport,
 )
 
