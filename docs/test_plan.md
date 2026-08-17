@@ -773,3 +773,9 @@ pytest: 9.0.x
 ## H119 Retention Registry
 
 H119 regression은 auth-first session-admin denial, exact H118 source validation, UUIDv4/hash path binding, full-record binding의 historical username·recorded-at tamper rejection, local/fake-S3 concurrency, username rename replay, changed source/reviewer conflict, response-loss read-back, corrupt/foreign/path drift와 list disappearance preservation, list sorting, canonical read/download bytes/hash, reviewer-only audit projection과 browser JWT-only registration/history download guard를 포함한다.
+
+## Generated export review packet regression
+
+`tests/test_generation_export_packet.py` covers format trim/lowercase/dedup/canonical ordering, HWPX mapping, unsafe title isolation, all-five-format repeatability, canonical manifest and deterministic ZIP metadata, converter failure without partial delivery, every authority false-value/type drift plus missing/extra authority keys, every mutable ZIP metadata field, prefix/trailing bytes, artifact/extra-member tamper rejection, tenant isolation, TTL/LRU/deep-copy cache behavior, stable route errors/headers/audit, source-cache wiring for normal and streamed generation, and read-only CLI verification. `tests/test_phase2_features.py` retains the legacy route/auth/default-format surface while asserting the fixed HWPX artifact path; `tests/test_infrastructure.py` asserts browser header/hash verification precedes Blob allocation and download; focused Playwright proof covers one valid download and zero downloads for missing evidence, authority drift, hash mismatch, and crypto failure.
+
+The packet verifier is intentionally local, deterministic, and byte-only. Test evidence distinguishes archive integrity from issuer authenticity and review readiness from human or operational approval; no test treats a successful packet as provider, AWS, G2B, training, persistence, deployment, or approval evidence.

@@ -15,13 +15,13 @@
     },
     {
       "path": "README.md",
-      "sha256": "6b793d417f494edec35be809a8e9be21e238636c972a96cf8ffa135ae37b6c3f",
-      "size_bytes": 90618
+      "sha256": "5e399d6ddcbc20ebc26887adf6412a829298733b931a0bdfa06b639d27e356f7",
+      "size_bytes": 90725
     },
     {
       "path": "docs/architecture.md",
-      "sha256": "cc5eafa336c09455b297ccc64058f8ce1d6cd0c820f8e0207675efd180878de0",
-      "size_bytes": 54892
+      "sha256": "90da9df70b17d15fa6aa262fb9f0c9f674eea1dd3b5ee0c4f786518a372542c1",
+      "size_bytes": 56460
     },
     {
       "path": "docs/case-study.md",
@@ -40,8 +40,8 @@
     },
     {
       "path": "docs/development-plan.md",
-      "sha256": "c4b820a9b36a206a6cb72782fec4e88b698e79edf50ef9551a9c69a092a86571",
-      "size_bytes": 58328
+      "sha256": "83bd7b450318983687d6043ad1111a410fd51deb60cd21e541c98cd5e8ca27a5",
+      "size_bytes": 58543
     },
     {
       "path": "docs/evidence-checklist.md",
@@ -75,13 +75,13 @@
     },
     {
       "path": "docs/product_direction.md",
-      "sha256": "0088a77b16962755dd41175d63e904437d8e032ddd98fa64e685d633f375dfee",
-      "size_bytes": 27956
+      "sha256": "c9f4899d9054852ff96949ee4bee6dcd549c21652e4bb9228055a2808e0a1b32",
+      "size_bytes": 28462
     },
     {
       "path": "docs/product_execution_plan.md",
-      "sha256": "c2d6f9d8961ecac5bb6b72c46bf9d8563d7f6d14120afd081d7d111dd826be80",
-      "size_bytes": 35372
+      "sha256": "a76cdb04a07cb7649594fecb4b1bb0bc3cfbaed6cf7fcc317240df15f6d59b2f",
+      "size_bytes": 36419
     },
     {
       "path": "docs/product_local_demo_runbook.md",
@@ -200,8 +200,8 @@
     },
     {
       "path": "docs/specs/external_repo_integration/ANALYSIS_20260812.md",
-      "sha256": "f9b7d0da3997b102d559d50cdd1fe2549a96f04f05f477953734abb191781081",
-      "size_bytes": 6906
+      "sha256": "dda613b91ece027e3b7fb2eee9db1659c1e223bb7d3ed4800ed1f1ce3f03b034",
+      "size_bytes": 7741
     },
     {
       "path": "docs/specs/report_quality_learning/PILOT_REVIEW_RUNBOOK.md",

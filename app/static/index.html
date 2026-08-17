@@ -21450,8 +21450,31 @@
         { headers: getAuthHeaders() }
       );
       if (!res.ok) throw new Error(await res.text());
-      const blob = await res.blob();
-      _triggerBrowserDownload(blob, '문서_전체.zip', 'ZIP');
+      const contentType = res.headers.get('content-type');
+      const packetSha256 = res.headers.get('X-DecisionDoc-Export-Packet-SHA256') || '';
+      const manifestSha256 = res.headers.get('X-DecisionDoc-Export-Manifest-SHA256') || '';
+      const packetVerified = res.headers.get('X-DecisionDoc-Export-Verified');
+      const operationalApproval = res.headers.get('X-DecisionDoc-Operational-Approval');
+      if (
+        contentType !== 'application/zip' ||
+        !/^[0-9a-f]{64}$/.test(packetSha256) ||
+        !/^[0-9a-f]{64}$/.test(manifestSha256) ||
+        packetVerified !== 'true' ||
+        operationalApproval !== 'false'
+      ) {
+        throw new Error('ZIP 무결성 또는 권한 증거를 확인할 수 없습니다.');
+      }
+      const packetBytes = await res.arrayBuffer();
+      const digest = await crypto.subtle.digest('SHA-256', packetBytes);
+      const actualPacketSha256 = Array.from(
+        new Uint8Array(digest),
+        value => value.toString(16).padStart(2, '0')
+      ).join('');
+      if (actualPacketSha256 !== packetSha256) {
+        throw new Error('ZIP 무결성 검증에 실패했습니다.');
+      }
+      const blob = new Blob([packetBytes], { type: 'application/zip' });
+      _triggerBrowserDownload(blob, `decisiondoc-export-${packetSha256}.zip`, 'ZIP');
       showNotification('ZIP 다운로드를 요청했습니다.', 'success');
     } catch (e) {
       showNotification('ZIP 생성 실패: ' + e.message, 'error');

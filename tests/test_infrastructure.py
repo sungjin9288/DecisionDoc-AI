@@ -1236,6 +1236,31 @@ def test_index_html_result_download_action_wiring_exists():
         assert marker in content
 
 
+def test_index_html_export_zip_verifies_headers_and_exact_bytes_before_download():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    start = content.index("async function exportZip(requestId)")
+    end = content.index("/* ── Bundle empty state", start)
+    block = content[start:end]
+
+    for marker in (
+        "X-DecisionDoc-Export-Packet-SHA256",
+        "X-DecisionDoc-Export-Manifest-SHA256",
+        "X-DecisionDoc-Export-Verified",
+        "X-DecisionDoc-Operational-Approval",
+        "contentType !== 'application/zip'",
+        "packetVerified !== 'true'",
+        "operationalApproval !== 'false'",
+        "const packetBytes = await res.arrayBuffer();",
+        "crypto.subtle.digest('SHA-256', packetBytes)",
+        "if (actualPacketSha256 !== packetSha256)",
+    ):
+        assert marker in block
+    assert block.index("const blob = new Blob([packetBytes]") > block.index(
+        "if (actualPacketSha256 !== packetSha256)"
+    )
+    assert block.index("_triggerBrowserDownload(blob") > block.index("const blob = new Blob([packetBytes]")
+
+
 def test_index_html_distinguishes_invalid_and_recoverable_auth_refresh_failures():
     content = open("app/static/index.html", encoding="utf-8").read()
     clear_start = content.index("function clearLocalAuthSession()")

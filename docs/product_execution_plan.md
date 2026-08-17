@@ -273,3 +273,9 @@ H121 applies the same session boundary to assignment and read access. It preserv
 H122 completes the evidence retrieval loop with a verified original-packet re-download. The route authorizes before reading, revalidates the immutable bytes and record binding, returns only safe evidence headers, and keeps browser downloads bound to the current review projection and auth context. It adds no reassignment, review completion, approval, provider, training, deployment, or service-resume authority.
 
 Until then, DecisionDoc AI should be described as an actively developed MVP with strong local governance and review workflow foundations.
+
+## Generated export packet execution slice
+
+The current generated-document export slice keeps the existing `GET /generate/export-zip` user flow but binds it to a signed tenant/request source held only in a bounded process-local cache. It canonicalizes the requested conversion set, produces only fixed artifact paths, builds all conversions before delivery, then independently verifies the exact ZIP bytes and canonical manifest. The browser checks the response packet SHA-256 plus verified and false operational-authority headers before any Blob/download action.
+
+This is execution evidence for integrity and review readiness only. Cache lifetime is one process, one hour, and at most 500 sources; it is not durable storage or an approval record. `review_only=true`, false human-review/operational-approval state, and the all-false external authority object remain part of the packet contract, so this slice adds no human completion, provider call, AWS runtime, G2B action, dataset upload, training, deployment, persistence, or publishing path.

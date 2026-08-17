@@ -29,6 +29,7 @@ from app.services.attachment_service import (
     AttachmentError,
     MAX_TOTAL_CHARS,
 )
+from app.services.generation_export_cache import generation_export_cache
 
 logger = logging.getLogger("decisiondoc.generate")
 
@@ -229,17 +230,34 @@ def _generate_visual_assets_for_docs(
 
 
 # ── ZIP export in-memory cache ────────────────────────────────────────────────
-_zip_docs_cache: dict[str, tuple[list[dict], str]] = {}
+# Legacy helper names remain re-exported from ``app.routers.generate`` for
+# existing callers, while the backing cache now enforces tenant/TTL/LRU rules.
+_zip_docs_cache = generation_export_cache
 
 
-def _store_zip_docs(request_id: str, docs: list[dict], title: str) -> None:
-    """Store generated docs for later ZIP export."""
-    _zip_docs_cache[request_id] = (docs, title)
+def _store_zip_docs(
+    request_id: str,
+    docs: list[dict],
+    title: str,
+    *,
+    tenant_id: str = "system",
+) -> None:
+    """Store one generated source for a later tenant-bound ZIP export."""
+    generation_export_cache.store(
+        tenant_id=tenant_id,
+        request_id=request_id,
+        docs=docs,
+        title=title,
+    )
 
 
-def _get_zip_docs(request_id: str) -> tuple[list[dict], str] | None:
-    """Retrieve cached docs for ZIP export, or None if not found."""
-    return _zip_docs_cache.get(request_id)
+def _get_zip_docs(
+    request_id: str,
+    *,
+    tenant_id: str = "system",
+) -> tuple[list[dict], str] | None:
+    """Retrieve a tenant-bound generated source, or None without disclosure."""
+    return generation_export_cache.get(tenant_id=tenant_id, request_id=request_id)
 
 
 def _get_low_rating_threshold() -> int:
@@ -709,6 +727,12 @@ def _run_generate(req: GenerateRequest, request: Request) -> GenerateResponse:
     _apply_generate_state(request, result, template_version)
     log_event(logger, _build_generate_log_event(request, result, request_id, template_version))
     metadata = result["metadata"]
+    _store_zip_docs(
+        request_id,
+        result["docs"],
+        req.title,
+        tenant_id=tenant_id,
+    )
 
     # 이력 자동 저장 (fire-and-forget)
     try:

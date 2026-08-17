@@ -177,3 +177,11 @@ DecisionDoc AI의 정보 자산을 보호하고 서비스 연속성을 유지한
 |------|------|------|
 | 1.0 | 2025-03 | 최초 작성 |
 | 1.1 | 2026-07 | H119 retention disposition registry는 Ops Key가 아닌 session-bound admin JWT만 허용한다. Session ID, token, IP, User-Agent와 nested receipt body를 persistence/audit에서 제외하고, H119 audit은 reviewer principal만 남긴다. |
+
+## Generated export packet boundary
+
+`GET /generate/export-zip` reads only a signed-tenant, process-local source cache after its existing maintenance, API-key, and JWT gates. Missing, expired, and foreign tenant keys all return the same no-store `404` body; response errors never expose cached title, document text, cache contents, or conversion exception text. The cache uses deep copies under a re-entrant lock with a one-hour TTL and 500-entry LRU bound, so it is not durable security evidence.
+
+Untrusted title and query input cannot choose archive members. Format parsing trims/lowercases/deduplicates only the allowlisted formats and rejects any unknown or empty effective set with `EXPORT_FORMAT_INVALID`. ZIP members are fixed ASCII paths, no directories/symlinks/duplicates/comments/extra fields are accepted, and every converter plus the independent byte-only verifier must succeed before an `application/zip` response exists. Success has `no-store`, `nosniff`, content-addressed ASCII filename, packet/manifest SHA-256, verified, artifact-count, and false operational-approval headers.
+
+SHA-256 verification establishes integrity of received bytes, not issuer authenticity, human completion, operational approval, persistence, provider execution, AWS/G2B submission, dataset upload, training, or deployment authority. The browser refuses a missing/mismatched packet hash or any non-`true` verified/non-`false` operational approval header before allocating a Blob or starting a download.

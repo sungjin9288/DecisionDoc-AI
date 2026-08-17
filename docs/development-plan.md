@@ -223,10 +223,12 @@ promotion, deployment와 service resume은 실행하지 않았다.
 
 ```bash
 python3 scripts/count_readme_metrics.py --field router_files      # → 23 (top-level 라우터 파일)
-python3 scripts/count_readme_metrics.py --field service_files     # → 49 (서비스)
+python3 scripts/count_readme_metrics.py --field service_files     # → 51 (서비스)
 python3 scripts/count_readme_metrics.py --field storage_files     # → 50 (top-level storage modules)
 python3 scripts/count_readme_metrics.py --field middleware_files  # → 12 (미들웨어)
 python3 scripts/count_readme_metrics.py --field route_decorators  # → 292 (라우트)
+python3 scripts/count_readme_metrics.py --field test_files        # → 274 (테스트 파일)
+python3 scripts/count_readme_metrics.py --field test_functions    # → 3801 (Python AST test_ 정의; pass 수 아님)
 ```
 
 ```text
@@ -241,7 +243,7 @@ FastAPI (app/main.py — create_app(), 모듈 레벨 side-effect 없음)
   │     audit context helpers: document_ops_audit / auth_session_retention_audit
   │       / procurement_review_audit
   │
-  ├─ Routers (23 top-level files, 라우트 289):
+  ├─ Routers (23 top-level files, 라우트 292):
   │     generate / approvals / projects / knowledge / report_workflows
   │     auth / sso / admin / audit / billing / dashboard / history
   │     eval / finetune / local_llm / g2b / document_ops_agent

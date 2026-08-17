@@ -355,3 +355,7 @@ H121 closes the surrounding read and assignment boundary. A session-bound admin 
 ## H122 Verified Original Review Packet Re-download
 
 H122 lets an authorized reviewer return to the exact immutable source packet without rebuilding it. The server checks the current session-bound admin or stable assignee before reading bytes, then revalidates the stored SHA-256, receipt binding, package semantics, recommendation, and false operational-authority boundary. The browser compares the safe response headers with its current review projection, verifies the downloaded byte length and SHA-256, and revokes the context-bound object URL and fallback link when the user, tenant, or project context changes. This is evidence retrieval only; it does not reassign a reviewer, complete a review, approve operations, submit a bid, call a provider, or resume a service.
+
+## Generated document export packets
+
+Generated-document ZIP export should be positioned as a local review-readiness handoff: a tenant-bound recent generation can become a deterministic, self-verified packet with explicit integrity evidence. It is not a durable archive, issuer attestation, completed human review, or operational approval. Product copy must keep provider execution, AWS/G2B submission, training, deployment, and approval authority explicitly false even when the packet verifier succeeds.

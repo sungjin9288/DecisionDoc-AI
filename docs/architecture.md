@@ -371,3 +371,11 @@ Browser profile은 session ID를 DOM에 기록하지 않고 current/other, user 
 ## H119 Retention Disposition Registry
 
 `POST|GET /admin/auth-sessions/retention-review-dispositions`와 record read/download은 current session-bound admin JWT만 사용하는 immutable registry다. `auth-session-retention-review-disposition-record.v1`은 selected backend의 tenant path에 canonical conditional create로 저장한다. H118 source는 nested false identity/persistence flags를 유지하고 H119 wrapper만 reviewer identity/persistence를 true로 한다. UUIDv4-hash path, stable reviewer/source request hash, historical username·recorded-at을 포함한 full-record binding hash, UTC `+00:00` timestamp, tenant/path identity와 all-false authority flags를 every read/list에서 strict 검증한다.
+
+## Generated Export Review Packet
+
+`POST /generate`와 successful `POST /generate/stream`은 signed tenant ID와 source request ID를 key로 하는 process-local cache에 rendered docs와 title의 deep copy를 넣는다. Cache는 lock으로 보호하며 1시간 TTL, 500-entry LRU cap을 적용한다. 따라서 cache는 durability, cross-process replay, restart recovery를 제공하지 않으며 missing·expired·foreign source는 export route에서 같은 `404`로만 보인다.
+
+`GET /generate/export-zip`은 기존 maintenance, API-key, JWT auth gate 뒤에서 canonical `docx,pdf,xlsx,hwp,pptx` format set을 parse한다. `hwp` token은 fixed `artifacts/document.hwpx`로 매핑되며 title은 archive path나 response filename에 사용되지 않는다. Service는 모든 conversion을 memory에서 완료한 뒤 `decisiondoc.generate_export_review_packet.v1` manifest와 deterministic ZIP을 build하고, ZIP bytes alone verifier가 member order/path, metadata, canonical JSON, hashes, size limits와 false authority boundary를 다시 검증한 뒤에만 response를 만든다.
+
+Packet의 SHA-256은 byte integrity와 manifest/artifact binding evidence다. 이는 packet issuer authenticity, human review completion, operational approval, provider/AWS/G2B/training/deployment authority를 증명하지 않는다. Manifest는 `review_only=true`, `human_review_completed=false`, `packet_persisted=false`와 exact all-false authority object를 고정하고, browser는 packet hash와 verified/false-authority headers를 Blob 생성 전에 다시 확인한다.

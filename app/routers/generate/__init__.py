@@ -20,7 +20,8 @@ Sub-modules:
 - export: document export / binary-format endpoints (`/generate/export`,
   `/generate/pptx`, `/generate/visual-assets`, `/generate/stream`,
   `/generate/docx`, `/generate/pdf`, `/generate/excel`, `/generate/hwp`,
-  `/generate/export-edited`, `/generate/export-zip`).
+  `/generate/export-edited`).
+- export_packet: verified, non-persisted `/generate/export-zip` review packet.
 - ai_features: auxiliary AI-powered text endpoints (`/generate/rewrite-section`,
   `/generate/sketch`, `/generate/refine`, `/generate/related`,
   `/generate/summary`, `/generate/validate`, `/generate/freeform`,
@@ -89,6 +90,7 @@ from app.routers.generate._shared import (
 
 from app.routers.generate.core import router as _core_router
 from app.routers.generate.export import router as _export_router
+from app.routers.generate.export_packet import router as _export_packet_router
 from app.routers.generate.ai_features import router as _ai_features_router
 from app.routers.generate.ops import router as _ops_router
 
@@ -96,5 +98,6 @@ router = APIRouter(tags=["generate"])
 
 router.include_router(_core_router)
 router.include_router(_export_router)
+router.include_router(_export_packet_router)
 router.include_router(_ai_features_router)
 router.include_router(_ops_router)

@@ -142,9 +142,9 @@ def test_export_zip_hwp_uses_hwpx_extension():
     assert res.status_code == 200
     with zipfile.ZipFile(io.BytesIO(res.content)) as zf:
         names = zf.namelist()
-        assert "한글 문서.hwpx" in names
+        assert "artifacts/document.hwpx" in names
         assert not any(name.endswith(".hwp") for name in names)
-        assert zipfile.is_zipfile(io.BytesIO(zf.read("한글 문서.hwpx")))
+        assert zipfile.is_zipfile(io.BytesIO(zf.read("artifacts/document.hwpx")))
 
 
 def test_zip_cache_store_and_retrieve():
