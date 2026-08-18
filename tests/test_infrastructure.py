@@ -3412,6 +3412,83 @@ def test_completion_readiness_local_receipts_and_prod_env_stay_gitignored():
         assert completed.returncode == 0, f"{path} must remain gitignored"
 
 
+def test_documentation_completion_snapshot_and_core_loop_contract():
+    root = Path(__file__).resolve().parents[1]
+    snapshot_link = "development-plan.md#0-current-completionreadiness-snapshot"
+    development_plan = (root / "docs/development-plan.md").read_text(encoding="utf-8")
+    product_plan = (root / "docs/product_execution_plan.md").read_text(encoding="utf-8")
+    roadmap = (root / "docs/roadmap.md").read_text(encoding="utf-8")
+    checklist = (root / "docs/evidence-checklist.md").read_text(encoding="utf-8")
+    procurement_status = (
+        root / "docs/specs/public_procurement_copilot/STATUS.md"
+    ).read_text(encoding="utf-8")
+    readme = (root / "README.md").read_text(encoding="utf-8")
+
+    assert "## 0. Current Completion/Readiness Snapshot" in development_plan
+    assert "유일한 volatile snapshot" in development_plan
+    assert "27523032d68d2b217f4537ab96ade23eb20ef38a" in development_plan
+    assert "final-tree backend (mock/local, non-live)" in development_plan
+    assert "final-tree E2E (mock/local, non-live)" in development_plan
+    assert "M1은 historical OpenAI proof" in development_plan
+    assert "M2는 local live G2B smoke" in development_plan
+    assert "M6는 deployment/runtime evidence" in development_plan
+    assert "### H129 historical reviewer-attributed registry evidence" in development_plan
+    assert "### H129.1 current server-issued provenance" in development_plan
+    assert "issuance_provenance=server_issued" in development_plan
+    for boundary in (
+        "signature",
+        "actor attestation",
+        "currentness",
+        "atomic snapshot",
+        "approval",
+        "external authenticity",
+    ):
+        assert boundary in development_plan
+
+    for document in (readme, roadmap, checklist, product_plan, procurement_status):
+        assert snapshot_link in document
+    assert "현재 전체 no-cost backend baseline" not in readme
+
+    assert "## 6. Completed Core-Loop Evidence" in product_plan
+    assert "## 6. Immediate Backlog" not in product_plan
+    core_loop_section = product_plan.split("## 6. Completed Core-Loop Evidence", 1)[1]
+    core_loop_section = core_loop_section.split("## 7. Future Feature Gate", 1)[0]
+    for capability in (
+        "Decision Package shape",
+        "Deterministic sample",
+        "Evidence summary",
+        "Package handoff",
+        "Pending sign-off",
+        "Export packet",
+        "Demo runbook",
+        "CLI evidence contract",
+        "Packet-bound review receipt",
+    ):
+        assert capability in core_loop_section
+    evidence_paths = re.findall(r"`((?:app|docs|scripts|tests)/[^`]+)`", core_loop_section)
+    assert evidence_paths
+    for relative_path in evidence_paths:
+        assert (root / relative_path).is_file(), relative_path
+
+    future_gate = product_plan.split("## 7. Future Feature Gate", 1)[1]
+    for field in (
+        "target user",
+        "concrete observed problem/evidence",
+        "current workaround",
+        "desired outcome",
+        "bounded acceptance criteria",
+        "affected boundaries",
+        "explicit authority scope",
+        "local verification path",
+    ):
+        assert field in future_gate
+
+    for document in (roadmap, checklist, product_plan, procurement_status):
+        assert "same-backend" in document
+        assert "server-issued provenance" in document
+        assert "M1" in document and "M2" in document and "M6" in document
+
+
 def test_completion_readiness_runbook_keeps_external_proof_boundaries():
     root = Path(__file__).resolve().parents[1]
     runbook = (root / "docs" / "completion-readiness-runbook.md").read_text(encoding="utf-8")

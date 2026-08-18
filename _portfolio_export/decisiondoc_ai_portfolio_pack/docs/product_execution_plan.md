@@ -1,8 +1,11 @@
 # DecisionDoc AI Product Execution Plan
 
-Updated: 2026-07-13
+Updated: 2026-08-18
 
 This document translates [DecisionDoc AI Product Direction](./product_direction.md) into an execution plan. It is an internal planning document and does not claim production readiness, customer adoption, measured business impact, or autonomous approval capability.
+
+Current completion/readiness is owned only by the [Development Plan — Current
+Completion/Readiness Snapshot](./development-plan.md#0-current-completionreadiness-snapshot).
 
 ## 1. Execution Goal
 
@@ -206,21 +209,42 @@ Prepare the product workflow for external evaluation without overstating operati
 - The product story is consistent across README, roadmap, case study, and resume materials.
 - No public material claims customer adoption, production deployment, or measured business impact without evidence.
 
-## 6. Immediate Backlog
+## 6. Completed Core-Loop Evidence
 
-| Priority | Work item | Output | Completion check |
-|---|---|---|---|
-| 1 | Define `Decision Package` shape | schema or typed internal structure | local test validates required fields |
-| 2 | Create procurement package sample | sample input and output folder | deterministic mock run produces package |
-| 3 | Add evidence summary | Markdown or JSON summary | source references and uncertainty visible |
-| 4 | Add package handoff | handoff JSON/MD | validator confirms no authorization boundary break |
-| 5 | Add pending sign-off path | template and generator | pending record validates and remains non-approval |
-| 6 | Add export packet | deterministic ZIP plus embedded manifest | create/verify path proves package, evidence, validation, sign-off, tamper detection, and non-approval boundary |
-| 7 | Add demo runbook | concise operator instructions | new user can follow local path |
-| 8 | Add versioned CLI evidence contract | `cli_contract_manifest.json` plus validator/checker receipt | success/failure matrix and docs contract tests pass |
-| 9 | Add packet-bound review receipt | companion `procurement_review_receipt.json` | pending/init, completed record, stale packet, reviewer, re-record, and non-approval checks pass |
+The original nine-item local core loop is implemented. This is an evidence map,
+not an Immediate Backlog and not a claim of deployed, live-provider, human-UAT,
+or operational approval completion. All paths below are repository evidence for
+the local/mock scope.
 
-## 7. Engineering Guardrails
+H129 historical reviewer-attributed evidence and H129.1 current server-issued provenance
+are distinct: H128 same-backend metadata is server-issued local
+provenance, not a signature, actor attestation, currentness, atomic snapshot,
+approval, or external authenticity. M1 remains partial/blocked after historical
+OpenAI proof; M2 has completed local live G2B smoke but no durable stage proof;
+M6, human UAT, and external approval remain unproven.
+
+| Implemented capability | Repository evidence | Local contract boundary |
+|---|---|---|
+| Decision Package shape | `docs/samples/procurement_decision_package_local_demo/expected_decision_package.json`, `tests/test_procurement_decision_package_builder.py` | Required package shape is compared locally. |
+| Deterministic sample | `docs/samples/procurement_decision_package_local_demo/sample_input.json`, `docs/samples/procurement_decision_package_local_demo/expected_decision_package.json` | Fixture input and expected output remain deterministic. |
+| Evidence summary | `app/services/procurement_decision_package/artifact_evidence.py`, `tests/test_procurement_decision_package_sample.py` | Evidence and uncertainty remain review material, not approval. |
+| Package handoff | `app/services/procurement_decision_package/package_builder.py`, `scripts/build_procurement_decision_package_sample.py` | Handoff stays limited to local drafting/review preparation. |
+| Pending sign-off | `app/services/procurement_decision_package/review_receipt.py`, `scripts/manage_procurement_review_receipt.py` | Pending/completed receipt is not operational approval. |
+| Export packet | `app/services/procurement_decision_package/review_packet.py`, `scripts/manage_procurement_decision_review_packet.py` | Deterministic packet verification remains local. |
+| Demo runbook | `docs/product_local_demo_runbook.md`, `scripts/run_procurement_decision_package_demo.py` | Demo forces the local evidence workflow. |
+| CLI evidence contract | `docs/samples/procurement_decision_package_local_demo/cli_contract_manifest.json`, `tests/test_procurement_decision_package_docs_contract.py` | Versioned stdout JSON success/failure contract. |
+| Packet-bound review receipt | `app/services/procurement_decision_package/review_receipt_workspace.py`, `app/services/procurement_decision_package/reviewed_package.py`, `scripts/manage_procurement_reviewed_package.py` | Receipt and reviewed package bind exact local packet bytes. |
+
+## 7. Future Feature Gate
+
+No new capability enters a backlog until a decision record supplies all of the
+following: target user; concrete observed problem/evidence; current workaround;
+desired outcome; bounded acceptance criteria; affected boundaries; explicit authority scope;
+and a local verification path. The authority scope must state
+whether the proposal remains review-only and what approval, provider, storage,
+browser, deployment, or external action is explicitly excluded.
+
+## 8. Engineering Guardrails
 
 - Preserve route, service, schema, provider, and storage boundaries.
 - Keep `mock` provider deterministic.
@@ -229,7 +253,7 @@ Prepare the product workflow for external evaluation without overstating operati
 - Keep approval records separate from operational execution approval.
 - Add tests around boundaries, not only happy-path document generation.
 
-## 8. Product Guardrails
+## 9. Product Guardrails
 
 - Do not build a generic document marketplace.
 - Do not optimize for many document types before one high-stakes workflow is clear.
@@ -237,7 +261,7 @@ Prepare the product workflow for external evaluation without overstating operati
 - Do not merge reviewer acceptance with service resume or training approval.
 - Do not update public claims without verification evidence.
 
-## 9. Demo Script Target
+## 10. Demo Script Target
 
 The target demo should take less than ten minutes and follow this script:
 
@@ -251,7 +275,7 @@ The target demo should take less than ten minutes and follow this script:
 8. Explain that provider calls, training, deployment, and service resume remain unauthorized.
 9. Export the package.
 
-## 10. Definition Of Done
+## 11. Definition Of Done
 
 The product execution plan is working when the repository contains:
 
@@ -272,7 +296,7 @@ H121 applies the same session boundary to assignment and read access. It preserv
 
 H122 completes the evidence retrieval loop with a verified original-packet re-download. The route authorizes before reading, revalidates the immutable bytes and record binding, returns only safe evidence headers, and keeps browser downloads bound to the current review projection and auth context. It adds no reassignment, review completion, approval, provider, training, deployment, or service-resume authority.
 
-H129 adds the equivalent immutable reviewer-evidence boundary to Guided Decision
+H129 historical evidence adds the immutable reviewer-evidence boundary to Guided Decision
 Review dispositions. It conditionally creates one canonical record per
 tenant/project/bundle/operation, binds replay to the stable reviewer and exact
 H128 source, and exposes only strictly revalidated scoped list/read/download
@@ -283,10 +307,10 @@ does not authorize any provider, AWS, G2B, upload, training, promotion, deploy,
 bid, legal, or contractual effect.
 
 H128 now conditionally creates and exact-read-backs one hash-only same-backend
-issuance metadata object per canonical receipt SHA-256. H129 v2 independently
-validates and embeds only that metadata plus its hash; v1 stays immutable and
-Legacy issuance unrecorded. This proof is not a signature, actor attestation,
-currentness, atomic snapshot, approval, or external authenticity, and stores no
+issuance metadata object per canonical receipt SHA-256. H129.1 server-issued
+provenance independently validates and embeds only that metadata plus its hash;
+v1 stays immutable and Legacy issuance unrecorded. This proof is not a signature,
+actor attestation, currentness, atomic snapshot, approval, or external authenticity, and stores no
 H128 body, reviewer/session/network/token value, rationale, secret, or
 execution authority.
 

@@ -1,6 +1,6 @@
 # Development Roadmap
 
-분석 기준: 2026-07-27 현재 저장소 코드, README, docs, local evidence, completion readiness boundary를 기준으로 업데이트했다. 로드맵은 외부 실증을 과장하지 않고 재현 가능한 검증 evidence 확보를 우선한다.
+분석 기준: 2026-08-18 저장소 코드, README, docs, local evidence, completion readiness boundary를 기준으로 업데이트했다. 현재 결과의 유일한 기준은 [Development Plan의 Current Completion/Readiness Snapshot](./development-plan.md#0-current-completionreadiness-snapshot)이며, 로드맵은 이를 복제한 volatile pass 수를 주장하지 않는다.
 
 제품 방향성 기준 문서: [DecisionDoc AI Product Direction](./product_direction.md), 실행 계획 문서: [DecisionDoc AI Product Execution Plan](./product_execution_plan.md), local demo scenario: [DecisionDoc AI Local Product Demo Scenario](./product_demo_scenario.md), local demo runbook: [DecisionDoc AI Local Demo Runbook](./product_local_demo_runbook.md). 이 roadmap은 해당 방향성 중 재현 가능한 검증 evidence, public procurement wedge, review/sign-off workflow, exportable decision package를 우선 실행 대상으로 둔다.
 
@@ -314,8 +314,18 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
 
 | 우선순위 | 작업 | 이유 | 예상 산출물 |
 |---|---|---|---|
-| 1 | H128 issuance/H129 v1·v2 contract 유지 및 다음 bounded workflow slice 선택 | same-backend existential issuance를 signature·attestation·approval로 오해하지 않도록 strict replay·scope·false-boundary를 보존 | 다음 기능 slice와 focused regression |
+| 1 | H128/H129.1 contract 유지와 Future Feature Gate 작성 | same-backend issuance를 signature·attestation·approval로 오해하지 않고 새 capability의 authority를 먼저 한정 | decision-complete gate와 focused regression |
 | 2 | portfolio claim/pack 유지 | 코드 변경 뒤 문서와 증거 drift를 조기에 차단 | `manage_portfolio_pack.py check` |
 | 3 | contribution note 유지 | 면접 설명이 실제 코드와 증거 범위를 넘지 않게 유지 | `docs/contribution-note.md` |
 | 4 | 포트폴리오용 짧은 UI recording 선택 캡처 | 최신 screenshot은 갱신됐고, 영상은 제출 방식에 따라 선택 필요 | short recording |
 | 5 | M1/M2/M6 외부 실증 | paid provider, G2B, deployment 증거가 남아 있으나 현재는 사용자 요청으로 보류 | readiness 재확인 후 runner-generated receipts |
+
+다음 제품 작업은 새 phase나 immediate feature를 발명하지 않는다. [Product Execution
+Plan의 Future Feature Gate](./product_execution_plan.md#7-future-feature-gate)를 먼저
+채워 target user, observed problem/evidence, workaround, desired outcome, bounded
+acceptance criteria, affected boundaries, explicit authority scope, local verification
+path를 결정한 뒤에만 우선순위를 정한다. H128 same-backend issuance와 H129.1
+server-issued provenance는 signature, actor attestation, currentness, atomic snapshot,
+approval, external authenticity가 아니며 M1 partial/blocked, M2 local-live-complete
+but durable-stage-blocked, M6 deployment-blocked, human UAT/external approval unproven
+상태를 바꾸지 않는다.

@@ -161,7 +161,7 @@ Milestone 6 completed
   receipt, prove prior server issuance of the submitted H127 source, make
   sequential reads atomic, or execute provider, AWS, G2B, upload, training,
   promotion, deployment, service resume, bid, legal, or contractual actions.
-- Fresh H129 no-cost verification on 2026-08-18: the two same-basename H129
+- Historical H129 registry verification on 2026-08-18: the two same-basename H129
   modules collected together and their storage/API/auth/audit gate passed
   `16 passed`; adjacent H126-H128 handoff/static checks passed `28 passed`, and
   the focused Chromium registry race check passed `1 passed, 13 deselected`.
@@ -169,7 +169,7 @@ Milestone 6 completed
   the full non-live E2E suite passed `121 passed, 1 skipped`. Ruff E/F/W,
   `py_compile`, Bandit medium/high, secret hygiene, README metrics, portfolio
   sync/check/package/ZIP verification, and diff checks also passed. This is
-  local/mock evidence: it does not close prior H128 server-issuance provenance,
+  local/mock evidence: it does not close later H129.1 server-issued provenance,
   M1, M2, M6, human UAT, deployment, or external-approval gaps and executed
   none of the forbidden external effects.
 - H126-H128 local demo evidence on 2026-07-29: the repeatable local
@@ -12240,9 +12240,9 @@ Internal only. Public Procurement Go/No-Go Copilot is now fully integrated into 
   - the shared result/project action requests `docx,pdf,pptx,hwp,excel`, verifies ZIP/header/byte evidence before Blob download, and keeps `review_only`, `packet_persisted=false`, human review false, and operational approval false; this local integrity evidence is not a procurement, bid, legal, contractual, deployment, or external approval
   - stale project context and unavailable source failures fail closed without a project snapshot fallback or download; external provider, G2B, AWS, bid submission, legal/contractual commitment, deployment, service resume, dataset upload, training execution, and model promotion were not executed
 
-- 2026-08-18 H128 issuance provenance and H129 v2
+- 2026-08-18 H129.1 current server-issued provenance (H129 historical registry evidence is distinct; current completion/readiness is owned by [Development Plan — Current Completion/Readiness Snapshot](../../development-plan.md#0-current-completionreadiness-snapshot))
   - successful H128 responses keep byte-compatible canonical receipt bodies but first conditionally create and exact-read-back one strict hash-only issuance metadata object in the selected tenant/project/bundle/backend scope; generic `503` prevents body delivery when provenance cannot be proven
   - issuance metadata/audit retain only allowlisted contract, scope, hashes, bindings, timestamp, and false boundaries; no receipt body, reviewer/session/network/token/rationale/secret/approval/execution data is retained
-  - H129 v2 independently validates the exact H128 body plus authoritative same-backend issuance metadata, embeds only that metadata and its hash, while v1 records remain immutable and are surfaced as Legacy issuance unrecorded
+  - H129.1 v2 independently validates the exact H128 body plus authoritative same-backend issuance metadata, embeds only that metadata and its hash, while v1 records remain immutable and are surfaced as Legacy issuance unrecorded
   - new H129 operations create v2 only; a public v1 request can only exact-replay a matching stored v1 record and a missing v1 operation returns non-disclosing `422` without writing, while H128 unavailable, corrupt, or disappearing post-write issuance read-back returns generic `503` without a successful receipt body
-  - this is same-backend existential issuance, not a signature, actor attestation, currentness, atomic snapshot, approval, or external authenticity; provider, AWS, G2B, upload, training, promotion, deploy, service resume, bid, legal, and contractual effects were not executed
+  - this is same-backend existential issuance, not a signature, actor attestation, currentness, atomic snapshot, approval, or external authenticity; it does not close M1 partial/blocked, M2 local-live-complete but durable-stage-blocked, M6 deployment/runtime-blocked, human UAT, or external approval gaps; provider, AWS, G2B, upload, training, promotion, deploy, service resume, bid, legal, and contractual effects were not executed

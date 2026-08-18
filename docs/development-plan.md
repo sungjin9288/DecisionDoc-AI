@@ -1,8 +1,38 @@
 # DecisionDoc AI — 완성을 위한 기능 개발 계획 (Development Plan)
 
-> 기준일: **2026-08-17** (저장소 점검 [docs/inspection-20260630.md](./inspection-20260630.md), DocumentOps strict skill binding focused no-cost verification, local live G2B smoke와 current-main deploy-smoke 시도 기준)
+> 기준일: **2026-08-18**. 현재 완료·readiness 결과의 유일한 기준은 아래 **Current Completion/Readiness Snapshot**이며, 이 문서의 이전 수치는 날짜가 붙은 historical evidence다.
 > 원칙: AGENTS.md 정직성 규칙 준수 — 모든 정량 수치는 재현 커맨드를 병기하고, 검증되지 않은 성과·운영 표현은 사용하지 않는다.
 > 상위 방향 문서: [product_direction.md](./product_direction.md) · [product_execution_plan.md](./product_execution_plan.md) · [roadmap.md](./roadmap.md)
+
+---
+
+## 0. Current Completion/Readiness Snapshot
+
+이 절이 현재 완료·readiness의 **유일한 volatile snapshot**이다. README, roadmap,
+evidence checklist와 procurement STATUS는 이 절을 링크만 하며 독립적인 현재
+pytest pass 수를 주장하지 않는다.
+
+- 기준 source commit: `27523032d68d2b217f4537ab96ade23eb20ef38a` (문서 동기화 전 clean source snapshot).
+- 기준일: 2026-08-18. 최종 tree의 mock/local backend 및 E2E 결과는 이 절의 아래 재현 명령과 함께 기록한다.
+- 범위: `DECISIONDOC_PROVIDER=mock`, `DECISIONDOC_STORAGE=local`, `-m 'not live'`의 local/mock 검증이다. provider API, AWS runtime, live G2B, upload, training, promotion, deploy, production service resume, approval, bid/legal/contractual action은 실행하거나 증명하지 않는다.
+- readiness: M1은 historical OpenAI proof가 있어도 Gemini/Claude/fallback external proof가 남아 **partial/blocked**다. M2는 local live G2B smoke가 완료됐지만 durable stage proof가 없어 **partial/blocked**다. M6는 deployment/runtime evidence가 없어 **blocked**다. human UAT와 external approval도 미증명이다.
+
+```bash
+# final-tree backend (mock/local, non-live)
+DECISIONDOC_PROVIDER=mock DECISIONDOC_STORAGE=local PYTHONDONTWRITEBYTECODE=1 \
+  python3 -m pytest tests/ -q \
+  --ignore=tests/e2e -m 'not live' --tb=short --disable-warnings
+
+# final-tree E2E (mock/local, non-live)
+DECISIONDOC_PROVIDER=mock DECISIONDOC_STORAGE=local NODE_OPTIONS=--no-deprecation \
+  PYTHONDONTWRITEBYTECODE=1 \
+  python3 -m pytest tests/e2e -q \
+  -m 'not live' --tb=short --disable-warnings
+```
+
+Final-tree command results (2026-08-18): backend **4,611 passed, 4 deselected**;
+E2E **121 passed, 1 skipped**. Both commands used the local/mock scope above;
+no runtime capability is changed by this documentation-only snapshot.
 
 ---
 
@@ -12,14 +42,12 @@
 
 | 축 | 현재 | 완성 기준 |
 |----|------|-----------|
-| **기능 검증** | DocumentOps browser provenance verification + free local runtime no-cost gate: full non-live `4,576 passed, 4 deselected` (2026-08-17). 2026-08-11 local live G2B smoke 1건 통과 | live LLM 잔여 provider와 G2B durable receipt/stage 경로도 실증 + 증적 |
+| **기능 검증** | 현재 local/mock final-tree 결과와 외부 proof gap은 [Current Completion/Readiness Snapshot](#0-current-completionreadiness-snapshot) 기준. 2026-08-11 local live G2B smoke 1건은 historical local evidence | live LLM 잔여 provider와 G2B durable receipt/stage 경로도 실증 + 증적 |
 | **아키텍처 위생** | ✅ 달성 (2026-07-14: 829줄 상수 모듈을 604줄 facade + 314줄 foundation으로 분리하고 800줄 guard 추가 → 초과 0개). CI advisory Ruff E/F/W와 Bandit medium/high 0건 기준 유지 | 전 모듈 800줄 이하 (전역 코딩 가이드), 계층 간 의존 방향 일관 |
 | **운영 준비성** | Docker/SAM 설정 존재, CSP nonce 부채 해소, 과거 GitHub Actions CI/CD success 증적 존재. 2026-08-11 current-main dev deploy-smoke는 AWS 진입 전 OIDC role assume에서 실패 | OIDC trust 복구 + 배포 절차 재검증 + post-deploy smoke 증적 |
 
 ```bash
-# 재현: 테스트 베이스라인
-PYTHONDONTWRITEBYTECODE=1 pytest tests/ -q --ignore=tests/e2e -m 'not live' --tb=short --disable-warnings
-# 2026-08-17 current: 4576 passed, 4 deselected
+# 현재 final-tree backend/E2E command와 result: section 0 Current Completion/Readiness Snapshot
 
 # 재현: CI advisory lint/security 베이스라인
 ruff check app/ tests/ --select=E,F,W --ignore=E501
@@ -226,7 +254,7 @@ security/infrastructure expansion `488 passed`, full non-live `4,509 passed,
 1 skipped, 4 deselected`다. Provider, AWS, G2B, dataset upload, training,
 promotion, deployment와 service resume은 실행하지 않았다.
 
-### H129 Guided Decision Review Disposition Registry
+### H129 historical reviewer-attributed registry evidence (2026-08-18)
 
 H129 persists one exact H128 receipt as immutable reviewer-attributed evidence
 under tenant/project/bundle/hashed-operation scope. First create returns 201;
@@ -239,16 +267,33 @@ scope, matrix, hashes, and false authority before returning data.
 Admin access is project-wide and assigned member access is stable-user scoped.
 Browser create is enabled only from current verified page-memory H128 evidence,
 uses one UUID per source/scope plus request-owned single flight, and discards
-late responses after auth/tenant/user/project/bundle/source drift. H129 closes
-no M1/M2/M6, human UAT, deployment, prior H128 server-issuance, or external
-approval gap; provider, AWS, G2B, upload, training, promotion, deploy, approval,
-bid, legal, and contractual effects remain outside the slice.
+late responses after auth/tenant/user/project/bundle/source drift. 이 H129
+historical registry evidence는 reviewer-attributed immutable record의 초기 검증
+기록이다. 당시 숫자는 historical evidence이며 아래 H129.1 server-issued
+provenance의 current meaning 또는 현재 final-tree snapshot을 대체하지 않는다.
+H129도 M1/M2/M6, human UAT, deployment, external approval gap을 닫지 않으며,
+provider, AWS, G2B, upload, training, promotion, deploy, approval, bid, legal,
+contractual effects는 범위 밖이다.
 
 2026-08-18 local/mock verification은 H129 focused storage/API/auth/audit
 `16 passed`, adjacent handoff/static `28 passed`, focused Chromium
 `1 passed, 13 deselected`, full non-E2E non-live `4,596 passed, 4 deselected`,
 full non-live E2E `121 passed, 1 skipped`를 확인했다. Ruff E/F/W, `py_compile`,
 Bandit medium/high, secret hygiene, portfolio와 diff gates도 통과했다.
+
+### H129.1 current server-issued provenance (2026-08-18)
+
+H128 success는 selected tenant/project/bundle backend에 exact canonical receipt
+SHA-256의 hash-only issuance metadata를 conditional-create하고 exact read-back한
+뒤에만 반환된다. H129 v2는 그 **same-backend** metadata와 metadata hash만 독립
+재검증하여 `issuance_provenance=server_issued`로 결속한다. v1 bytes는 rewrite나
+migration 없이 `legacy_issuance_unrecorded`로 남는다.
+
+이는 server-issued provenance의 local storage/integrity evidence일 뿐 signature,
+actor attestation, currentness, atomic snapshot, approval 또는 external
+authenticity가 아니다. H129 historical reviewer attribution과 H129.1 provenance를
+혼동하지 않으며, 둘 다 M1/M2/M6, human UAT, deployment, external approval과 모든
+external effect gap을 닫지 않는다.
 
 ---
 
@@ -263,7 +308,7 @@ python3 scripts/count_readme_metrics.py --field storage_files     # → 53 (top-
 python3 scripts/count_readme_metrics.py --field middleware_files  # → 12 (미들웨어)
 python3 scripts/count_readme_metrics.py --field route_decorators  # → 296 (라우트)
 python3 scripts/count_readme_metrics.py --field test_files        # → 278 (테스트 파일)
-python3 scripts/count_readme_metrics.py --field test_functions    # → 3845 (Python AST test_ 정의; pass 수 아님)
+python3 scripts/count_readme_metrics.py --field test_functions    # → 3846 (Python AST test_ 정의; pass 수 아님)
 ```
 
 ```text

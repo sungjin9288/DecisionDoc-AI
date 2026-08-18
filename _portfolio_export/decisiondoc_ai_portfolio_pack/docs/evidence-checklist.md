@@ -178,7 +178,7 @@ Completion readiness/proof receipt는 gitignored `reports/completion-readiness/`
 - 소스코드 전체 폴더: portfolio zip에는 포함하지 않음
 - generated runtime data: zip에는 포함하지 않음
 
-## H128/H129 issuance provenance boundary
+## H129 historical evidence and H129.1 current issuance provenance
 
 - H128 success is same-backend existential evidence: strict metadata for the
   tenant/project/bundle/exact canonical receipt SHA-256 is conditionally
@@ -186,7 +186,13 @@ Completion readiness/proof receipt는 gitignored `reports/completion-readiness/`
 - Metadata and audit keep only scope/hash/binding/false-boundary values; they
   keep no receipt body, identity, session, network value, token, rationale,
   secret, approval, or execution claim.
-- H129 v2 revalidates and embeds only that metadata plus its hash. Existing v1
-  bytes are not migrated or rewritten and are labeled Legacy issuance
-  unrecorded. This is not a signature, actor attestation, currentness, atomic
-  snapshot, approval, or external authenticity.
+- H129 historical evidence records the initial immutable reviewer-attributed
+  registry verification. Its dated numeric results are historical, not the
+  current final-tree snapshot.
+- H129.1 current server-issued provenance revalidates and embeds only that
+  same-backend metadata plus its hash. Existing v1 bytes are not migrated or
+  rewritten and are labeled Legacy issuance unrecorded. This is not a
+  signature, actor attestation, currentness, atomic snapshot, approval, or
+  external authenticity.
+- Current M1/M2/M6 readiness and final-tree commands/results are owned only by
+  [Development Plan — Current Completion/Readiness Snapshot](./development-plan.md#0-current-completionreadiness-snapshot): M1 partial/blocked after historical OpenAI proof, M2 local live smoke complete but durable stage proof missing, M6 deployment/runtime blocked; human UAT and external approval are unproven.

@@ -317,10 +317,10 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **3,845개**, **278개 파일**입니다 (Python AST `test_` definition 기준 카운트이며 pass 수가 아닙니다). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **3,846개**, **278개 파일**입니다 (Python AST `test_` definition 기준 카운트이며 pass 수가 아닙니다). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 3845
+python3 scripts/count_readme_metrics.py --field test_functions  # → 3846
 python3 scripts/count_readme_metrics.py --field test_files      # → 278
 ```
 
@@ -350,13 +350,11 @@ bandit -r app/ -x app/providers/mock_provider.py -ll
 
 ## Development Plan — 완성까지 남은 것
 
-현재 전체 no-cost backend baseline은 아래 명령 기준 `4,576 passed, 4 deselected`입니다(2026-08-17 실측). DocumentOps browser provenance verification과 free-local fail-closed runtime을 포함한 mock/local 및 non-live 범위이며, 실제 LLM Provider와 AWS runtime 검증은 포함하지 않습니다.
-
-```bash
-PYTHONDONTWRITEBYTECODE=1 pytest tests/ -q --ignore=tests/e2e -m 'not live' --tb=short --disable-warnings
-```
-
-G2B 실데이터는 2026-08-11 local FastAPI + mock provider smoke에서 1건을 수집·평가했지만, durable proof receipt와 AWS stage runtime proof는 남아 있습니다. "완성"을 막는 외부 실증 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
+현재 mock/local final-tree backend·E2E 결과와 M1/M2/M6 readiness의 유일한
+snapshot은 [Development Plan의 Current Completion/Readiness Snapshot](./docs/development-plan.md#0-current-completionreadiness-snapshot)에 둡니다. README는 volatile
+pytest pass 수를 별도로 주장하지 않습니다. G2B 실데이터는 2026-08-11 local
+FastAPI + mock provider smoke의 historical evidence이며, durable proof receipt와
+AWS stage runtime proof는 남아 있습니다.
 
 DocumentOps strict skill binding 변경의 focused no-cost 검증은 2026-08-12에 registry·Agent·API·operation store·audit 대상 `143 passed`였습니다. 이 수치는 아래 focused command의 local mock/backend 결과이며 전체 non-live baseline을 다시 측정한 값은 아닙니다.
 
@@ -453,4 +451,4 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 296 · 테스트 3,845 · env 키 95 등)는 소스 코드에서 직접 카운트했으며, 테스트 수는 Python AST `test_` 정의 기준이고 pass 수가 아닙니다. 재현은 `python3 scripts/count_readme_metrics.py --field test_functions`를 사용합니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 296 · 테스트 3,846 · env 키 95 등)는 소스 코드에서 직접 카운트했으며, 테스트 수는 Python AST `test_` 정의 기준이고 pass 수가 아닙니다. 재현은 `python3 scripts/count_readme_metrics.py --field test_functions`를 사용합니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
