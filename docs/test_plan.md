@@ -779,3 +779,18 @@ H119 regression은 auth-first session-admin denial, exact H118 source validation
 `tests/storage/test_generation_export_source_store.py` covers local/fake-S3 independent-worker CAS convergence, restart readback, fixed TTL/count/size/tenant-byte limits, deterministic oldest-first eviction, one clock sample per CAS attempt at the exact fresh TTL boundary, expired write-loss false-reconciliation prevention, idempotency/conflict, missing/expired/foreign indistinguishability, and corrupt/missing/tampered/unavailable fail-closed behavior without rewriting original bytes. `tests/test_generation_export_packet.py` covers format trim/lowercase/dedup/canonical ordering, HWPX mapping, unsafe title isolation, all-five-format repeatability, canonical manifest and deterministic ZIP metadata, converter failure without partial delivery, every authority false-value/type drift plus missing/extra authority keys, every mutable ZIP metadata field, prefix/trailing bytes, artifact/extra-member tamper rejection, durable source wiring for normal/streamed generation, generic source failure, independent-app packet export, stable route errors/headers/audit, and read-only CLI verification. `tests/test_phase2_features.py` retains the route/auth/default-format surface while asserting the fixed HWPX artifact path; `tests/test_infrastructure.py` asserts browser header/hash verification precedes Blob allocation and download; focused Playwright proof covers one valid download and zero downloads for missing evidence, authority drift, hash mismatch, and crypto failure.
 
 The packet verifier is intentionally local, deterministic, and byte-only. Test evidence distinguishes archive integrity from issuer authenticity and review readiness from human or operational approval; no test treats a successful packet as provider, AWS, G2B, training, persistence, deployment, or approval evidence.
+
+## H129 Guided Review Disposition Registry
+
+두 same-basename test module이 default pytest import mode에서 함께
+collect되어야 한다. Storage tests는 local/fake-S3 conditional-create
+concurrency, hashed operation path, exact historical replay, stable
+reviewer/source conflict, uncertain-write reconciliation, full-record tamper,
+corrupt/duplicate/disappearing-list fail-closed를 검증한다. API/auth/audit
+tests는 admin/assigned-member visibility, API/Ops key와 sessionless JWT 거부,
+foreign/nonexistent privacy, assigned non-owner `404`, canonical
+create/read/list/download, summary redaction/sort, nested H126-H128
+revalidation과 redacted audit를 검증한다. Chromium은 verified page-memory
+H128 source, one UUID per source/scope, request-owned single flight,
+stale-A/newer-B race, context drift discard와 pre-Blob verification을
+확인한다. 모든 authority boundary와 external effect count는 false/zero다.

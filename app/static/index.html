@@ -7871,8 +7871,14 @@
   let _guidedDecisionReviewHandoffRequestId = 0;
   let _guidedDecisionReviewRecheckRequestId = 0;
   let _guidedDecisionReviewDispositionRequestId = 0;
+  let _guidedDecisionReviewRegistryRequestId = 0;
+  let _guidedDecisionReviewRegistryListRequestId = 0;
+  let _guidedDecisionReviewRegistryDownloadRequestId = 0;
   let _guidedDecisionReviewVerifiedHandoff = null;
   let _guidedDecisionReviewVerifiedRecheck = null;
+  let _guidedDecisionReviewVerifiedDisposition = null;
+  let _guidedDecisionReviewRegistryOperation = null;
+  let _guidedDecisionReviewRegistryPending = null;
   let _decisionEvidenceMapState = {
     scopeKey: '',
     query: '',
@@ -25799,6 +25805,12 @@
   const GUIDED_DECISION_REVIEW_DISPOSITION_SHA256_HEADER = (
     'X-DecisionDoc-Guided-Review-Disposition-Receipt-SHA256'
   );
+  const GUIDED_DECISION_REVIEW_REGISTRY_RECORD_SHA256_HEADER = (
+    'X-DecisionDoc-Guided-Review-Disposition-Record-SHA256'
+  );
+  const GUIDED_DECISION_REVIEW_REGISTRY_LIST_SHA256_HEADER = (
+    'X-DecisionDoc-Guided-Review-Disposition-Registry-SHA256'
+  );
 
   const GUIDED_DECISION_REVIEW_HANDOFF_FIELDS = [
     'contract_version',
@@ -25881,6 +25893,63 @@
     unchanged: ['acknowledged_unchanged', 'review_deferred'],
     changed: ['new_handoff_required', 'review_deferred'],
   };
+  const GUIDED_DECISION_REVIEW_REGISTRY_RECORD_FIELDS = [
+    'contract_version',
+    'operation_id',
+    'request_binding_sha256',
+    'record_binding_sha256',
+    'tenant_id',
+    'project_id',
+    'bundle_type',
+    'reviewer_user_id',
+    'reviewer_username',
+    'reviewer_role',
+    'recorded_at',
+    'source_disposition_receipt',
+    'source_disposition_receipt_sha256',
+    'source_recheck_receipt_sha256',
+    'current_handoff_sha256',
+    'current_review_state_fingerprint_sha256',
+    'review_state_status',
+    'review_disposition',
+    'disposition_binding_sha256',
+    'record_status',
+    'review_state_only',
+    'review_only',
+    'read_only',
+    'reviewer_identity_bound',
+    'registry_record_persisted',
+    'snapshot_atomic',
+    'requires_recheck_before_reliance',
+    'authority',
+  ];
+  const GUIDED_DECISION_REVIEW_REGISTRY_SUMMARY_FIELDS = [
+    'contract_version',
+    'operation_id',
+    'tenant_id',
+    'project_id',
+    'bundle_type',
+    'reviewer_username',
+    'reviewer_role',
+    'recorded_at',
+    'record_sha256',
+    'source_disposition_receipt_sha256',
+    'source_recheck_receipt_sha256',
+    'current_handoff_sha256',
+    'current_review_state_fingerprint_sha256',
+    'review_state_status',
+    'review_disposition',
+    'disposition_binding_sha256',
+    'record_status',
+    'review_state_only',
+    'review_only',
+    'read_only',
+    'reviewer_identity_bound',
+    'registry_record_persisted',
+    'snapshot_atomic',
+    'requires_recheck_before_reliance',
+    'authority',
+  ];
 
   const GUIDED_DECISION_REVIEW_FALSE_EXPORT_FIELD = [
     'actual',
@@ -26625,6 +26694,198 @@
     return receipt;
   }
 
+  async function normalizeIndependentGuidedDecisionReviewDispositionReceipt(
+    receipt,
+    projectId,
+    bundleType,
+  ) {
+    if (!receipt || receipt.bundle_type !== bundleType) {
+      throw new Error('Guided review disposition receipt verification failed.');
+    }
+    const recheck = receipt.source_recheck_receipt;
+    const verifiedHandoff = {
+      handoff: recheck?.source_handoff,
+      bodySha256: String(recheck?.source_handoff_sha256 || '').toLowerCase(),
+    };
+    const normalizedRecheck = await normalizeGuidedDecisionReviewRecheckReceipt(
+      recheck,
+      verifiedHandoff,
+      projectId,
+    );
+    const verifiedRecheck = {
+      receipt: recheck,
+      bodySha256: String(receipt.source_recheck_receipt_sha256 || '').toLowerCase(),
+      reviewStateStatus: normalizedRecheck.reviewStateStatus,
+      projectId,
+    };
+    return normalizeGuidedDecisionReviewDispositionReceipt(
+      receipt,
+      verifiedRecheck,
+      projectId,
+      receipt.review_disposition,
+    );
+  }
+
+  function isGuidedDecisionReviewRegistryUuid(value) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(
+      String(value || ''),
+    );
+  }
+
+  function isGuidedDecisionReviewRegistryTimestamp(value) {
+    return (
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?\+00:00$/.test(
+        String(value || ''),
+      )
+      && Number.isFinite(Date.parse(value))
+    );
+  }
+
+  async function normalizeGuidedDecisionReviewRegistryRecord(
+    record,
+    { projectId, bundleType, verifiedDisposition = null } = {},
+  ) {
+    if (
+      !hasGuidedDecisionReviewFields(
+        record,
+        GUIDED_DECISION_REVIEW_REGISTRY_RECORD_FIELDS,
+      )
+      || record.contract_version
+        !== 'guided-decision-review-disposition-record.v1'
+      || !isGuidedDecisionReviewRegistryUuid(record.operation_id)
+      || ![
+        record.request_binding_sha256,
+        record.record_binding_sha256,
+        record.source_disposition_receipt_sha256,
+        record.source_recheck_receipt_sha256,
+        record.current_handoff_sha256,
+        record.current_review_state_fingerprint_sha256,
+        record.disposition_binding_sha256,
+      ].every(isGuidedDecisionReviewSha256)
+      || record.tenant_id !== _currentTenantId
+      || record.project_id !== projectId
+      || record.bundle_type !== bundleType
+      || !isGuidedDecisionReviewText(record.reviewer_user_id)
+      || !isGuidedDecisionReviewText(record.reviewer_username)
+      || !['admin', 'member'].includes(record.reviewer_role)
+      || !isGuidedDecisionReviewRegistryTimestamp(record.recorded_at)
+      || record.record_status !== 'recorded'
+      || record.review_state_only !== true
+      || record.review_only !== true
+      || record.read_only !== true
+      || record.reviewer_identity_bound !== true
+      || record.registry_record_persisted !== true
+      || record.snapshot_atomic !== false
+      || record.requires_recheck_before_reliance !== true
+      || !isGuidedDecisionReviewAuthority(record.authority)
+    ) {
+      throw new Error('Guided review disposition record verification failed.');
+    }
+    const currentUserId = String(_currentUser?.sub || _currentUser?.user_id || '');
+    if (_currentUser?.role === 'member' && record.reviewer_user_id !== currentUserId) {
+      throw new Error('Guided review disposition record visibility verification failed.');
+    }
+    const source = await normalizeIndependentGuidedDecisionReviewDispositionReceipt(
+      record.source_disposition_receipt,
+      projectId,
+      bundleType,
+    );
+    const sourceBytes = new TextEncoder().encode(
+      `${canonicalGuidedDecisionReviewJson(source)}\n`,
+    );
+    if (
+      record.source_disposition_receipt_sha256 !== await sha256Hex(sourceBytes)
+      || (
+        verifiedDisposition
+        && (
+          record.source_disposition_receipt_sha256
+            !== verifiedDisposition.bodySha256
+          || canonicalGuidedDecisionReviewJson(source)
+            !== canonicalGuidedDecisionReviewJson(verifiedDisposition.receipt)
+        )
+      )
+      || record.source_recheck_receipt_sha256
+        !== source.source_recheck_receipt_sha256
+      || record.current_handoff_sha256 !== source.current_handoff_sha256
+      || record.current_review_state_fingerprint_sha256
+        !== source.current_review_state_fingerprint_sha256
+      || record.review_state_status !== source.review_state_status
+      || record.review_disposition !== source.review_disposition
+      || record.disposition_binding_sha256 !== source.disposition_binding_sha256
+    ) {
+      throw new Error('Guided review disposition record source verification failed.');
+    }
+    const requestBinding = {
+      tenant_id: record.tenant_id,
+      project_id: record.project_id,
+      bundle_type: record.bundle_type,
+      operation_id: record.operation_id,
+      reviewer_user_id: record.reviewer_user_id,
+      source_disposition_receipt_sha256: record.source_disposition_receipt_sha256,
+    };
+    const requestBindingBytes = new TextEncoder().encode(
+      `${canonicalGuidedDecisionReviewJson(requestBinding)}\n`,
+    );
+    const recordBinding = { ...record };
+    delete recordBinding.record_binding_sha256;
+    const recordBindingBytes = new TextEncoder().encode(
+      `${canonicalGuidedDecisionReviewJson(recordBinding)}\n`,
+    );
+    if (
+      record.request_binding_sha256 !== await sha256Hex(requestBindingBytes)
+      || record.record_binding_sha256 !== await sha256Hex(recordBindingBytes)
+    ) {
+      throw new Error('Guided review disposition record binding verification failed.');
+    }
+    return record;
+  }
+
+  function normalizeGuidedDecisionReviewRegistrySummary(
+    summary,
+    projectId,
+    bundleType,
+  ) {
+    if (
+      !hasGuidedDecisionReviewFields(
+        summary,
+        GUIDED_DECISION_REVIEW_REGISTRY_SUMMARY_FIELDS,
+      )
+      || summary.contract_version
+        !== 'guided-decision-review-disposition-record.v1'
+      || !isGuidedDecisionReviewRegistryUuid(summary.operation_id)
+      || summary.tenant_id !== _currentTenantId
+      || summary.project_id !== projectId
+      || summary.bundle_type !== bundleType
+      || !isGuidedDecisionReviewText(summary.reviewer_username)
+      || !['admin', 'member'].includes(summary.reviewer_role)
+      || !isGuidedDecisionReviewRegistryTimestamp(summary.recorded_at)
+      || ![
+        summary.record_sha256,
+        summary.source_disposition_receipt_sha256,
+        summary.source_recheck_receipt_sha256,
+        summary.current_handoff_sha256,
+        summary.current_review_state_fingerprint_sha256,
+        summary.disposition_binding_sha256,
+      ].every(isGuidedDecisionReviewSha256)
+      || !['unchanged', 'changed'].includes(summary.review_state_status)
+      || !(GUIDED_DECISION_REVIEW_DISPOSITIONS[
+        summary.review_state_status
+      ] || []).includes(summary.review_disposition)
+      || summary.record_status !== 'recorded'
+      || summary.review_state_only !== true
+      || summary.review_only !== true
+      || summary.read_only !== true
+      || summary.reviewer_identity_bound !== true
+      || summary.registry_record_persisted !== true
+      || summary.snapshot_atomic !== false
+      || summary.requires_recheck_before_reliance !== true
+      || !isGuidedDecisionReviewAuthority(summary.authority)
+    ) {
+      throw new Error('Guided review disposition summary verification failed.');
+    }
+    return summary;
+  }
+
   function renderGuidedDecisionReview(project, decision, reviews, councilSession, docs, map) {
     if (!isGuidedDecisionReviewMap(map, project?.project_id)) return '';
     const review = deriveGuidedDecisionReview(decision, reviews, councilSession, docs, map);
@@ -26656,6 +26917,8 @@
                 </select>
               </label>
               <button type="button" class="guided-decision-review-disposition-download" data-guided-decision-review-disposition-download aria-label="Download guided decision review disposition receipt JSON" disabled>↓ Disposition receipt</button>
+              <button type="button" data-guided-decision-review-registry-create aria-label="Record the verified guided decision review disposition" disabled>Record disposition</button>
+              <button type="button" data-guided-decision-review-registry-refresh aria-label="Refresh guided decision review disposition records">Refresh records</button>
             </div>
           </div>
         </div>
@@ -26667,6 +26930,7 @@
         <ol class="guided-decision-review-steps" aria-label="Guided decision review stages">
           ${stages}
         </ol>
+        <div data-guided-decision-review-registry-list aria-live="polite"></div>
         <div id="guided-decision-review-announcement" class="guided-decision-review-announcement" aria-live="polite"></div>
       </section>`;
   }
@@ -26711,10 +26975,21 @@
   function clearGuidedDecisionReviewVerifiedRecheck() {
     _guidedDecisionReviewDispositionRequestId += 1;
     _guidedDecisionReviewVerifiedRecheck = null;
+    clearGuidedDecisionReviewDispositionRegistrySource();
     _clearScopedExportDownloadUrls(
       GUIDED_DECISION_REVIEW_DISPOSITION_DOWNLOAD_SCOPE,
     );
     syncGuidedDecisionReviewDispositionControls();
+  }
+
+  function clearGuidedDecisionReviewDispositionRegistrySource() {
+    _guidedDecisionReviewRegistryRequestId += 1;
+    _guidedDecisionReviewRegistryListRequestId += 1;
+    _guidedDecisionReviewRegistryDownloadRequestId += 1;
+    _guidedDecisionReviewVerifiedDisposition = null;
+    _guidedDecisionReviewRegistryOperation = null;
+    _guidedDecisionReviewRegistryPending = null;
+    syncGuidedDecisionReviewRegistryControls();
   }
 
   function isGuidedDecisionReviewVerifiedSourceCurrent(source) {
@@ -26807,6 +27082,41 @@
       )
       && context.reviewDisposition === select?.value
     );
+  }
+
+  function isGuidedDecisionReviewVerifiedDispositionCurrent(source) {
+    const map = _currentProjectDetail?.decisionEvidenceMap;
+    return Boolean(
+      source
+      && source.projectLoadId === _projectDetailLoadId
+      && source.authRevision === _authSessionRevision
+      && source.tenantId === _currentTenantId
+      && source.userId === String(_currentUser?.sub || _currentUser?.user_id || '')
+      && source.projectId === _currentProjectDetail?.project?.project_id
+      && source.bundleType === map?.bundle_type
+      && source.sourceRecheckReceiptSha256
+        === (_guidedDecisionReviewVerifiedRecheck?.bodySha256 || '')
+      && source.receipt?.project_id === source.projectId
+      && source.receipt?.bundle_type === source.bundleType
+    );
+  }
+
+  function syncGuidedDecisionReviewRegistryControls() {
+    const createButton = document.querySelector(
+      '[data-guided-decision-review-registry-create]',
+    );
+    const refreshButton = document.querySelector(
+      '[data-guided-decision-review-registry-refresh]',
+    );
+    const current = isGuidedDecisionReviewVerifiedDispositionCurrent(
+      _guidedDecisionReviewVerifiedDisposition,
+    );
+    if (createButton) {
+      createButton.disabled = !current || Boolean(_guidedDecisionReviewRegistryPending);
+    }
+    if (refreshButton) {
+      refreshButton.disabled = Boolean(_guidedDecisionReviewRegistryPending);
+    }
   }
 
   async function downloadGuidedDecisionReviewHandoff(button) {
@@ -27058,6 +27368,7 @@
       showNotification('허용되지 않은 review disposition입니다.', 'error');
       return;
     }
+    clearGuidedDecisionReviewDispositionRegistrySource();
     const context = {
       requestId: ++_guidedDecisionReviewDispositionRequestId,
       projectLoadId: _projectDetailLoadId,
@@ -27147,6 +27458,19 @@
           'Guided review disposition receipt verification failed.',
         );
       }
+      _guidedDecisionReviewVerifiedDisposition = {
+        receipt,
+        bodyBytes: new Uint8Array(bodyBytes),
+        bodySha256,
+        projectLoadId: context.projectLoadId,
+        authRevision: context.authRevision,
+        tenantId: context.tenantId,
+        userId: context.userId,
+        projectId: context.projectId,
+        bundleType: receipt.bundle_type,
+        sourceRecheckReceiptSha256: context.sourceRecheckReceiptSha256,
+      };
+      syncGuidedDecisionReviewRegistryControls();
       const filename = _filenameFromContentDisposition(
         contentDisposition,
         `guided-decision-review-disposition-receipt-${projectionFingerprint.slice(0, 12)}.json`,
@@ -27168,7 +27492,319 @@
     } finally {
       if (requestIsCurrent()) {
         syncGuidedDecisionReviewDispositionControls();
+        syncGuidedDecisionReviewRegistryControls();
       }
+    }
+  }
+
+  function guidedDecisionReviewRegistryContext() {
+    const map = _currentProjectDetail?.decisionEvidenceMap;
+    return {
+      projectLoadId: _projectDetailLoadId,
+      authRevision: _authSessionRevision,
+      tenantId: _currentTenantId,
+      userId: String(_currentUser?.sub || _currentUser?.user_id || ''),
+      projectId: String(_currentProjectDetail?.project?.project_id || ''),
+      bundleType: String(map?.bundle_type || ''),
+    };
+  }
+
+  function isGuidedDecisionReviewRegistryContextCurrent(context) {
+    const current = guidedDecisionReviewRegistryContext();
+    return (
+      context.projectLoadId === current.projectLoadId
+      && context.authRevision === current.authRevision
+      && context.tenantId === current.tenantId
+      && context.userId === current.userId
+      && context.projectId === current.projectId
+      && context.bundleType === current.bundleType
+    );
+  }
+
+  function guidedDecisionReviewRegistryOperation(source, context) {
+    const scopeKey = [
+      context.tenantId,
+      context.userId,
+      context.projectId,
+      context.bundleType,
+      source.bodySha256,
+    ].join('|');
+    if (_guidedDecisionReviewRegistryOperation?.scopeKey === scopeKey) {
+      return _guidedDecisionReviewRegistryOperation;
+    }
+    const operation = {
+      scopeKey,
+      operationId: crypto.randomUUID().toLowerCase(),
+    };
+    if (!isGuidedDecisionReviewRegistryUuid(operation.operationId)) {
+      throw new Error('Guided review disposition operation identity failed.');
+    }
+    _guidedDecisionReviewRegistryOperation = operation;
+    return operation;
+  }
+
+  function renderGuidedDecisionReviewRegistry(records) {
+    const target = document.querySelector(
+      '[data-guided-decision-review-registry-list]',
+    );
+    if (!target) return;
+    if (!records.length) {
+      target.innerHTML = '<p class="guided-decision-review-meta">No recorded dispositions visible.</p>';
+      return;
+    }
+    target.innerHTML = `<ul>${records.map(record => `
+      <li>
+        <span>${escapeHtml(record.recorded_at)} · ${escapeHtml(record.reviewer_username)} (${escapeHtml(record.reviewer_role)}) · ${escapeHtml(record.review_disposition)}</span>
+        <button type="button" data-guided-decision-review-registry-download="${escapeHtml(record.operation_id)}">Download record</button>
+      </li>
+    `).join('')}</ul>`;
+    target.querySelectorAll(
+      '[data-guided-decision-review-registry-download]',
+    ).forEach(button => {
+      button.addEventListener('click', () => (
+        downloadGuidedDecisionReviewRegistryRecord(
+          button.dataset.guidedDecisionReviewRegistryDownload || '',
+        )
+      ));
+    });
+  }
+
+  async function loadGuidedDecisionReviewRegistry() {
+    const context = {
+      ...guidedDecisionReviewRegistryContext(),
+      requestId: ++_guidedDecisionReviewRegistryListRequestId,
+    };
+    const requestIsCurrent = () => (
+      context.requestId === _guidedDecisionReviewRegistryListRequestId
+      && isGuidedDecisionReviewRegistryContextCurrent(context)
+    );
+    if (!context.projectId || !context.bundleType) return;
+    try {
+      const response = await fetch(
+        `/projects/${encodeURIComponent(context.projectId)}/guided-decision-review-dispositions?bundle_type=${encodeURIComponent(context.bundleType)}`,
+        { headers: getAuthHeaders() },
+      );
+      if (!requestIsCurrent()) return;
+      if (!response.ok) {
+        const error = await resolveApiErrorResponse(response);
+        if (!requestIsCurrent()) return;
+        throw new Error(error.message);
+      }
+      const bodyBytes = new Uint8Array(await response.arrayBuffer());
+      if (!requestIsCurrent()) return;
+      const bodySha256 = String(
+        response.headers.get(
+          GUIDED_DECISION_REVIEW_REGISTRY_LIST_SHA256_HEADER,
+        ) || '',
+      ).trim().toLowerCase();
+      const bodyText = new TextDecoder().decode(bodyBytes);
+      const payload = JSON.parse(bodyText);
+      if (
+        String(response.headers.get('Content-Type') || '').toLowerCase()
+          .startsWith('application/json') !== true
+        || response.headers.get('Cache-Control') !== 'no-store'
+        || response.headers.get('X-Content-Type-Options') !== 'nosniff'
+        || response.headers.get('X-DecisionDoc-Operational-Approval') !== 'false'
+        || !isGuidedDecisionReviewSha256(bodySha256)
+        || bodySha256 !== await sha256Hex(bodyBytes)
+        || !hasGuidedDecisionReviewFields(payload, ['records'])
+        || !Array.isArray(payload.records)
+        || bodyText !== `${canonicalGuidedDecisionReviewJson(payload)}\n`
+      ) {
+        throw new Error('Guided review disposition registry response verification failed.');
+      }
+      const records = payload.records.map(record => (
+        normalizeGuidedDecisionReviewRegistrySummary(
+          record,
+          context.projectId,
+          context.bundleType,
+        )
+      ));
+      for (let index = 1; index < records.length; index += 1) {
+        const previous = records[index - 1];
+        const current = records[index];
+        if (
+          previous.recorded_at < current.recorded_at
+          || (
+            previous.recorded_at === current.recorded_at
+            && previous.operation_id < current.operation_id
+          )
+        ) {
+          throw new Error('Guided review disposition registry sort verification failed.');
+        }
+      }
+      if (!requestIsCurrent()) return;
+      renderGuidedDecisionReviewRegistry(records);
+    } catch (error) {
+      if (!requestIsCurrent()) return;
+      renderGuidedDecisionReviewRegistry([]);
+      showNotification(error.message || String(error), 'error');
+    }
+  }
+
+  async function createGuidedDecisionReviewRegistryRecord() {
+    if (_guidedDecisionReviewRegistryPending) return;
+    const source = _guidedDecisionReviewVerifiedDisposition;
+    if (!isGuidedDecisionReviewVerifiedDispositionCurrent(source)) {
+      clearGuidedDecisionReviewDispositionRegistrySource();
+      showNotification('검증된 현재 disposition receipt가 필요합니다.', 'error');
+      return;
+    }
+    const baseContext = guidedDecisionReviewRegistryContext();
+    const operation = guidedDecisionReviewRegistryOperation(source, baseContext);
+    const token = {
+      ...baseContext,
+      requestId: ++_guidedDecisionReviewRegistryRequestId,
+      sourceDispositionReceiptSha256: source.bodySha256,
+      operationId: operation.operationId,
+    };
+    _guidedDecisionReviewRegistryPending = token;
+    const requestIsCurrent = () => (
+      _guidedDecisionReviewRegistryPending === token
+      && token.requestId === _guidedDecisionReviewRegistryRequestId
+      && isGuidedDecisionReviewRegistryContextCurrent(token)
+      && isGuidedDecisionReviewVerifiedDispositionCurrent(source)
+      && token.sourceDispositionReceiptSha256
+        === _guidedDecisionReviewVerifiedDisposition?.bodySha256
+    );
+    let recordObserved = false;
+    syncGuidedDecisionReviewRegistryControls();
+    try {
+      const response = await fetch(
+        `/projects/${encodeURIComponent(token.projectId)}/guided-decision-review-dispositions?bundle_type=${encodeURIComponent(token.bundleType)}`,
+        {
+          method: 'POST',
+          headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contract_version: 'guided-decision-review-disposition-record-request.v1',
+            operation_id: token.operationId,
+            source_disposition_receipt: source.receipt,
+            source_disposition_receipt_sha256: source.bodySha256,
+          }),
+        },
+      );
+      if (!requestIsCurrent()) return;
+      if (![200, 201].includes(response.status)) {
+        const error = await resolveApiErrorResponse(response);
+        if (!requestIsCurrent()) return;
+        throw new Error(error.message);
+      }
+      const bodyBytes = new Uint8Array(await response.arrayBuffer());
+      if (!requestIsCurrent()) return;
+      const bodySha256 = String(
+        response.headers.get(
+          GUIDED_DECISION_REVIEW_REGISTRY_RECORD_SHA256_HEADER,
+        ) || '',
+      ).trim().toLowerCase();
+      const bodyText = new TextDecoder().decode(bodyBytes);
+      const record = await normalizeGuidedDecisionReviewRegistryRecord(
+        JSON.parse(bodyText),
+        {
+          projectId: token.projectId,
+          bundleType: token.bundleType,
+          verifiedDisposition: source,
+        },
+      );
+      if (
+        !requestIsCurrent()
+        || String(response.headers.get('Content-Type') || '').toLowerCase()
+          .startsWith('application/json') !== true
+        || response.headers.get('Cache-Control') !== 'no-store'
+        || response.headers.get('X-Content-Type-Options') !== 'nosniff'
+        || response.headers.get('X-DecisionDoc-Operational-Approval') !== 'false'
+        || !isGuidedDecisionReviewSha256(bodySha256)
+        || bodySha256 !== await sha256Hex(bodyBytes)
+        || bodyText !== `${canonicalGuidedDecisionReviewJson(record)}\n`
+        || record.operation_id !== token.operationId
+      ) {
+        throw new Error('Guided review disposition create verification failed.');
+      }
+      recordObserved = true;
+      showNotification(
+        response.status === 201
+          ? 'Guided review disposition recorded.'
+          : 'Existing guided review disposition replayed.',
+        'success',
+      );
+    } catch (error) {
+      if (!requestIsCurrent()) return;
+      showNotification(error.message || String(error), 'error');
+    } finally {
+      if (_guidedDecisionReviewRegistryPending === token) {
+        _guidedDecisionReviewRegistryPending = null;
+        syncGuidedDecisionReviewRegistryControls();
+      }
+    }
+    if (recordObserved && isGuidedDecisionReviewRegistryContextCurrent(token)) {
+      await loadGuidedDecisionReviewRegistry();
+    }
+  }
+
+  async function downloadGuidedDecisionReviewRegistryRecord(operationId) {
+    if (!isGuidedDecisionReviewRegistryUuid(operationId)) return;
+    const context = {
+      ...guidedDecisionReviewRegistryContext(),
+      requestId: ++_guidedDecisionReviewRegistryDownloadRequestId,
+      operationId,
+    };
+    const requestIsCurrent = () => (
+      context.requestId === _guidedDecisionReviewRegistryDownloadRequestId
+      && isGuidedDecisionReviewRegistryContextCurrent(context)
+    );
+    try {
+      const response = await fetch(
+        `/projects/${encodeURIComponent(context.projectId)}/guided-decision-review-dispositions/${encodeURIComponent(operationId)}/download?bundle_type=${encodeURIComponent(context.bundleType)}`,
+        { headers: getAuthHeaders() },
+      );
+      if (!requestIsCurrent()) return;
+      if (!response.ok) {
+        const error = await resolveApiErrorResponse(response);
+        if (!requestIsCurrent()) return;
+        throw new Error(error.message);
+      }
+      const bodyBytes = new Uint8Array(await response.arrayBuffer());
+      if (!requestIsCurrent()) return;
+      const bodySha256 = String(
+        response.headers.get(
+          GUIDED_DECISION_REVIEW_REGISTRY_RECORD_SHA256_HEADER,
+        ) || '',
+      ).trim().toLowerCase();
+      const contentDisposition = String(
+        response.headers.get('Content-Disposition') || '',
+      );
+      const bodyText = new TextDecoder().decode(bodyBytes);
+      const record = await normalizeGuidedDecisionReviewRegistryRecord(
+        JSON.parse(bodyText),
+        { projectId: context.projectId, bundleType: context.bundleType },
+      );
+      if (
+        !requestIsCurrent()
+        || String(response.headers.get('Content-Type') || '').toLowerCase()
+          .startsWith('application/json') !== true
+        || response.headers.get('Cache-Control') !== 'no-store'
+        || response.headers.get('X-Content-Type-Options') !== 'nosniff'
+        || response.headers.get('X-DecisionDoc-Operational-Approval') !== 'false'
+        || !/^attachment;\s*filename="guided-decision-review-disposition-record-[0-9a-f-]+\.json"$/.test(
+          contentDisposition,
+        )
+        || !isGuidedDecisionReviewSha256(bodySha256)
+        || bodySha256 !== await sha256Hex(bodyBytes)
+        || bodyText !== `${canonicalGuidedDecisionReviewJson(record)}\n`
+        || record.operation_id !== operationId
+      ) {
+        throw new Error('Guided review disposition download verification failed.');
+      }
+      _triggerBrowserDownload(
+        new Blob([bodyBytes], { type: 'application/json' }),
+        _filenameFromContentDisposition(
+          contentDisposition,
+          `guided-decision-review-disposition-record-${operationId}.json`,
+        ),
+        'Guided Decision Review disposition record JSON',
+      );
+    } catch (error) {
+      if (!requestIsCurrent()) return;
+      showNotification(error.message || String(error), 'error');
     }
   }
 
@@ -27197,12 +27833,21 @@
       '[data-guided-decision-review-disposition]',
     )?.addEventListener('change', () => {
       _guidedDecisionReviewDispositionRequestId += 1;
+      clearGuidedDecisionReviewDispositionRegistrySource();
       _clearScopedExportDownloadUrls(
         GUIDED_DECISION_REVIEW_DISPOSITION_DOWNLOAD_SCOPE,
       );
       syncGuidedDecisionReviewDispositionControls();
     });
+    root.querySelector(
+      '[data-guided-decision-review-registry-create]',
+    )?.addEventListener('click', createGuidedDecisionReviewRegistryRecord);
+    root.querySelector(
+      '[data-guided-decision-review-registry-refresh]',
+    )?.addEventListener('click', loadGuidedDecisionReviewRegistry);
     syncGuidedDecisionReviewDispositionControls();
+    syncGuidedDecisionReviewRegistryControls();
+    loadGuidedDecisionReviewRegistry();
   }
 
   const DECISION_EVIDENCE_NODE_LABELS = {

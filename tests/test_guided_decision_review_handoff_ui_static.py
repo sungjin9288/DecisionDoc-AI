@@ -165,6 +165,57 @@ def test_guided_review_disposition_static_contract_invalidates_stale_scope() -> 
     assert "dispositionSelect.value !== context.reviewDisposition" in source
 
 
+def test_guided_review_registry_static_contract_is_page_memory_bound_and_single_flight() -> None:
+    html = Path("app/static/index.html").read_text(encoding="utf-8")
+    source = _handoff_source(html)
+
+    assert 'data-guided-decision-review-registry-create' in source
+    assert 'data-guided-decision-review-registry-refresh' in source
+    assert 'data-guided-decision-review-registry-list' in source
+    assert "/guided-decision-review-dispositions?bundle_type=" in source
+    assert "guided-decision-review-disposition-record-request.v1" in source
+    assert "guided-decision-review-disposition-record.v1" in source
+    assert "source_disposition_receipt: source.receipt" in source
+    assert "source_disposition_receipt_sha256: source.bodySha256" in source
+    assert "crypto.randomUUID().toLowerCase()" in source
+    assert "_guidedDecisionReviewRegistryOperation?.scopeKey === scopeKey" in source
+    assert "if (_guidedDecisionReviewRegistryPending) return;" in source
+    assert "_guidedDecisionReviewRegistryPending === token" in source
+    assert "if (_guidedDecisionReviewRegistryPending === token)" in source
+    assert "_guidedDecisionReviewRegistryPending = null;" in source
+    assert "normalizeIndependentGuidedDecisionReviewDispositionReceipt" in source
+    assert "record.request_binding_sha256 !== await sha256Hex" in source
+    assert "record.record_binding_sha256 !== await sha256Hex" in source
+    assert "bodySha256 !== await sha256Hex(bodyBytes)" in source
+    assert "new Blob([bodyBytes]" in source
+    assert "localStorage" not in source
+    assert "sessionStorage" not in source
+
+
+def test_guided_review_registry_static_contract_discards_scope_and_source_drift() -> None:
+    html = Path("app/static/index.html").read_text(encoding="utf-8")
+    source = _handoff_source(html)
+
+    for field in (
+        "projectLoadId",
+        "authRevision",
+        "tenantId",
+        "userId",
+        "projectId",
+        "bundleType",
+        "sourceDispositionReceiptSha256",
+        "operationId",
+    ):
+        assert field in source
+    assert "clearGuidedDecisionReviewDispositionRegistrySource();" in source
+    assert "_guidedDecisionReviewRegistryRequestId += 1;" in source
+    assert "_guidedDecisionReviewRegistryListRequestId += 1;" in source
+    assert "_guidedDecisionReviewRegistryDownloadRequestId += 1;" in source
+    assert "_guidedDecisionReviewVerifiedDisposition = null;" in source
+    assert "_guidedDecisionReviewRegistryOperation = null;" in source
+    assert "_guidedDecisionReviewRegistryPending = null;" in source
+
+
 def test_procurement_review_invalidation_clears_guided_review_page_memory() -> None:
     html = Path("app/static/index.html").read_text(encoding="utf-8")
     start = html.index("function invalidateProcurementReviewViews()")

@@ -358,6 +358,29 @@ Ops dashboard의 retention panel은 30/90/180/365일 selector, icon refresh, 검
 
 Browser profile은 session ID를 DOM에 기록하지 않고 current/other, user label, 시작·만료 시각을 렌더링한다. Label save와 revoke action은 같은 single-flight와 modal/token/request/mutation generation guard를 공유한다. 모든 기기 로그아웃은 성공 뒤에만 local credential과 page-memory evidence를 정리하고, 일반 logout은 server revoke 응답을 기다리지 않고 local cleanup을 마친다. Audit은 action/result와 bulk count만 남기며 token, target session ID와 user label을 복사하지 않는다. 같은 session을 복사한 다른 context는 다음 request·refresh 또는 열린 SSE의 최대 15초 recheck에서 차단된다. User-Agent/IP inventory, admin mass revoke, 즉시 push와 실제 expired-session 삭제·scheduler는 제공하지 않는다. H107 이전 sessionless token은 credential epoch와 만료 규칙으로 계속 승인되지만 exact logout·inventory·label·selected/bulk revoke는 `409`로 거부한다.
 
+## H129 Guided Decision Review Disposition Registry
+
+H129 wraps one strict H128 receipt in an immutable
+`guided-decision-review-disposition-record.v1`. The selected `StateBackend`
+uses tenant/project/bundle prefixes and a SHA-256 filename derived from a
+canonical lowercase UUIDv4 operation ID; the raw operation ID never appears in
+the object path. Conditional create is the persistence authority for both local
+and S3 implementations. Exact replay binds tenant, project, bundle, operation,
+stable reviewer user ID, and source SHA-256 but deliberately excludes mutable
+username, role, and `recorded_at`, so the first historical canonical bytes win.
+A separate full-record binding covers all wrapper and nested identity, source,
+hash, and false-authority fields.
+
+Create/list/read/download all strict-reparse the H129 record and nested
+H128/H127/H126 chain before returning data. Admin access is project-wide;
+assigned member access is stable-user scoped and direct non-owner reads remain
+non-disclosing. Canonical read/download bytes carry exact SHA-256, `no-store`,
+`nosniff`, and safe attachment metadata. The wrapper alone sets
+`reviewer_identity_bound=true` and `registry_record_persisted=true`; it remains
+review-only, read-only, non-atomic, recheck-required evidence with no approval,
+workflow mutation, export execution, provider, bid, legal, or contractual
+authority.
+
 ## 파일 형식 서비스
 
 | 형식 | 서비스 | 의존성 |

@@ -216,6 +216,30 @@ security/infrastructure expansion `488 passed`, full non-live `4,509 passed,
 1 skipped, 4 deselected`다. Provider, AWS, G2B, dataset upload, training,
 promotion, deployment와 service resume은 실행하지 않았다.
 
+### H129 Guided Decision Review Disposition Registry
+
+H129 persists one exact H128 receipt as immutable reviewer-attributed evidence
+under tenant/project/bundle/hashed-operation scope. First create returns 201;
+an exact replay after username or role drift returns 200 with the original
+canonical bytes and historical identity, while stable reviewer or source drift
+conflicts without rewriting the authoritative record. All registry paths
+strictly revalidate the nested H126-H128 chain, request/full-record bindings,
+scope, matrix, hashes, and false authority before returning data.
+
+Admin access is project-wide and assigned member access is stable-user scoped.
+Browser create is enabled only from current verified page-memory H128 evidence,
+uses one UUID per source/scope plus request-owned single flight, and discards
+late responses after auth/tenant/user/project/bundle/source drift. H129 closes
+no M1/M2/M6, human UAT, deployment, prior H128 server-issuance, or external
+approval gap; provider, AWS, G2B, upload, training, promotion, deploy, approval,
+bid, legal, and contractual effects remain outside the slice.
+
+2026-08-18 local/mock verification은 H129 focused storage/API/auth/audit
+`16 passed`, adjacent handoff/static `28 passed`, focused Chromium
+`1 passed, 13 deselected`, full non-E2E non-live `4,596 passed, 4 deselected`,
+full non-live E2E `121 passed, 1 skipped`를 확인했다. Ruff E/F/W, `py_compile`,
+Bandit medium/high, secret hygiene, portfolio와 diff gates도 통과했다.
+
 ---
 
 ## 2. 현재 아키텍처 (실측 기반)
@@ -225,11 +249,11 @@ promotion, deployment와 service resume은 실행하지 않았다.
 ```bash
 python3 scripts/count_readme_metrics.py --field router_files      # → 23 (top-level 라우터 파일)
 python3 scripts/count_readme_metrics.py --field service_files     # → 50 (서비스)
-python3 scripts/count_readme_metrics.py --field storage_files     # → 51 (top-level storage modules)
+python3 scripts/count_readme_metrics.py --field storage_files     # → 52 (top-level storage modules)
 python3 scripts/count_readme_metrics.py --field middleware_files  # → 12 (미들웨어)
-python3 scripts/count_readme_metrics.py --field route_decorators  # → 292 (라우트)
-python3 scripts/count_readme_metrics.py --field test_files        # → 275 (테스트 파일)
-python3 scripts/count_readme_metrics.py --field test_functions    # → 3818 (Python AST test_ 정의; pass 수 아님)
+python3 scripts/count_readme_metrics.py --field route_decorators  # → 296 (라우트)
+python3 scripts/count_readme_metrics.py --field test_files        # → 277 (테스트 파일)
+python3 scripts/count_readme_metrics.py --field test_functions    # → 3833 (Python AST test_ 정의; pass 수 아님)
 ```
 
 ```text
@@ -244,7 +268,7 @@ FastAPI (app/main.py — create_app(), 모듈 레벨 side-effect 없음)
   │     audit context helpers: document_ops_audit / auth_session_retention_audit
   │       / procurement_review_audit
   │
-  ├─ Routers (23 top-level files, 라우트 292):
+  ├─ Routers (23 top-level files, 라우트 296):
   │     generate / approvals / projects / knowledge / report_workflows
   │     auth / sso / admin / audit / billing / dashboard / history
   │     eval / finetune / local_llm / g2b / document_ops_agent

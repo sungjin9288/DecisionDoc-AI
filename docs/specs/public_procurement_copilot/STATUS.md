@@ -26,7 +26,7 @@ Milestone 6 completed
   current-main AWS deploy/runtime and stage procurement smoke remain unproven
   until the dev OIDC role trust is repaired and `deploy-smoke` is rerun.
 
-## Post-milestone Decision Evidence Map and H124-H128 guided review completion
+## Post-milestone Decision Evidence Map and H124-H129 guided review completion
 
 - `decision_evidence_map.v1` is now a deterministic, bounded, read-only project
   projection across procurement decisions, Decision Council, project documents,
@@ -86,6 +86,18 @@ Milestone 6 completed
   rejects body, header, scope, matrix, or authority drift. The result is
   review-only, non-atomic, recheck-required, non-persisted, does not bind
   reviewer identity, and creates no approval or execution authority.
+- H129 adds an immutable, reviewer-attributed registry around one exact H128
+  receipt. The selected local/S3 `StateBackend` uses conditional create under
+  tenant/project/bundle scope with a SHA-256 operation filename; exact replay is
+  bound to the stable reviewer user ID and source SHA-256 while preserving the
+  first username, role, timestamp, and canonical bytes. Admins can inspect the
+  project registry, assigned members see only their own records, and direct
+  non-owner access remains the same non-disclosing `404`. Every create, list,
+  read, and download reparses H128/H127/H126 hashes, fingerprints, disposition
+  matrix, full-record binding, route scope, and false authority fields before
+  returning canonical bytes. Only the wrapper sets reviewer identity and
+  registry persistence true; approval, workflow mutation, export execution,
+  provider, bid, legal, and contractual authority remain false.
 - Generation and final report workflow promotion preserve validated canonical
   `requirement:` references on project documents. Only an exact persisted
   reference can produce `explicit` reference coverage; fuzzy or legacy text
@@ -149,6 +161,17 @@ Milestone 6 completed
   receipt, prove prior server issuance of the submitted H127 source, make
   sequential reads atomic, or execute provider, AWS, G2B, upload, training,
   promotion, deployment, service resume, bid, legal, or contractual actions.
+- Fresh H129 no-cost verification on 2026-08-18: the two same-basename H129
+  modules collected together and their storage/API/auth/audit gate passed
+  `16 passed`; adjacent H126-H128 handoff/static checks passed `28 passed`, and
+  the focused Chromium registry race check passed `1 passed, 13 deselected`.
+  The final full non-E2E non-live suite passed `4596 passed, 4 deselected`, and
+  the full non-live E2E suite passed `121 passed, 1 skipped`. Ruff E/F/W,
+  `py_compile`, Bandit medium/high, secret hygiene, README metrics, portfolio
+  sync/check/package/ZIP verification, and diff checks also passed. This is
+  local/mock evidence: it does not close prior H128 server-issuance provenance,
+  M1, M2, M6, human UAT, deployment, or external-approval gaps and executed
+  none of the forbidden external effects.
 - H126-H128 local demo evidence on 2026-07-29: the repeatable local
   `capture_guided_decision_review_demo_evidence.py` flow uses an ephemeral
   mock/local FastAPI server and the real browser shell to create a project,

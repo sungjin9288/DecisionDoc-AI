@@ -146,6 +146,7 @@
 | Completion readiness proof runbook | 재현 가능 | `docs/completion-readiness-runbook.md` |
 | Local post-login UI flow evidence | 재현 가능 | `python3 scripts/capture_ui_flow_evidence.py` |
 | H126-H128 Guided Review local mock demo | 재현 가능 | `python3 scripts/capture_guided_decision_review_demo_evidence.py` -> receipt, sanitized H126/H127/H128 JSON in `evidence/cli-logs/`, five SHA-256-bound `guided-review-demo-*.png` screenshots; `--check-only`로 browser 없이 재검증 |
+| H129 Guided Review disposition registry | 재현 가능 | 두 same-basename pytest module collect, local/fake-S3 immutable replay/conflict, auth/privacy/audit/canonical response, Chromium single-flight 및 stale-context focused gates; H128 demo 자체는 H129 record를 만들지 않음 |
 
 위 local evidence contract 검증은 repo 밖 `/tmp` receipt를 사용한다. Provider API, AWS runtime, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않는다.
 

@@ -272,6 +272,16 @@ H121 applies the same session boundary to assignment and read access. It preserv
 
 H122 completes the evidence retrieval loop with a verified original-packet re-download. The route authorizes before reading, revalidates the immutable bytes and record binding, returns only safe evidence headers, and keeps browser downloads bound to the current review projection and auth context. It adds no reassignment, review completion, approval, provider, training, deployment, or service-resume authority.
 
+H129 adds the equivalent immutable reviewer-evidence boundary to Guided Decision
+Review dispositions. It conditionally creates one canonical record per
+tenant/project/bundle/operation, binds replay to the stable reviewer and exact
+H128 source, and exposes only strictly revalidated scoped list/read/download
+views. Browser work starts only from verified page-memory H128 evidence and
+uses request-owned single flight. This execution slice does not close M1, M2,
+M6, human UAT, deployment, prior H128 server issuance, or external approval and
+does not authorize any provider, AWS, G2B, upload, training, promotion, deploy,
+bid, legal, or contractual effect.
+
 Until then, DecisionDoc AI should be described as an actively developed MVP with strong local governance and review workflow foundations.
 
 ## Generated export packet execution slice

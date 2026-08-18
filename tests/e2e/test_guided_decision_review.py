@@ -1276,18 +1276,24 @@ def test_guided_review_auth_invalidation_discards_page_memory_sources(page):
         """() => {
           _guidedDecisionReviewVerifiedHandoff = { bodySha256: 'a'.repeat(64) };
           _guidedDecisionReviewVerifiedRecheck = { bodySha256: 'b'.repeat(64) };
+          _guidedDecisionReviewVerifiedDisposition = { bodySha256: 'c'.repeat(64) };
+          _guidedDecisionReviewRegistryPending = { requestId: 1 };
           const before = {
             handoffRequestId: _guidedDecisionReviewHandoffRequestId,
             recheckRequestId: _guidedDecisionReviewRecheckRequestId,
             dispositionRequestId: _guidedDecisionReviewDispositionRequestId,
+            registryRequestId: _guidedDecisionReviewRegistryRequestId,
           };
           invalidateProcurementReviewViews();
           return {
             handoff: _guidedDecisionReviewVerifiedHandoff,
             recheck: _guidedDecisionReviewVerifiedRecheck,
+            disposition: _guidedDecisionReviewVerifiedDisposition,
+            registryPending: _guidedDecisionReviewRegistryPending,
             handoffRequestId: _guidedDecisionReviewHandoffRequestId,
             recheckRequestId: _guidedDecisionReviewRecheckRequestId,
             dispositionRequestId: _guidedDecisionReviewDispositionRequestId,
+            registryRequestId: _guidedDecisionReviewRegistryRequestId,
             before,
           };
         }"""
@@ -1295,9 +1301,12 @@ def test_guided_review_auth_invalidation_discards_page_memory_sources(page):
 
     assert result["handoff"] is None
     assert result["recheck"] is None
+    assert result["disposition"] is None
+    assert result["registryPending"] is None
     assert result["handoffRequestId"] > result["before"]["handoffRequestId"]
     assert result["recheckRequestId"] > result["before"]["recheckRequestId"]
     assert result["dispositionRequestId"] > result["before"]["dispositionRequestId"]
+    assert result["registryRequestId"] > result["before"]["registryRequestId"]
 
 
 def test_guided_review_cross_tab_auth_change_discards_page_memory_before_reload(page):
@@ -1316,6 +1325,8 @@ def test_guided_review_cross_tab_auth_change_discards_page_memory_before_reload(
           try {
             _guidedDecisionReviewVerifiedHandoff = { bodySha256: 'a'.repeat(64) };
             _guidedDecisionReviewVerifiedRecheck = { bodySha256: 'b'.repeat(64) };
+            _guidedDecisionReviewVerifiedDisposition = { bodySha256: 'c'.repeat(64) };
+            _guidedDecisionReviewRegistryPending = { requestId: 1 };
             _exportDownloadUrls.push(
               { url: 'blob:handoff', scope: GUIDED_DECISION_REVIEW_HANDOFF_DOWNLOAD_SCOPE },
               { url: 'blob:recheck', scope: GUIDED_DECISION_REVIEW_RECHECK_DOWNLOAD_SCOPE },
@@ -1325,6 +1336,7 @@ def test_guided_review_cross_tab_auth_change_discards_page_memory_before_reload(
               handoffRequestId: _guidedDecisionReviewHandoffRequestId,
               recheckRequestId: _guidedDecisionReviewRecheckRequestId,
               dispositionRequestId: _guidedDecisionReviewDispositionRequestId,
+              registryRequestId: _guidedDecisionReviewRegistryRequestId,
             };
             _crossTabAuthReloadRequested = true;
             handleCrossTabAuthStorageChange({
@@ -1334,9 +1346,12 @@ def test_guided_review_cross_tab_auth_change_discards_page_memory_before_reload(
             return {
               handoff: _guidedDecisionReviewVerifiedHandoff,
               recheck: _guidedDecisionReviewVerifiedRecheck,
+              disposition: _guidedDecisionReviewVerifiedDisposition,
+              registryPending: _guidedDecisionReviewRegistryPending,
               handoffRequestId: _guidedDecisionReviewHandoffRequestId,
               recheckRequestId: _guidedDecisionReviewRecheckRequestId,
               dispositionRequestId: _guidedDecisionReviewDispositionRequestId,
+              registryRequestId: _guidedDecisionReviewRegistryRequestId,
               revoked,
               before,
             };
@@ -1348,11 +1363,172 @@ def test_guided_review_cross_tab_auth_change_discards_page_memory_before_reload(
 
     assert result["handoff"] is None
     assert result["recheck"] is None
+    assert result["disposition"] is None
+    assert result["registryPending"] is None
     assert result["handoffRequestId"] > result["before"]["handoffRequestId"]
     assert result["recheckRequestId"] > result["before"]["recheckRequestId"]
     assert result["dispositionRequestId"] > result["before"]["dispositionRequestId"]
+    assert result["registryRequestId"] > result["before"]["registryRequestId"]
     assert result["revoked"] == [
         "blob:handoff",
         "blob:recheck",
         "blob:disposition",
     ]
+
+
+def test_guided_review_disposition_registry_request_token_prevents_stale_clear_and_third_post(page):
+    page.evaluate("switchPage('project-page')")
+    source = _handoff()
+    current = _handoff(source_generated_at="2026-07-28T01:00:00Z")
+    source_body = _handoff_body(source)
+    recheck = _recheck_receipt(source, current)
+    recheck_body = _handoff_body(recheck)
+    disposition = _disposition_receipt(recheck, "acknowledged_unchanged")
+    disposition_body = _handoff_body(disposition)
+    page.evaluate(
+        """({
+          sourceBody, sourceSha256, recheckBody, recheckSha256,
+          dispositionBody, dispositionSha256,
+        }) => {
+          window.__guidedReviewOriginalFetch = window.fetch;
+          window.fetch = async (input, init = {}) => {
+            const url = String(input);
+            if (url.includes('/guided-decision-review-handoff/review-disposition')) {
+              return new Response(dispositionBody, {
+                status: 200,
+                headers: {
+                  'Cache-Control': 'no-store',
+                  'Content-Type': 'application/json; charset=utf-8',
+                  'Content-Disposition': 'attachment; filename="guided-decision-review-disposition-receipt-aaaaaaaaaaaa.json"',
+                  'X-Content-Type-Options': 'nosniff',
+                  'X-DecisionDoc-Guided-Review-Disposition-Receipt-SHA256': dispositionSha256,
+                  'X-DecisionDoc-Projection-Fingerprint': 'a'.repeat(64),
+                  'X-DecisionDoc-Review-State-Status': 'unchanged',
+                  'X-DecisionDoc-Operational-Approval': 'false',
+                },
+              });
+            }
+            if (url.includes('/guided-decision-review-handoff/recheck')) {
+              return new Response(recheckBody, {
+                status: 200,
+                headers: {
+                  'Cache-Control': 'no-store',
+                  'Content-Type': 'application/json; charset=utf-8',
+                  'Content-Disposition': 'attachment; filename="guided-decision-review-recheck-receipt-aaaaaaaaaaaa.json"',
+                  'X-Content-Type-Options': 'nosniff',
+                  'X-DecisionDoc-Guided-Review-Recheck-Receipt-SHA256': recheckSha256,
+                  'X-DecisionDoc-Projection-Fingerprint': 'a'.repeat(64),
+                  'X-DecisionDoc-Review-State-Status': 'unchanged',
+                  'X-DecisionDoc-Operational-Approval': 'false',
+                },
+              });
+            }
+            if (url.includes('/guided-decision-review-handoff?')) {
+              return new Response(sourceBody, {
+                status: 200,
+                headers: {
+                  'Cache-Control': 'no-store',
+                  'Content-Type': 'application/json; charset=utf-8',
+                  'Content-Disposition': 'attachment; filename="guided-decision-review-handoff-aaaaaaaaaaaa.json"',
+                  'X-Content-Type-Options': 'nosniff',
+                  'X-DecisionDoc-Guided-Review-Handoff-SHA256': sourceSha256,
+                  'X-DecisionDoc-Projection-Fingerprint': 'a'.repeat(64),
+                  'X-DecisionDoc-Operational-Approval': 'false',
+                },
+              });
+            }
+            return window.__guidedReviewOriginalFetch(input, init);
+          };
+        }""",
+        {
+            "sourceBody": source_body.decode("utf-8"),
+            "sourceSha256": hashlib.sha256(source_body).hexdigest(),
+            "recheckBody": recheck_body.decode("utf-8"),
+            "recheckSha256": hashlib.sha256(recheck_body).hexdigest(),
+            "dispositionBody": disposition_body.decode("utf-8"),
+            "dispositionSha256": hashlib.sha256(disposition_body).hexdigest(),
+        },
+    )
+    _render(
+        page,
+        reviews=[_review("2026-07-27T09:00:00Z", "a" * 64)],
+        docs=[_document("proposal-a", "2026-07-26T10:00:00Z")],
+    )
+    root = page.locator("#guided-decision-review")
+    with page.expect_download():
+        root.get_by_role(
+            "button",
+            name="Download guided decision review handoff JSON",
+        ).click()
+    with page.expect_download():
+        root.get_by_role(
+            "button",
+            name="Recheck guided decision review handoff",
+        ).click()
+    with page.expect_download():
+        root.get_by_role(
+            "button",
+            name="Download guided decision review disposition receipt JSON",
+        ).click()
+
+    page.evaluate(
+        """() => {
+          const priorFetch = window.fetch;
+          window.__guidedReviewRegistryPosts = [];
+          window.__guidedReviewRegistryResolvers = [];
+          window.fetch = (input, init = {}) => {
+            const url = String(input);
+            if (
+              url.includes('/guided-decision-review-dispositions?')
+              && init.method === 'POST'
+            ) {
+              window.__guidedReviewRegistryPosts.push(JSON.parse(init.body));
+              return new Promise(resolve => {
+                window.__guidedReviewRegistryResolvers.push(resolve);
+              });
+            }
+            return priorFetch(input, init);
+          };
+        }"""
+    )
+    create_button = root.get_by_role(
+        "button",
+        name="Record the verified guided decision review disposition",
+    )
+    assert create_button.is_enabled()
+    create_button.click()
+    page.wait_for_function("window.__guidedReviewRegistryPosts.length === 1")
+    first_operation = page.evaluate(
+        "window.__guidedReviewRegistryPosts[0].operation_id"
+    )
+
+    race_state = page.evaluate(
+        """() => {
+          const source = _guidedDecisionReviewVerifiedDisposition;
+          const firstToken = _guidedDecisionReviewRegistryPending;
+          clearGuidedDecisionReviewDispositionRegistrySource();
+          _guidedDecisionReviewVerifiedDisposition = source;
+          syncGuidedDecisionReviewRegistryControls();
+          createGuidedDecisionReviewRegistryRecord();
+          return { firstToken };
+        }"""
+    )
+    assert race_state["firstToken"]["operationId"] == first_operation
+    page.wait_for_function("window.__guidedReviewRegistryPosts.length === 2")
+    second_token = page.evaluate("_guidedDecisionReviewRegistryPending")
+
+    page.evaluate(
+        """() => {
+          window.__guidedReviewRegistryResolvers[0](
+            new Response('', { status: 503 }),
+          );
+        }"""
+    )
+    page.wait_for_timeout(50)
+    assert page.evaluate(
+        "_guidedDecisionReviewRegistryPending?.requestId"
+    ) == second_token["requestId"]
+
+    page.evaluate("createGuidedDecisionReviewRegistryRecord()")
+    page.wait_for_timeout(50)
+    assert page.evaluate("window.__guidedReviewRegistryPosts.length") == 2

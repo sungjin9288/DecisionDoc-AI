@@ -154,6 +154,10 @@ identifier, or server URL. The downloaded canonical contract bodies retain
 their local fixture `project_id` for exact binding. The flow does not add H129
 persistence or authority.
 
+H129 is a separate immutable reviewer-attribution registry defined in
+[`GUIDED_DECISION_REVIEW_DISPOSITION_REGISTRY.md`](./GUIDED_DECISION_REVIEW_DISPOSITION_REGISTRY.md).
+The H128 local demo deliberately does not create that record.
+
 The repeatable local fixture uses the locked `ProcurementDecisionStore.upsert`
 path to populate Decision and Evidence without a G2B/provider call. It does not
 persist a procurement review or project document, so Review and Documents remain
