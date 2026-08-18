@@ -12211,3 +12211,8 @@ Internal only. Public Procurement Go/No-Go Copilot is now fully integrated into 
   - full Chromium passed: 88 tests, 1 skipped; full non-live regression passed: 4,448 tests, 2 skipped, 4 deselected
   - Ruff E/F/W, py_compile, Bandit medium/high, secret hygiene, README metrics, portfolio pack sync/check/package/verify, and `git diff --check` passed
   - paid providers, G2B live API, AWS runtime, Stripe, Statuspage, deployment, service resume, dataset upload, training execution, model promotion, bid submission, legal approval, and contractual commitment were not executed
+
+- 2026-08-17 project-linked generated review ZIP boundary
+  - project document UI now reuses the existing tenant-bound generated export route only when the loaded document has a non-empty `request_id`; it does not alter procurement review packet, approval, share, tenant authorization, audit, provider, or storage behavior
+  - the shared result/project action requests `docx,pdf,pptx,hwp,excel`, verifies ZIP/header/byte evidence before Blob download, and keeps `review_only`, `packet_persisted=false`, human review false, and operational approval false; this local integrity evidence is not a procurement, bid, legal, contractual, deployment, or external approval
+  - stale project context and unavailable source failures fail closed without a project snapshot fallback or download; external provider, G2B, AWS, bid submission, legal/contractual commitment, deployment, service resume, dataset upload, training execution, and model promotion were not executed

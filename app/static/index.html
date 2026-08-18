@@ -14769,6 +14769,9 @@
   }
 
   const EXPORT_DOWNLOAD_URL_TTL_MS = 5 * 60 * 1000;
+  const GENERATION_EXPORT_REVIEW_FORMATS = 'docx,pdf,pptx,hwp,excel';
+  const GENERATION_EXPORT_RESULT_DOWNLOAD_SCOPE = 'generation-export-result-review';
+  const GENERATION_EXPORT_PROJECT_DOWNLOAD_SCOPE = 'generation-export-project-review';
   const PROCUREMENT_REVIEW_DOWNLOAD_SCOPE = 'procurement-review';
   let _exportDownloadUrls = [];
 
@@ -21394,12 +21397,77 @@
     pdf: { format: 'pdf', buttonId: 'result-pdf-btn', icon: '🖨️', extension: 'pdf', label: 'PDF' },
     excel: { format: 'excel', buttonId: 'result-excel-btn', icon: '📊', extension: 'xlsx', label: 'Excel' },
   };
+  let _generationExportResultGeneration = 0;
+  const _generationExportReviewFlights = new Set();
+
+  function _currentSignedUserId() {
+    return String(_currentUser?.sub || _currentUser?.user_id || '').trim();
+  }
+
+  function captureGenerationExportReviewContext({
+    source = 'result',
+    requestId = '',
+    projectId = '',
+    documentId = '',
+  } = {}) {
+    return {
+      source,
+      requestId: String(requestId || '').trim(),
+      authRevision: _authSessionRevision,
+      tenantId: _currentTenantId,
+      signedUserId: _currentSignedUserId(),
+      resultGeneration: _generationExportResultGeneration,
+      projectDetailLoadId: source === 'project' ? _projectDetailLoadId : null,
+      projectId: source === 'project' ? String(projectId || '').trim() : '',
+      documentId: source === 'project' ? String(documentId || '').trim() : '',
+    };
+  }
+
+  function isGenerationExportReviewContextCurrent(context) {
+    if (
+      !context?.requestId
+      || context.authRevision !== _authSessionRevision
+      || context.tenantId !== _currentTenantId
+      || context.signedUserId !== _currentSignedUserId()
+    ) return false;
+    if (context.source !== 'project') {
+      return context.resultGeneration === _generationExportResultGeneration;
+    }
+    const project = _currentProjectDetail?.project;
+    const document = _currentProjectDetail?.docsById?.[context.documentId];
+    return (
+      context.projectDetailLoadId === _projectDetailLoadId
+      && project?.project_id === context.projectId
+      && String(document?.request_id || '') === context.requestId
+    );
+  }
+
+  async function _generationExportResponseCode(res) {
+    try {
+      const payload = await res.json();
+      return String(payload?.code || '');
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function _generationExportReviewFailureMessage(error) {
+    if (error?.code === 'EXPORT_SOURCE_NOT_FOUND') {
+      return '생성 원본이 만료되었거나 없습니다. 문서를 다시 생성한 뒤 검토 ZIP을 요청하세요.';
+    }
+    return '검증된 검토 ZIP을 준비하지 못했습니다. 잠시 후 다시 시도하세요.';
+  }
 
   function renderDownloadButtons(requestId, title) {
     const container = $id('download-buttons');
     if (!container) return;
+    _generationExportResultGeneration += 1;
     const safeTitle = escapeHtml(title || lastMeta?.title || '문서');
-    const safeId = escapeHtml(requestId);
+    const normalizedRequestId = String(requestId || '').trim();
+    const safeId = escapeHtml(normalizedRequestId);
+    const reviewZipButton = normalizedRequestId
+      ? `<button type="button" data-result-export-zip data-request-id="${safeId}" class="dl-btn dl-btn-primary">📦 검증된 검토 ZIP</button>`
+      : '<button type="button" class="dl-btn dl-btn-primary" disabled>📦 검증된 검토 ZIP</button>';
     container.style.display = 'block';
     container.innerHTML = `
       <div class="download-section">
@@ -21415,7 +21483,7 @@
         <div class="download-bulk">
           <span style="font-size:0.8rem;color:var(--muted)">일괄 다운로드</span>
           <div class="download-btn-row">
-            <button type="button" data-result-export-zip data-request-id="${safeId}" class="dl-btn dl-btn-primary">📦 전체 ZIP</button>
+            ${reviewZipButton}
             <button type="button" data-result-share data-request-id="${safeId}" data-title="${safeTitle}" class="dl-btn">🔗 공유</button>
           </div>
         </div>
@@ -21434,7 +21502,7 @@
       });
     });
     container.querySelector('[data-result-export-zip]')?.addEventListener('click', event => {
-      exportZip(event.currentTarget.dataset.requestId || '');
+      exportZip(event.currentTarget.dataset.requestId || '', { button: event.currentTarget });
     });
     container.querySelector('[data-result-share]')?.addEventListener('click', event => {
       const target = event.currentTarget;
@@ -21442,15 +21510,34 @@
     });
   }
 
-  async function exportZip(requestId) {
-    showNotification('ZIP 파일을 생성 중입니다...', 'info');
+  async function exportZip(requestId, options = {}) {
+    const context = captureGenerationExportReviewContext({
+      source: options.source === 'project' ? 'project' : 'result',
+      requestId,
+      projectId: options.projectId,
+      documentId: options.documentId,
+    });
+    const button = options.button || null;
+    const flightKey = context.requestId;
+    if (!isGenerationExportReviewContextCurrent(context) || _generationExportReviewFlights.has(flightKey)) return;
+    _generationExportReviewFlights.add(flightKey);
+    if (button) button.disabled = true;
+    showNotification('검증된 검토 ZIP을 준비하는 중입니다...', 'info');
     try {
       const res = await fetch(
-        `/generate/export-zip?request_id=${encodeURIComponent(requestId)}&formats=docx,hwp,pdf`,
+        `/generate/export-zip?request_id=${encodeURIComponent(context.requestId)}&formats=${GENERATION_EXPORT_REVIEW_FORMATS}`,
         { headers: getAuthHeaders() }
       );
-      if (!res.ok) throw new Error(await res.text());
-      const contentType = res.headers.get('content-type');
+      if (!isGenerationExportReviewContextCurrent(context)) return;
+      if (!res.ok) {
+        throw Object.assign(new Error('generation export request failed'), {
+          code: res.status === 404 ? await _generationExportResponseCode(res) : '',
+        });
+      }
+      const contentType = String(res.headers.get('content-type') || '')
+        .split(';', 1)[0]
+        .trim()
+        .toLowerCase();
       const packetSha256 = res.headers.get('X-DecisionDoc-Export-Packet-SHA256') || '';
       const manifestSha256 = res.headers.get('X-DecisionDoc-Export-Manifest-SHA256') || '';
       const packetVerified = res.headers.get('X-DecisionDoc-Export-Verified');
@@ -21462,22 +21549,34 @@
         packetVerified !== 'true' ||
         operationalApproval !== 'false'
       ) {
-        throw new Error('ZIP 무결성 또는 권한 증거를 확인할 수 없습니다.');
+        throw new Error('generation export verification headers are invalid');
       }
       const packetBytes = await res.arrayBuffer();
+      if (!isGenerationExportReviewContextCurrent(context)) return;
       const digest = await crypto.subtle.digest('SHA-256', packetBytes);
       const actualPacketSha256 = Array.from(
         new Uint8Array(digest),
         value => value.toString(16).padStart(2, '0')
       ).join('');
       if (actualPacketSha256 !== packetSha256) {
-        throw new Error('ZIP 무결성 검증에 실패했습니다.');
+        throw new Error('generation export packet hash mismatch');
       }
+      if (!isGenerationExportReviewContextCurrent(context)) return;
       const blob = new Blob([packetBytes], { type: 'application/zip' });
-      _triggerBrowserDownload(blob, `decisiondoc-export-${packetSha256}.zip`, 'ZIP');
-      showNotification('ZIP 다운로드를 요청했습니다.', 'success');
-    } catch (e) {
-      showNotification('ZIP 생성 실패: ' + e.message, 'error');
+      _triggerBrowserDownload(blob, `decisiondoc-export-${packetSha256}.zip`, '검증된 검토 ZIP', {
+        fallbackContainerId: options.fallbackContainerId || 'export-download-fallback',
+        scope: options.source === 'project'
+          ? GENERATION_EXPORT_PROJECT_DOWNLOAD_SCOPE
+          : GENERATION_EXPORT_RESULT_DOWNLOAD_SCOPE,
+      });
+      if (!isGenerationExportReviewContextCurrent(context)) return;
+      showNotification('검증된 검토 ZIP 다운로드를 요청했습니다.', 'success');
+    } catch (error) {
+      if (!isGenerationExportReviewContextCurrent(context)) return;
+      showNotification(_generationExportReviewFailureMessage(error), 'error');
+    } finally {
+      _generationExportReviewFlights.delete(flightKey);
+      if (button && isGenerationExportReviewContextCurrent(context)) button.disabled = false;
     }
   }
 
@@ -27866,6 +27965,7 @@
 
   async function loadProjectDetail(projectId) {
     const loadId = ++_projectDetailLoadId;
+    _clearScopedExportDownloadUrls(GENERATION_EXPORT_PROJECT_DOWNLOAD_SCOPE);
     const authRevision = _authSessionRevision;
     const tenantId = _currentTenantId;
     const userId = String(_currentUser?.sub || _currentUser?.user_id || '');
@@ -27958,6 +28058,7 @@
   }
 
   window.hideProjectDetail = function hideProjectDetail() {
+    _projectDetailLoadId += 1;
     clearGuidedDecisionReviewHandoffSource();
     const projectId = _currentProjectDetail?.project?.project_id || '';
     clearProjectProcurementDetailUrlState(projectId);
@@ -27965,6 +28066,7 @@
     dismissProjectProcurementRemediationContext(projectId);
     clearProjectProcurementSummaryReturnContext(projectId);
     _clearScopedExportDownloadUrls(PROCUREMENT_REVIEW_DOWNLOAD_SCOPE);
+    _clearScopedExportDownloadUrls(GENERATION_EXPORT_PROJECT_DOWNLOAD_SCOPE);
     const detailEl = document.getElementById('project-detail');
     const listEl = document.getElementById('project-list');
     if (detailEl) detailEl.style.display = 'none';
@@ -27980,6 +28082,7 @@
     const previousProjectId = _currentProjectDetail?.project?.project_id;
     if (previousProjectId && previousProjectId !== p.project_id) {
       _clearScopedExportDownloadUrls(PROCUREMENT_REVIEW_DOWNLOAD_SCOPE);
+      _clearScopedExportDownloadUrls(GENERATION_EXPORT_PROJECT_DOWNLOAD_SCOPE);
     }
     const procurementEnabled = Boolean(options.procurementEnabled);
     const procurementReviews = Array.isArray(options.procurementReviews) ? options.procurementReviews : [];
@@ -28211,6 +28314,7 @@
 	                <button type="button" data-project-detail-action="doc-share" data-project-id="${escapeHtml(p.project_id)}" data-doc-id="${escapeHtml(d.doc_id)}">공유</button>
 	              </div>` : ''}
 	              <div class="doc-download-btns">
+	                ${String(d.request_id || '').trim() ? `<button type="button" data-project-detail-action="doc-verified-review-export" data-project-id="${escapeHtml(p.project_id)}" data-doc-id="${escapeHtml(d.doc_id)}" data-request-id="${escapeHtml(String(d.request_id || '').trim())}" style="padding:4px 8px;font-size:0.78rem;border-radius:4px;border:1px solid var(--border,#e5e7eb);background:transparent;cursor:pointer;">검증된 검토 ZIP</button>` : ''}
 	                <button type="button" data-project-detail-action="doc-download" data-project-id="${escapeHtml(p.project_id)}" data-doc-id="${escapeHtml(d.doc_id)}" data-format="pdf" style="padding:4px 8px;font-size:0.78rem;border-radius:4px;border:1px solid var(--border,#e5e7eb);background:transparent;cursor:pointer;">PDF</button>
 	                <button type="button" data-project-detail-action="doc-download" data-project-id="${escapeHtml(p.project_id)}" data-doc-id="${escapeHtml(d.doc_id)}" data-format="docx" style="padding:4px 8px;font-size:0.78rem;border-radius:4px;border:1px solid var(--border,#e5e7eb);background:transparent;cursor:pointer;">Word</button>
 	                <button type="button" data-project-detail-action="doc-download" data-project-id="${escapeHtml(p.project_id)}" data-doc-id="${escapeHtml(d.doc_id)}" data-format="hwpx" style="padding:4px 8px;font-size:0.78rem;border-radius:4px;border:1px solid var(--border,#e5e7eb);background:transparent;cursor:pointer;">HWP</button>
@@ -28219,6 +28323,10 @@
           </div>`;
         }).join('')}
 	      </div>`}`;
+	    container.insertAdjacentHTML(
+	      'beforeend',
+	      '<div id="project-generation-export-download-fallback" style="display:none;"></div>',
+	    );
 	    wireProjectDetailActions(container, p.project_id);
 	    wireMeetingRecordingActions(container, p.project_id);
 	    wireProcurementRoleActions(container);
@@ -28339,6 +28447,16 @@
 	    }
 	    if (action === 'doc-download') {
 	      downloadProjectDoc(projectId, docId, btn.dataset.format || '');
+	      return;
+	    }
+	    if (action === 'doc-verified-review-export') {
+	      exportZip(btn.dataset.requestId || '', {
+	        source: 'project',
+	        projectId,
+	        documentId: docId,
+	        button: btn,
+	        fallbackContainerId: 'project-generation-export-download-fallback',
+	      });
 	    }
 	  }
 

@@ -229,7 +229,7 @@ python3 scripts/count_readme_metrics.py --field storage_files     # → 51 (top-
 python3 scripts/count_readme_metrics.py --field middleware_files  # → 12 (미들웨어)
 python3 scripts/count_readme_metrics.py --field route_decorators  # → 292 (라우트)
 python3 scripts/count_readme_metrics.py --field test_files        # → 275 (테스트 파일)
-python3 scripts/count_readme_metrics.py --field test_functions    # → 3813 (Python AST test_ 정의; pass 수 아님)
+python3 scripts/count_readme_metrics.py --field test_functions    # → 3818 (Python AST test_ 정의; pass 수 아님)
 ```
 
 ```text

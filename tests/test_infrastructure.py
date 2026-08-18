@@ -1199,7 +1199,7 @@ def test_index_html_keeps_blob_url_and_shows_download_fallback():
 def test_index_html_result_download_actions_use_event_listeners():
     content = open("app/static/index.html", encoding="utf-8").read()
     block_start = content.index("function renderDownloadButtons(requestId, title)")
-    block_end = content.index("async function exportZip(requestId)", block_start)
+    block_end = content.index("async function exportZip(requestId, options = {})", block_start)
     block = content[block_start:block_end]
 
     assert not re.search(r"\son[a-zA-Z]+\s*=", block)
@@ -1229,7 +1229,7 @@ def test_index_html_result_download_action_wiring_exists():
         "const action = RESULT_EXPORT_ACTIONS[btn.dataset.resultExport || ''];",
         "exportDocument(action.format, action.buttonId, action.icon, action.extension, action.label);",
         "container.querySelector('[data-result-export-zip]')?.addEventListener('click', event => {",
-        "exportZip(event.currentTarget.dataset.requestId || '');",
+        "exportZip(event.currentTarget.dataset.requestId || '', { button: event.currentTarget });",
         "container.querySelector('[data-result-share]')?.addEventListener('click', event => {",
         "shareDocument(target.dataset.requestId || '', target.dataset.title || '');",
     ):
@@ -1238,7 +1238,7 @@ def test_index_html_result_download_action_wiring_exists():
 
 def test_index_html_export_zip_verifies_headers_and_exact_bytes_before_download():
     content = open("app/static/index.html", encoding="utf-8").read()
-    start = content.index("async function exportZip(requestId)")
+    start = content.index("async function exportZip(requestId, options = {})")
     end = content.index("/* ── Bundle empty state", start)
     block = content[start:end]
 
@@ -1259,6 +1259,62 @@ def test_index_html_export_zip_verifies_headers_and_exact_bytes_before_download(
         "if (actualPacketSha256 !== packetSha256)"
     )
     assert block.index("_triggerBrowserDownload(blob") > block.index("const blob = new Blob([packetBytes]")
+
+
+def test_index_html_generation_export_review_uses_one_context_bound_five_format_path():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    start = content.index("function captureGenerationExportReviewContext({")
+    end = content.index("/* ── Bundle empty state", start)
+    block = content[start:end]
+    project_start = content.index("function renderProjectDetail(p, procurementDecision = null, options = {})")
+    project_end = content.index("function _renderBundleBreakdown", project_start)
+    project_block = content[project_start:project_end]
+
+    for marker in (
+        "const GENERATION_EXPORT_REVIEW_FORMATS = 'docx,pdf,pptx,hwp,excel';",
+        "const _generationExportReviewFlights = new Set();",
+        "authRevision: _authSessionRevision",
+        "tenantId: _currentTenantId",
+        "signedUserId: _currentSignedUserId()",
+        "projectDetailLoadId: source === 'project' ? _projectDetailLoadId : null",
+        "projectId: source === 'project' ? String(projectId || '').trim() : ''",
+        "documentId: source === 'project' ? String(documentId || '').trim() : ''",
+        "_generationExportReviewFlights.has(flightKey)",
+        "formats=${GENERATION_EXPORT_REVIEW_FORMATS}",
+        "const packetBytes = await res.arrayBuffer();",
+        "if (!isGenerationExportReviewContextCurrent(context)) return;",
+        "const blob = new Blob([packetBytes], { type: 'application/zip' });",
+        "GENERATION_EXPORT_PROJECT_DOWNLOAD_SCOPE",
+        "EXPORT_SOURCE_NOT_FOUND",
+        "문서를 다시 생성한 뒤 검토 ZIP을 요청하세요.",
+    ):
+        assert marker in content
+    assert block.index("const blob = new Blob([packetBytes]") > block.index(
+        "if (actualPacketSha256 !== packetSha256)"
+    )
+    assert block.index("_triggerBrowserDownload(blob") > block.index("const blob = new Blob([packetBytes]")
+    assert 'data-project-detail-action="doc-verified-review-export"' in project_block
+    assert "String(d.request_id || '').trim() ?" in project_block
+    assert "doc_snapshot" not in block
+    assert "approval_status" not in block
+
+
+def test_index_html_project_generation_export_cleans_only_scoped_urls_on_context_exit():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    load_start = content.index("async function loadProjectDetail(projectId)")
+    load_end = content.index("window.hideProjectDetail", load_start)
+    load_block = content[load_start:load_end]
+    hide_start = load_end
+    hide_end = content.index("function renderProjectDetail", hide_start)
+    hide_block = content[hide_start:hide_end]
+    render_start = hide_end
+    render_end = content.index("function runProjectDetailAction", render_start)
+    render_block = content[render_start:render_end]
+
+    assert "_clearScopedExportDownloadUrls(GENERATION_EXPORT_PROJECT_DOWNLOAD_SCOPE);" in load_block
+    assert "_projectDetailLoadId += 1;" in hide_block
+    assert "_clearScopedExportDownloadUrls(GENERATION_EXPORT_PROJECT_DOWNLOAD_SCOPE);" in hide_block
+    assert "project-generation-export-download-fallback" in render_block
 
 
 def test_index_html_distinguishes_invalid_and_recoverable_auth_refresh_failures():
