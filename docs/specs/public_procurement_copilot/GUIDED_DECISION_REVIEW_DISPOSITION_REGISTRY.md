@@ -2,13 +2,16 @@
 
 ## Purpose
 
-H129 persists one immutable reviewer-attribution record for one exact H128
-`guided-decision-review-disposition-receipt.v1`. It preserves historical
-identity and canonical bytes without approving the project, mutating review
-workflow state, executing an export, calling a provider, submitting a bid, or
-creating legal or contractual authority.
+H129 v1 is the immutable legacy reviewer-attribution record for one exact H128
+`guided-decision-review-disposition-receipt.v1`. New public operations create
+v2 only; an existing v1 operation can only exact-replay its historical identity
+and canonical bytes without approving the project, mutating review workflow
+state, executing an export, calling a provider, submitting a bid, or creating
+legal or contractual authority.
 
-The H128 source remains reviewer-unbound and non-persistent. Only the H129
+The H128 source remains reviewer-unbound and non-persistent. H129 v2 additionally
+requires the exact same-backend H128 issuance metadata before it can create a
+new record. Only the H129
 wrapper fixes `reviewer_identity_bound=true` and
 `registry_record_persisted=true`.
 
@@ -24,7 +27,10 @@ GET  /projects/{project_id}/guided-decision-review-dispositions/{operation_id}?b
 GET  /projects/{project_id}/guided-decision-review-dispositions/{operation_id}/download?bundle_type=proposal_kr
 ```
 
-Create accepts only:
+Create uses the v2 shape below for a new operation. The legacy v1 shape is
+accepted only to exact-replay an already-stored matching v1 operation; a missing
+v1 operation returns non-disclosing `422` without any conditional write. v1
+objects already stored in the registry are never migrated or rewritten:
 
 ```json
 {
@@ -36,6 +42,15 @@ Create accepts only:
   "source_disposition_receipt_sha256": "lowercase SHA-256"
 }
 ```
+
+`guided-decision-review-disposition-record-request.v2` keeps the same source
+fields. The server independently reads the content-addressed H128 issuance
+metadata by the source body SHA-256 in the selected tenant/project/bundle
+backend, then embeds only that strict metadata and its exact SHA-256 in
+`guided-decision-review-disposition-record.v2`. A missing, tampered,
+foreign-scope, corrupt, or unavailable issuance record prevents v2 creation;
+invalid submitted source is a non-disclosing `422`, while unavailable
+authoritative state is a fail-closed `503`.
 
 - tenant admin sees the current tenant/project/bundle registry;
 - an assigned member creates and lists only records bound to that stable user
@@ -94,6 +109,13 @@ The full-record binding is canonical SHA-256 over every field except
 timestamp, stable user ID, wrapper fields, full nested H128/H127/H126 source,
 all projected hashes, status/disposition, and every false authority boundary.
 
+`guided-decision-review-disposition-record.v2` adds only
+`source_issuance_metadata`, `source_issuance_metadata_sha256`, and
+`issuance_provenance=server_issued`; its request and full-record bindings cover
+that proof. Metadata is hash-only H128 issuance evidence, not a signature,
+actor attestation, currentness, atomic snapshot, approval, or external
+authenticity.
+
 Wrapper invariants are:
 
 - `record_status: recorded`
@@ -137,6 +159,10 @@ allowlisted contract, operation, tenant/project/bundle, historical reviewer
 username/role, timestamp, projected workflow/hash fields and fixed boundaries.
 They exclude the nested receipt, stable reviewer user ID, request binding, and
 full-record binding.
+Legacy v1 summaries explicitly state `legacy_issuance_unrecorded`; v2 summaries
+state `server_issued` and expose only the issuance metadata hash. Read/download
+keep v1 canonical bytes unchanged and expose the legacy/server issuance state
+through safe response headers.
 
 Read and download return the same revalidated canonical bytes. Record and list
 responses use `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`,
@@ -172,20 +198,21 @@ status/disposition/replay fields, and fixed boundaries. They omit session ID,
 IP, User-Agent, tokens, rationale, nested receipts, and any separate stable
 target identity.
 
-H129 is local integrity and reviewer-attribution evidence. It does not close
-M1 live provider, M2 durable G2B, M6 deployment/runtime, human UAT, prior H128
-server-issuance proof, external approval, or atomic-snapshot gaps. Dataset
+H129 is local integrity and reviewer-attribution evidence. Its same-backend
+issuance metadata does not prove a signature, actor attestation, currentness,
+external authenticity, approval, or an atomic snapshot; it does not close M1
+live provider, M2 durable G2B, M6 deployment/runtime, human UAT, external
+approval, or atomic-snapshot gaps. Dataset
 upload, training, promotion, provider/AWS/G2B calls, deployment, service resume,
 bid submission, legal approval, and contractual commitment remain outside this
 path.
 
 ## Local verification evidence
 
-On 2026-08-18, both same-basename H129 modules collected together and the
-focused storage/API/auth/audit gate passed `16 passed`. Adjacent H126-H128
-handoff/static checks passed `28 passed`; the focused Chromium registry race
-test passed `1 passed, 13 deselected`. The final local/mock full non-E2E
-non-live suite passed `4596 passed, 4 deselected`, and the full non-live E2E
-suite passed `121 passed, 1 skipped`. Static quality, security scanning,
-source-derived README metrics, portfolio sync/package verification, and diff
-gates also passed. These results do not change the external gaps above.
+On 2026-08-18, the v2-only public-create remediation plus H128 unavailable,
+corrupt, and disappearing issuance fail-closed paths passed the combined
+storage/API/handoff/static gate (`58 passed`), focused Chromium registry
+selection (`1 passed, 13 deselected`), and adjacent authorization/audit/security
+gate (`172 passed`). Static quality, security scanning, source-derived README
+metrics, portfolio sync/package verification, and diff gates also passed.
+These focused results do not change the external gaps above.

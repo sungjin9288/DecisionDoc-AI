@@ -327,3 +327,13 @@ These checks use mock/local fixtures. Provider APIs, AWS runtime, G2B live API,
 dataset upload, training execution, model promotion, production service resume,
 bid submission, legal approval, and contractual commitment are outside this
 verification boundary.
+
+## H128 issuance provenance and H129 v2
+
+H128 keeps its canonical read-only receipt body unchanged while success is
+gated on strict same-backend issuance metadata for its exact body SHA-256. H129
+v2 independently validates that metadata in the same tenant/project/bundle
+scope and embeds only metadata plus its exact hash; prior v1 records stay
+immutable and are explicitly Legacy issuance unrecorded. The proof is
+existential backend evidence, not a signature, actor attestation, currentness,
+atomic snapshot, approval, or external authenticity.

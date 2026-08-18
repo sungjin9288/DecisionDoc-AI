@@ -15,15 +15,24 @@ from app.schemas.decision_evidence import (
     DecisionEvidenceBundleType,
     GuidedDecisionReviewDispositionReceipt,
     GuidedDecisionReviewDispositionRecord,
+    GuidedDecisionReviewDispositionRecordV2,
     require_complete_guided_decision_review_disposition_receipt,
 )
 from app.services.decision_evidence.common import canonical_json
 from app.services.guided_decision_review_service import GuidedDecisionReviewService
 from app.storage.state_backend import StateBackend, StateBackendError
+from app.storage.guided_decision_review_disposition_issuance_registry import (
+    GuidedDecisionReviewDispositionIssuanceRegistryError,
+    get_guided_decision_review_disposition_issuance_registry,
+    guided_review_issuance_sha256,
+)
 
 
 GUIDED_DECISION_REVIEW_DISPOSITION_RECORD_CONTRACT_VERSION = (
     "guided-decision-review-disposition-record.v1"
+)
+GUIDED_DECISION_REVIEW_DISPOSITION_RECORD_V2_CONTRACT_VERSION = (
+    "guided-decision-review-disposition-record.v2"
 )
 _BUNDLE_TYPES = {
     "bid_decision_kr",
@@ -34,6 +43,7 @@ _BUNDLE_TYPES = {
 _SHA256_PATTERN = re.compile(r"^[a-f0-9]{64}$")
 _RECORD_NAME_PATTERN = re.compile(r"^[a-f0-9]{64}\.json$")
 _RECORD_FIELDS = set(GuidedDecisionReviewDispositionRecord.model_fields)
+_RECORD_V2_FIELDS = set(GuidedDecisionReviewDispositionRecordV2.model_fields)
 
 
 class GuidedDecisionReviewDispositionRegistryError(RuntimeError):
@@ -93,6 +103,8 @@ class GuidedDecisionReviewDispositionRegistry:
     def create(
         self,
         *,
+        contract_version: str = "guided-decision-review-disposition-record-request.v1",
+        allow_legacy_create: bool = True,
         operation_id: str,
         reviewer_user_id: str,
         reviewer_username: str,
@@ -117,6 +129,7 @@ class GuidedDecisionReviewDispositionRegistry:
                 field="source_disposition_receipt_sha256",
             )
             source = _parse_source_receipt(source_disposition_receipt)
+            contract_version = _require_request_contract_version(contract_version)
             source = self._service.validate_disposition_receipt(
                 source,
                 expected_sha256=source_hash,
@@ -128,12 +141,43 @@ class GuidedDecisionReviewDispositionRegistry:
                 "Guided review disposition receipt is invalid"
             ) from exc
 
+        issuance_metadata: dict[str, Any] | None = None
+        issuance_metadata_sha256: str | None = None
+        if contract_version.endswith(".v2"):
+            try:
+                issuance_metadata = (
+                    get_guided_decision_review_disposition_issuance_registry(
+                        tenant_id=self.tenant_id,
+                        project_id=self.project_id,
+                        bundle_type=self.bundle_type,
+                        backend=self.backend,
+                    ).read(source_hash)
+                )
+                issuance_metadata_sha256 = guided_review_issuance_sha256(
+                    issuance_metadata
+                )
+            except KeyError as exc:
+                raise GuidedDecisionReviewDispositionRegistryValidationError(
+                    "Guided review disposition receipt has no server issuance proof"
+                ) from exc
+            except GuidedDecisionReviewDispositionIssuanceRegistryError as exc:
+                raise GuidedDecisionReviewDispositionRegistryError(
+                    "Guided review disposition issuance provenance is unavailable"
+                ) from exc
+
         request_binding_sha256 = self._request_binding_sha256(
             operation_id=operation_id,
             reviewer_user_id=reviewer_user_id,
             source_disposition_receipt_sha256=source_hash,
+            source_issuance_metadata_sha256=issuance_metadata_sha256,
         )
+        if contract_version.endswith(".v1") and not allow_legacy_create:
+            return self._replay_legacy(
+                operation_id=operation_id,
+                request_binding_sha256=request_binding_sha256,
+            )
         record = self._build_record(
+            contract_version=contract_version,
             operation_id=operation_id,
             request_binding_sha256=request_binding_sha256,
             reviewer_user_id=reviewer_user_id,
@@ -141,6 +185,8 @@ class GuidedDecisionReviewDispositionRegistry:
             reviewer_role=reviewer_role,
             source=source,
             source_hash=source_hash,
+            issuance_metadata=issuance_metadata,
+            issuance_metadata_sha256=issuance_metadata_sha256,
         )
         raw = canonical_guided_review_registry_json_bytes(record)
         path = self.record_path(operation_id)
@@ -166,6 +212,29 @@ class GuidedDecisionReviewDispositionRegistry:
                 "Created guided review disposition record does not match read-back bytes"
             )
         return stored, created
+
+    def _replay_legacy(
+        self,
+        *,
+        operation_id: str,
+        request_binding_sha256: str,
+    ) -> tuple[dict[str, Any], bool]:
+        """Return an existing v1 record without ever creating a legacy object."""
+        try:
+            record, _ = self._read_required(operation_id)
+        except KeyError as exc:
+            raise GuidedDecisionReviewDispositionRegistryValidationError(
+                "A new guided review disposition record requires v2"
+            ) from exc
+        if (
+            record["contract_version"]
+            != GUIDED_DECISION_REVIEW_DISPOSITION_RECORD_CONTRACT_VERSION
+            or record["request_binding_sha256"] != request_binding_sha256
+        ):
+            raise GuidedDecisionReviewDispositionRegistryConflictError(
+                "Operation ID is already bound to another guided review disposition"
+            )
+        return record, False
 
     def read(
         self,
@@ -282,6 +351,7 @@ class GuidedDecisionReviewDispositionRegistry:
                 expected_bundle_type=self.bundle_type,
                 expected_operation_id=expected_operation_id,
                 service=self._service,
+                backend=self.backend,
             )
         except (GuidedDecisionReviewDispositionRegistryError, ValueError) as exc:
             raise GuidedDecisionReviewDispositionRegistryError(
@@ -313,23 +383,26 @@ class GuidedDecisionReviewDispositionRegistry:
         operation_id: str,
         reviewer_user_id: str,
         source_disposition_receipt_sha256: str,
+        source_issuance_metadata_sha256: str | None,
     ) -> str:
-        return guided_review_registry_sha256(
-            {
-                "tenant_id": self.tenant_id,
-                "project_id": self.project_id,
-                "bundle_type": self.bundle_type,
-                "operation_id": operation_id,
-                "reviewer_user_id": reviewer_user_id,
-                "source_disposition_receipt_sha256": (
-                    source_disposition_receipt_sha256
-                ),
-            }
-        )
+        binding: dict[str, str] = {
+            "tenant_id": self.tenant_id,
+            "project_id": self.project_id,
+            "bundle_type": self.bundle_type,
+            "operation_id": operation_id,
+            "reviewer_user_id": reviewer_user_id,
+            "source_disposition_receipt_sha256": source_disposition_receipt_sha256,
+        }
+        if source_issuance_metadata_sha256 is not None:
+            binding["source_issuance_metadata_sha256"] = (
+                source_issuance_metadata_sha256
+            )
+        return guided_review_registry_sha256(binding)
 
     def _build_record(
         self,
         *,
+        contract_version: str,
         operation_id: str,
         request_binding_sha256: str,
         reviewer_user_id: str,
@@ -337,12 +410,12 @@ class GuidedDecisionReviewDispositionRegistry:
         reviewer_role: str,
         source: GuidedDecisionReviewDispositionReceipt,
         source_hash: str,
+        issuance_metadata: dict[str, Any] | None,
+        issuance_metadata_sha256: str | None,
     ) -> dict[str, Any]:
         source_value = source.model_dump(mode="json")
         record: dict[str, Any] = {
-            "contract_version": (
-                GUIDED_DECISION_REVIEW_DISPOSITION_RECORD_CONTRACT_VERSION
-            ),
+            "contract_version": _record_contract_version(contract_version),
             "operation_id": operation_id,
             "request_binding_sha256": request_binding_sha256,
             "tenant_id": self.tenant_id,
@@ -372,6 +445,10 @@ class GuidedDecisionReviewDispositionRegistry:
             "requires_recheck_before_reliance": True,
             "authority": source.authority.model_dump(mode="json"),
         }
+        if issuance_metadata is not None and issuance_metadata_sha256 is not None:
+            record["source_issuance_metadata"] = issuance_metadata
+            record["source_issuance_metadata_sha256"] = issuance_metadata_sha256
+            record["issuance_provenance"] = "server_issued"
         record["record_binding_sha256"] = guided_review_registry_sha256(record)
         return record
 
@@ -389,7 +466,7 @@ class GuidedDecisionReviewDispositionRegistry:
 
     @staticmethod
     def _summary(record: dict[str, Any]) -> dict[str, Any]:
-        return {
+        summary = {
             "contract_version": record["contract_version"],
             "operation_id": record["operation_id"],
             "tenant_id": record["tenant_id"],
@@ -424,6 +501,14 @@ class GuidedDecisionReviewDispositionRegistry:
             "requires_recheck_before_reliance": True,
             "authority": record["authority"],
         }
+        if record["contract_version"] == GUIDED_DECISION_REVIEW_DISPOSITION_RECORD_CONTRACT_VERSION:
+            summary["issuance_provenance"] = "legacy_issuance_unrecorded"
+        else:
+            summary["issuance_provenance"] = "server_issued"
+            summary["source_issuance_metadata_sha256"] = record[
+                "source_issuance_metadata_sha256"
+            ]
+        return summary
 
 
 def _parse_source_receipt(value: object) -> GuidedDecisionReviewDispositionReceipt:
@@ -438,6 +523,27 @@ def _parse_source_receipt(value: object) -> GuidedDecisionReviewDispositionRecei
         ) from exc
 
 
+def _require_request_contract_version(value: object) -> str:
+    if value not in {
+        "guided-decision-review-disposition-record-request.v1",
+        "guided-decision-review-disposition-record-request.v2",
+    }:
+        raise GuidedDecisionReviewDispositionRegistryError(
+            "Invalid guided review disposition record request version"
+        )
+    return value
+
+
+def _record_contract_version(request_contract_version: str) -> str:
+    if request_contract_version.endswith(".v1"):
+        return GUIDED_DECISION_REVIEW_DISPOSITION_RECORD_CONTRACT_VERSION
+    if request_contract_version.endswith(".v2"):
+        return GUIDED_DECISION_REVIEW_DISPOSITION_RECORD_V2_CONTRACT_VERSION
+    raise GuidedDecisionReviewDispositionRegistryError(
+        "Invalid guided review disposition record request version"
+    )
+
+
 def _validate_record(
     value: object,
     *,
@@ -446,14 +552,30 @@ def _validate_record(
     expected_bundle_type: str,
     expected_operation_id: str | None,
     service: GuidedDecisionReviewService,
+    backend: StateBackend,
 ) -> dict[str, Any]:
-    if type(value) is not dict or set(value) != _RECORD_FIELDS:
+    if type(value) is not dict:
         raise GuidedDecisionReviewDispositionRegistryError(
             "Invalid guided review disposition record"
         )
     record = value
+    contract_version = record.get("contract_version")
+    if contract_version == GUIDED_DECISION_REVIEW_DISPOSITION_RECORD_CONTRACT_VERSION:
+        record_model = GuidedDecisionReviewDispositionRecord
+        expected_fields = _RECORD_FIELDS
+    elif contract_version == GUIDED_DECISION_REVIEW_DISPOSITION_RECORD_V2_CONTRACT_VERSION:
+        record_model = GuidedDecisionReviewDispositionRecordV2
+        expected_fields = _RECORD_V2_FIELDS
+    else:
+        raise GuidedDecisionReviewDispositionRegistryError(
+            "Invalid guided review disposition record"
+        )
+    if set(record) != expected_fields:
+        raise GuidedDecisionReviewDispositionRegistryError(
+            "Invalid guided review disposition record"
+        )
     try:
-        parsed = GuidedDecisionReviewDispositionRecord.model_validate(
+        parsed = record_model.model_validate(
             record,
             strict=True,
         )
@@ -492,18 +614,52 @@ def _validate_record(
         expected_project_id=expected_project_id,
         expected_bundle_type=expected_bundle_type,
     )
-    expected_request_binding = guided_review_registry_sha256(
-        {
-            "tenant_id": expected_tenant_id,
-            "project_id": expected_project_id,
-            "bundle_type": expected_bundle_type,
-            "operation_id": operation_id,
-            "reviewer_user_id": parsed.reviewer_user_id,
-            "source_disposition_receipt_sha256": (
-                parsed.source_disposition_receipt_sha256
-            ),
-        }
-    )
+    request_binding: dict[str, str] = {
+        "tenant_id": expected_tenant_id,
+        "project_id": expected_project_id,
+        "bundle_type": expected_bundle_type,
+        "operation_id": operation_id,
+        "reviewer_user_id": parsed.reviewer_user_id,
+        "source_disposition_receipt_sha256": (
+            parsed.source_disposition_receipt_sha256
+        ),
+    }
+    if isinstance(parsed, GuidedDecisionReviewDispositionRecordV2):
+        try:
+            authoritative_issuance = (
+                get_guided_decision_review_disposition_issuance_registry(
+                    tenant_id=expected_tenant_id,
+                    project_id=expected_project_id,
+                    bundle_type=expected_bundle_type,
+                    backend=backend,
+                ).read(parsed.source_disposition_receipt_sha256)
+            )
+        except KeyError as exc:
+            raise GuidedDecisionReviewDispositionRegistryError(
+                "H129 v2 issuance proof is unavailable"
+            ) from exc
+        except GuidedDecisionReviewDispositionIssuanceRegistryError as exc:
+            raise GuidedDecisionReviewDispositionRegistryError(
+                "H129 v2 issuance proof is corrupt"
+            ) from exc
+        authoritative_issuance_sha256 = guided_review_issuance_sha256(
+            authoritative_issuance
+        )
+        if (
+            parsed.source_issuance_metadata.model_dump(mode="json")
+            != authoritative_issuance
+            or parsed.source_issuance_metadata_sha256
+            != authoritative_issuance_sha256
+            or parsed.source_issuance_metadata.disposition_receipt_sha256
+            != parsed.source_disposition_receipt_sha256
+        ):
+            raise GuidedDecisionReviewDispositionRegistryError(
+                "H129 v2 issuance proof does not match the authoritative record"
+            )
+        request_binding["source_issuance_metadata_sha256"] = (
+            authoritative_issuance_sha256
+        )
+    expected_request_binding = guided_review_registry_sha256(request_binding)
     if parsed.request_binding_sha256 != expected_request_binding:
         raise GuidedDecisionReviewDispositionRegistryError(
             "Invalid registry request binding"

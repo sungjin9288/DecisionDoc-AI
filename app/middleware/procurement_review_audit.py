@@ -86,6 +86,8 @@ def procurement_review_audit_detail(
         "guided_review_disposition_receipt_sha256": (
             "disposition_receipt_sha256"
         ),
+        "guided_review_issuance_record_sha256": "issuance_record_sha256",
+        "guided_review_issuance_binding_sha256": "issuance_binding_sha256",
     }
     for state_field, detail_field in text_fields.items():
         value = getattr(request.state, state_field, "") or ""
@@ -136,6 +138,8 @@ def procurement_review_audit_detail(
             "review_state_status",
             "review_disposition",
             "disposition_binding_sha256",
+            "issuance_provenance",
+            "source_issuance_metadata_sha256",
             "replay",
             "review_state_only",
             "review_only",

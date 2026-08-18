@@ -37,6 +37,11 @@ from app.storage.guided_decision_review_disposition_registry import (
     canonical_guided_review_registry_json_bytes,
     get_guided_decision_review_disposition_registry,
 )
+from app.storage.guided_decision_review_disposition_issuance_registry import (
+    GuidedDecisionReviewDispositionIssuanceRegistryError,
+    get_guided_decision_review_disposition_issuance_registry,
+    guided_review_issuance_sha256,
+)
 
 
 router = APIRouter()
@@ -332,7 +337,7 @@ def download_guided_decision_review_disposition(
     payload: GuidedDecisionReviewDispositionRequest,
     request: Request,
 ) -> Response:
-    """Issue a non-persistent disposition for one exact H127 receipt."""
+    """Issue a non-persistent H128 receipt after same-backend proof."""
     _apply_procurement_observability(
         request,
         action="guided_review_disposition",
@@ -362,6 +367,24 @@ def download_guided_decision_review_disposition(
         receipt
     )
     body_sha256 = hashlib.sha256(body).hexdigest()
+    try:
+        issuance_metadata, _ = (
+            get_guided_decision_review_disposition_issuance_registry(
+                tenant_id=get_tenant_id(request),
+                project_id=project_id,
+                bundle_type=receipt.bundle_type,
+                backend=request.app.state.state_backend,
+            ).create(
+                disposition_receipt_sha256=body_sha256,
+            )
+        )
+    except GuidedDecisionReviewDispositionIssuanceRegistryError as exc:
+        logger.error("Guided review H128 issuance proof failed closed.", exc_info=exc)
+        raise HTTPException(
+            status_code=503,
+            detail="Guided Decision Review 처리 영수증의 발급 근거를 확인할 수 없습니다.",
+        ) from exc
+    issuance_record_sha256 = guided_review_issuance_sha256(issuance_metadata)
     request.state.decision_evidence_projection_fingerprint = (
         current_handoff.projection_fingerprint
     )
@@ -380,6 +403,10 @@ def download_guided_decision_review_disposition(
         receipt.disposition_binding_sha256
     )
     request.state.guided_review_disposition_receipt_sha256 = body_sha256
+    request.state.guided_review_issuance_record_sha256 = issuance_record_sha256
+    request.state.guided_review_issuance_binding_sha256 = issuance_metadata[
+        "issuance_binding_sha256"
+    ]
     request.state.guided_review_read_only = True
     request.state.guided_review_snapshot_atomic = False
     request.state.guided_review_requires_recheck_before_reliance = True
@@ -398,6 +425,9 @@ def download_guided_decision_review_disposition(
             "Content-Disposition": f'attachment; filename="{filename}"',
             "X-DecisionDoc-Guided-Review-Disposition-Receipt-SHA256": (
                 body_sha256
+            ),
+            "X-DecisionDoc-Guided-Review-Disposition-Issuance-Record-SHA256": (
+                issuance_record_sha256
             ),
             "X-DecisionDoc-Projection-Fingerprint": (
                 current_handoff.projection_fingerprint
@@ -458,6 +488,17 @@ def _guided_review_registry_record_response(
         ),
         "X-DecisionDoc-Operational-Approval": "false",
     }
+    if record["contract_version"] == "guided-decision-review-disposition-record.v1":
+        headers["X-DecisionDoc-Guided-Review-Disposition-Issuance-Provenance"] = (
+            "legacy-unrecorded"
+        )
+    else:
+        headers["X-DecisionDoc-Guided-Review-Disposition-Issuance-Provenance"] = (
+            "server-issued"
+        )
+        headers[
+            "X-DecisionDoc-Guided-Review-Disposition-Issuance-Record-SHA256"
+        ] = record["source_issuance_metadata_sha256"]
     if attachment:
         headers["Content-Disposition"] = (
             'attachment; filename="guided-decision-review-disposition-record-'
@@ -477,7 +518,7 @@ def _set_guided_review_registry_audit(
     *,
     replay: bool,
 ) -> None:
-    request.state.guided_review_registry_detail = {
+    detail = {
         "operation_id": record["operation_id"],
         "record_sha256": hashlib.sha256(
             canonical_guided_review_registry_json_bytes(record)
@@ -505,6 +546,14 @@ def _set_guided_review_registry_audit(
         "requires_recheck_before_reliance": True,
         **record["authority"],
     }
+    if record["contract_version"] == "guided-decision-review-disposition-record.v1":
+        detail["issuance_provenance"] = "legacy_issuance_unrecorded"
+    else:
+        detail["issuance_provenance"] = "server_issued"
+        detail["source_issuance_metadata_sha256"] = record[
+            "source_issuance_metadata_sha256"
+        ]
+    request.state.guided_review_registry_detail = detail
 
 
 def _load_guided_review_registry_scope(
@@ -546,6 +595,8 @@ def create_guided_decision_review_disposition_record(
             project_id=project_id,
             bundle_type=bundle_type,
         ).create(
+            contract_version=payload.contract_version,
+            allow_legacy_create=False,
             operation_id=payload.operation_id,
             reviewer_user_id=request.state.user_id,
             reviewer_username=request.state.username,

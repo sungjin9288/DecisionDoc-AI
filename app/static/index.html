@@ -25805,6 +25805,9 @@
   const GUIDED_DECISION_REVIEW_DISPOSITION_SHA256_HEADER = (
     'X-DecisionDoc-Guided-Review-Disposition-Receipt-SHA256'
   );
+  const GUIDED_DECISION_REVIEW_DISPOSITION_ISSUANCE_SHA256_HEADER = (
+    'X-DecisionDoc-Guided-Review-Disposition-Issuance-Record-SHA256'
+  );
   const GUIDED_DECISION_REVIEW_REGISTRY_RECORD_SHA256_HEADER = (
     'X-DecisionDoc-Guided-Review-Disposition-Record-SHA256'
   );
@@ -25949,6 +25952,40 @@
     'snapshot_atomic',
     'requires_recheck_before_reliance',
     'authority',
+  ];
+  const GUIDED_DECISION_REVIEW_ISSUANCE_FIELDS = [
+    'contract_version',
+    'tenant_id',
+    'project_id',
+    'bundle_type',
+    'disposition_receipt_sha256',
+    'issued_at',
+    'issuance_binding_sha256',
+    'issuance_record_binding_sha256',
+    'issuance_status',
+    'evidence_only',
+    'review_state_only',
+    'review_only',
+    'read_only',
+    'reviewer_identity_bound',
+    'snapshot_atomic',
+    'requires_recheck_before_reliance',
+    'disposition_receipt_persisted',
+    'authority',
+  ];
+  const GUIDED_DECISION_REVIEW_REGISTRY_RECORD_V2_FIELDS = [
+    ...GUIDED_DECISION_REVIEW_REGISTRY_RECORD_FIELDS,
+    'source_issuance_metadata',
+    'source_issuance_metadata_sha256',
+    'issuance_provenance',
+  ];
+  const GUIDED_DECISION_REVIEW_REGISTRY_SUMMARY_LEGACY_FIELDS = [
+    ...GUIDED_DECISION_REVIEW_REGISTRY_SUMMARY_FIELDS,
+    'issuance_provenance',
+  ];
+  const GUIDED_DECISION_REVIEW_REGISTRY_SUMMARY_V2_FIELDS = [
+    ...GUIDED_DECISION_REVIEW_REGISTRY_SUMMARY_LEGACY_FIELDS,
+    'source_issuance_metadata_sha256',
   ];
 
   const GUIDED_DECISION_REVIEW_FALSE_EXPORT_FIELD = [
@@ -26741,17 +26778,85 @@
     );
   }
 
+  async function normalizeGuidedDecisionReviewIssuanceMetadata(
+    metadata,
+    { projectId, bundleType, dispositionReceiptSha256 } = {},
+  ) {
+    if (
+      !hasGuidedDecisionReviewFields(
+        metadata,
+        GUIDED_DECISION_REVIEW_ISSUANCE_FIELDS,
+      )
+      || metadata.contract_version
+        !== 'guided-decision-review-disposition-issuance.v1'
+      || metadata.tenant_id !== _currentTenantId
+      || metadata.project_id !== projectId
+      || metadata.bundle_type !== bundleType
+      || metadata.disposition_receipt_sha256 !== dispositionReceiptSha256
+      || ![
+        metadata.disposition_receipt_sha256,
+        metadata.issuance_binding_sha256,
+        metadata.issuance_record_binding_sha256,
+      ].every(isGuidedDecisionReviewSha256)
+      || !isGuidedDecisionReviewRegistryTimestamp(metadata.issued_at)
+      || metadata.issuance_status !== 'issued'
+      || metadata.evidence_only !== true
+      || metadata.review_state_only !== true
+      || metadata.review_only !== true
+      || metadata.read_only !== true
+      || metadata.reviewer_identity_bound !== false
+      || metadata.snapshot_atomic !== false
+      || metadata.requires_recheck_before_reliance !== true
+      || metadata.disposition_receipt_persisted !== false
+      || !isGuidedDecisionReviewAuthority(metadata.authority)
+    ) {
+      throw new Error('Guided review issuance proof verification failed.');
+    }
+    const issuanceBinding = {
+      contract_version: 'guided-decision-review-disposition-issuance.v1',
+      tenant_id: metadata.tenant_id,
+      project_id: metadata.project_id,
+      bundle_type: metadata.bundle_type,
+      disposition_receipt_sha256: metadata.disposition_receipt_sha256,
+    };
+    const issuanceBindingBytes = new TextEncoder().encode(
+      `${canonicalGuidedDecisionReviewJson(issuanceBinding)}\n`,
+    );
+    const recordBinding = { ...metadata };
+    delete recordBinding.issuance_record_binding_sha256;
+    const recordBindingBytes = new TextEncoder().encode(
+      `${canonicalGuidedDecisionReviewJson(recordBinding)}\n`,
+    );
+    if (
+      metadata.issuance_binding_sha256 !== await sha256Hex(issuanceBindingBytes)
+      || metadata.issuance_record_binding_sha256
+        !== await sha256Hex(recordBindingBytes)
+    ) {
+      throw new Error('Guided review issuance proof binding verification failed.');
+    }
+    return metadata;
+  }
+
   async function normalizeGuidedDecisionReviewRegistryRecord(
     record,
     { projectId, bundleType, verifiedDisposition = null } = {},
   ) {
-    if (
-      !hasGuidedDecisionReviewFields(
+    const isV1 = (
+      record?.contract_version === 'guided-decision-review-disposition-record.v1'
+      && hasGuidedDecisionReviewFields(
         record,
         GUIDED_DECISION_REVIEW_REGISTRY_RECORD_FIELDS,
       )
-      || record.contract_version
-        !== 'guided-decision-review-disposition-record.v1'
+    );
+    const isV2 = (
+      record?.contract_version === 'guided-decision-review-disposition-record.v2'
+      && hasGuidedDecisionReviewFields(
+        record,
+        GUIDED_DECISION_REVIEW_REGISTRY_RECORD_V2_FIELDS,
+      )
+    );
+    if (
+      !(isV1 || isV2)
       || !isGuidedDecisionReviewRegistryUuid(record.operation_id)
       || ![
         record.request_binding_sha256,
@@ -26815,6 +26920,30 @@
     ) {
       throw new Error('Guided review disposition record source verification failed.');
     }
+    if (isV2) {
+      const issuance = await normalizeGuidedDecisionReviewIssuanceMetadata(
+        record.source_issuance_metadata,
+        {
+          projectId,
+          bundleType,
+          dispositionReceiptSha256: record.source_disposition_receipt_sha256,
+        },
+      );
+      const issuanceBytes = new TextEncoder().encode(
+        `${canonicalGuidedDecisionReviewJson(issuance)}\n`,
+      );
+      if (
+        record.issuance_provenance !== 'server_issued'
+        || record.source_issuance_metadata_sha256 !== await sha256Hex(issuanceBytes)
+        || (
+          verifiedDisposition
+          && record.source_issuance_metadata_sha256
+            !== verifiedDisposition.issuanceRecordSha256
+        )
+      ) {
+        throw new Error('Guided review disposition issuance proof verification failed.');
+      }
+    }
     const requestBinding = {
       tenant_id: record.tenant_id,
       project_id: record.project_id,
@@ -26823,6 +26952,11 @@
       reviewer_user_id: record.reviewer_user_id,
       source_disposition_receipt_sha256: record.source_disposition_receipt_sha256,
     };
+    if (isV2) {
+      requestBinding.source_issuance_metadata_sha256 = (
+        record.source_issuance_metadata_sha256
+      );
+    }
     const requestBindingBytes = new TextEncoder().encode(
       `${canonicalGuidedDecisionReviewJson(requestBinding)}\n`,
     );
@@ -26845,13 +26979,25 @@
     projectId,
     bundleType,
   ) {
-    if (
-      !hasGuidedDecisionReviewFields(
+    const isLegacy = (
+      summary?.contract_version === 'guided-decision-review-disposition-record.v1'
+      && hasGuidedDecisionReviewFields(
         summary,
-        GUIDED_DECISION_REVIEW_REGISTRY_SUMMARY_FIELDS,
+        GUIDED_DECISION_REVIEW_REGISTRY_SUMMARY_LEGACY_FIELDS,
       )
-      || summary.contract_version
-        !== 'guided-decision-review-disposition-record.v1'
+      && summary.issuance_provenance === 'legacy_issuance_unrecorded'
+    );
+    const isV2 = (
+      summary?.contract_version === 'guided-decision-review-disposition-record.v2'
+      && hasGuidedDecisionReviewFields(
+        summary,
+        GUIDED_DECISION_REVIEW_REGISTRY_SUMMARY_V2_FIELDS,
+      )
+      && summary.issuance_provenance === 'server_issued'
+      && isGuidedDecisionReviewSha256(summary.source_issuance_metadata_sha256)
+    );
+    if (
+      !(isLegacy || isV2)
       || !isGuidedDecisionReviewRegistryUuid(summary.operation_id)
       || summary.tenant_id !== _currentTenantId
       || summary.project_id !== projectId
@@ -27415,6 +27561,11 @@
           GUIDED_DECISION_REVIEW_DISPOSITION_SHA256_HEADER,
         ) || '',
       ).trim().toLowerCase();
+      const issuanceRecordSha256 = String(
+        response.headers.get(
+          GUIDED_DECISION_REVIEW_DISPOSITION_ISSUANCE_SHA256_HEADER,
+        ) || '',
+      ).trim().toLowerCase();
       const contentType = String(
         response.headers.get('Content-Type') || '',
       ).toLowerCase();
@@ -27434,6 +27585,7 @@
         || response.headers.get('X-Content-Type-Options') !== 'nosniff'
         || response.headers.get('X-DecisionDoc-Operational-Approval') !== 'false'
         || !isGuidedDecisionReviewSha256(bodySha256)
+        || !isGuidedDecisionReviewSha256(issuanceRecordSha256)
         || bodySha256 !== await sha256Hex(bodyBytes)
       ) {
         throw new Error(
@@ -27462,6 +27614,7 @@
         receipt,
         bodyBytes: new Uint8Array(bodyBytes),
         bodySha256,
+        issuanceRecordSha256,
         projectLoadId: context.projectLoadId,
         authRevision: context.authRevision,
         tenantId: context.tenantId,
@@ -27554,7 +27707,7 @@
     }
     target.innerHTML = `<ul>${records.map(record => `
       <li>
-        <span>${escapeHtml(record.recorded_at)} · ${escapeHtml(record.reviewer_username)} (${escapeHtml(record.reviewer_role)}) · ${escapeHtml(record.review_disposition)}</span>
+        <span>${escapeHtml(record.recorded_at)} · ${escapeHtml(record.reviewer_username)} (${escapeHtml(record.reviewer_role)}) · ${escapeHtml(record.review_disposition)} · ${record.issuance_provenance === 'server_issued' ? 'Server-issued source' : 'Legacy issuance unrecorded'}</span>
         <button type="button" data-guided-decision-review-registry-download="${escapeHtml(record.operation_id)}">Download record</button>
       </li>
     `).join('')}</ul>`;
@@ -27676,7 +27829,7 @@
           method: 'POST',
           headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            contract_version: 'guided-decision-review-disposition-record-request.v1',
+            contract_version: 'guided-decision-review-disposition-record-request.v2',
             operation_id: token.operationId,
             source_disposition_receipt: source.receipt,
             source_disposition_receipt_sha256: source.bodySha256,
@@ -27694,6 +27847,16 @@
       const bodySha256 = String(
         response.headers.get(
           GUIDED_DECISION_REVIEW_REGISTRY_RECORD_SHA256_HEADER,
+        ) || '',
+      ).trim().toLowerCase();
+      const issuanceProvenance = String(
+        response.headers.get(
+          'X-DecisionDoc-Guided-Review-Disposition-Issuance-Provenance',
+        ) || '',
+      ).trim();
+      const issuanceRecordSha256 = String(
+        response.headers.get(
+          GUIDED_DECISION_REVIEW_DISPOSITION_ISSUANCE_SHA256_HEADER,
         ) || '',
       ).trim().toLowerCase();
       const bodyText = new TextDecoder().decode(bodyBytes);
@@ -27716,6 +27879,17 @@
         || bodySha256 !== await sha256Hex(bodyBytes)
         || bodyText !== `${canonicalGuidedDecisionReviewJson(record)}\n`
         || record.operation_id !== token.operationId
+        || (
+          record.contract_version === 'guided-decision-review-disposition-record.v1'
+          && issuanceProvenance !== 'legacy-unrecorded'
+        )
+        || (
+          record.contract_version === 'guided-decision-review-disposition-record.v2'
+          && (
+            issuanceProvenance !== 'server-issued'
+            || issuanceRecordSha256 !== record.source_issuance_metadata_sha256
+          )
+        )
       ) {
         throw new Error('Guided review disposition create verification failed.');
       }
@@ -27772,6 +27946,16 @@
       const contentDisposition = String(
         response.headers.get('Content-Disposition') || '',
       );
+      const issuanceProvenance = String(
+        response.headers.get(
+          'X-DecisionDoc-Guided-Review-Disposition-Issuance-Provenance',
+        ) || '',
+      ).trim();
+      const issuanceRecordSha256 = String(
+        response.headers.get(
+          GUIDED_DECISION_REVIEW_DISPOSITION_ISSUANCE_SHA256_HEADER,
+        ) || '',
+      ).trim().toLowerCase();
       const bodyText = new TextDecoder().decode(bodyBytes);
       const record = await normalizeGuidedDecisionReviewRegistryRecord(
         JSON.parse(bodyText),
@@ -27791,6 +27975,17 @@
         || bodySha256 !== await sha256Hex(bodyBytes)
         || bodyText !== `${canonicalGuidedDecisionReviewJson(record)}\n`
         || record.operation_id !== operationId
+        || (
+          record.contract_version === 'guided-decision-review-disposition-record.v1'
+          && issuanceProvenance !== 'legacy-unrecorded'
+        )
+        || (
+          record.contract_version === 'guided-decision-review-disposition-record.v2'
+          && (
+            issuanceProvenance !== 'server-issued'
+            || issuanceRecordSha256 !== record.source_issuance_metadata_sha256
+          )
+        )
       ) {
         throw new Error('Guided review disposition download verification failed.');
       }

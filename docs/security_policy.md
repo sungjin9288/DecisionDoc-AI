@@ -189,3 +189,16 @@ DecisionDoc AI의 정보 자산을 보호하고 서비스 연속성을 유지한
 Untrusted title and query input cannot choose archive members. Format parsing trims/lowercases/deduplicates only the allowlisted formats and rejects any unknown or empty effective set with `EXPORT_FORMAT_INVALID`. ZIP members are fixed ASCII paths, no directories/symlinks/duplicates/comments/extra fields are accepted, and every converter plus the independent byte-only verifier must succeed before an `application/zip` response exists. Success has `no-store`, `nosniff`, content-addressed ASCII filename, packet/manifest SHA-256, verified, artifact-count, and false operational-approval headers.
 
 SHA-256 verification establishes integrity of received bytes, not issuer authenticity, human completion, operational approval, persistence, provider execution, AWS/G2B submission, dataset upload, training, or deployment authority. The browser refuses a missing/mismatched packet hash or any non-`true` verified/non-`false` operational approval header before allocating a Blob or starting a download.
+
+## H128 issuance and H129 v2 provenance boundary
+
+H128 issuance metadata is content-addressed by the exact canonical receipt
+SHA-256 below the selected tenant/project/bundle StateBackend path. It accepts
+only canonical strict fields and stores no receipt body, identity/session/network
+metadata, token, rationale, secret, approval, or execution authority. Corrupt,
+foreign, unavailable, disappearing, or uncertain-unreconciled metadata fails
+closed without repairing source bytes. H129 v2 independently reads the proof
+before create and on later record reads; v1 bytes are never migrated/re-written
+and are explicitly Legacy issuance unrecorded. This same-backend existential
+proof is not a signature, actor attestation, currentness, atomic snapshot,
+approval, or external authenticity.

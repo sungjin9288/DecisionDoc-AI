@@ -1065,6 +1065,7 @@ def test_guided_review_disposition_downloads_verified_receipt(page):
                   'Content-Disposition': 'attachment; filename="guided-decision-review-disposition-receipt-aaaaaaaaaaaa.json"',
                   'X-Content-Type-Options': 'nosniff',
                   'X-DecisionDoc-Guided-Review-Disposition-Receipt-SHA256': dispositionSha256,
+                  'X-DecisionDoc-Guided-Review-Disposition-Issuance-Record-SHA256': 'd'.repeat(64),
                   'X-DecisionDoc-Projection-Fingerprint': 'a'.repeat(64),
                   'X-DecisionDoc-Review-State-Status': 'unchanged',
                   'X-DecisionDoc-Operational-Approval': 'false',
@@ -1211,6 +1212,9 @@ def test_guided_review_disposition_rejects_binding_drift(page):
                       isDisposition
                         ? dispositionSha256
                         : (isRecheck ? recheckSha256 : sourceSha256),
+                ...(isDisposition ? {
+                  'X-DecisionDoc-Guided-Review-Disposition-Issuance-Record-SHA256': 'd'.repeat(64),
+                } : {}),
                 'X-DecisionDoc-Projection-Fingerprint': 'a'.repeat(64),
                 'X-DecisionDoc-Review-State-Status': 'unchanged',
                 'X-DecisionDoc-Operational-Approval': 'false',
@@ -1402,6 +1406,7 @@ def test_guided_review_disposition_registry_request_token_prevents_stale_clear_a
                   'Content-Disposition': 'attachment; filename="guided-decision-review-disposition-receipt-aaaaaaaaaaaa.json"',
                   'X-Content-Type-Options': 'nosniff',
                   'X-DecisionDoc-Guided-Review-Disposition-Receipt-SHA256': dispositionSha256,
+                  'X-DecisionDoc-Guided-Review-Disposition-Issuance-Record-SHA256': 'd'.repeat(64),
                   'X-DecisionDoc-Projection-Fingerprint': 'a'.repeat(64),
                   'X-DecisionDoc-Review-State-Status': 'unchanged',
                   'X-DecisionDoc-Operational-Approval': 'false',

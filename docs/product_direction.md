@@ -364,8 +364,12 @@ mutable username and role remain first-write historical display values. This
 registry is not an approval ledger or workflow engine: the source remains
 reviewer-unbound and non-persistent, and the wrapper remains review-only,
 read-only, non-atomic, and recheck-required. Product claims must not treat H129
-as closing prior server issuance, human UAT, M1/M2/M6, deployment, or external
-approval evidence.
+as closing human UAT, M1/M2/M6, deployment, or external approval evidence.
+
+H128 now records a hash-only same-backend issuance proof and H129 v2 embeds
+strict metadata after independent validation; legacy v1 remains explicitly
+issuance-unrecorded. Product claims must not treat this as a signature, actor
+attestation, currentness, atomic snapshot, approval, or external authenticity.
 
 ## Generated document export packets
 

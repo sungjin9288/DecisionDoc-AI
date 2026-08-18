@@ -20,6 +20,10 @@ from app.storage.guided_decision_review_disposition_registry import (
     canonical_guided_review_registry_json_bytes,
     guided_review_registry_sha256,
 )
+from app.storage.guided_decision_review_disposition_issuance_registry import (
+    get_guided_decision_review_disposition_issuance_registry,
+    guided_review_issuance_sha256,
+)
 from app.storage.state_backend import LocalStateBackend, S3StateBackend
 from tests.conditional_state_support import MemoryS3Client
 
@@ -239,6 +243,40 @@ def test_registry_reconciles_uncertain_conditional_create_only_after_exact_bindi
 
     assert created is False
     assert registry.read(operation_id) == record
+
+
+def test_registry_v2_embeds_only_authoritative_same_backend_issuance_proof(
+    tmp_path: Path,
+) -> None:
+    backend = LocalStateBackend(tmp_path / "state")
+    registry = _registry(backend)
+    source = _source_receipt()
+    source_hash = guided_review_registry_sha256(source)
+    issuance, _ = get_guided_decision_review_disposition_issuance_registry(
+        tenant_id="alpha",
+        project_id="project-1",
+        bundle_type="proposal_kr",
+        backend=backend,
+    ).create(disposition_receipt_sha256=source_hash)
+
+    record, created = registry.create(
+        contract_version="guided-decision-review-disposition-record-request.v2",
+        operation_id=str(uuid4()),
+        reviewer_user_id="reviewer-1",
+        reviewer_username="first-name",
+        reviewer_role="member",
+        source_disposition_receipt=source,
+        source_disposition_receipt_sha256=source_hash,
+    )
+
+    assert created is True
+    assert record["contract_version"] == "guided-decision-review-disposition-record.v2"
+    assert record["issuance_provenance"] == "server_issued"
+    assert record["source_issuance_metadata"] == issuance
+    assert record["source_issuance_metadata_sha256"] == guided_review_issuance_sha256(
+        issuance
+    )
+    assert "source_disposition_receipt" not in registry.list_summaries()[0]
 
 
 def test_registry_path_is_scoped_and_uses_only_operation_hash(tmp_path: Path) -> None:

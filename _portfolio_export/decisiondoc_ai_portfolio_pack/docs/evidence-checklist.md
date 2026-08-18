@@ -177,3 +177,16 @@ Completion readiness/proof receipt는 gitignored `reports/completion-readiness/`
 - 고객/기관 내부자료: 포함하지 않음
 - 소스코드 전체 폴더: portfolio zip에는 포함하지 않음
 - generated runtime data: zip에는 포함하지 않음
+
+## H128/H129 issuance provenance boundary
+
+- H128 success is same-backend existential evidence: strict metadata for the
+  tenant/project/bundle/exact canonical receipt SHA-256 is conditionally
+  created and exact-read-back before the receipt body returns.
+- Metadata and audit keep only scope/hash/binding/false-boundary values; they
+  keep no receipt body, identity, session, network value, token, rationale,
+  secret, approval, or execution claim.
+- H129 v2 revalidates and embeds only that metadata plus its hash. Existing v1
+  bytes are not migrated or rewritten and are labeled Legacy issuance
+  unrecorded. This is not a signature, actor attestation, currentness, atomic
+  snapshot, approval, or external authenticity.

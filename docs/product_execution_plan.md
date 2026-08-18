@@ -278,9 +278,17 @@ tenant/project/bundle/operation, binds replay to the stable reviewer and exact
 H128 source, and exposes only strictly revalidated scoped list/read/download
 views. Browser work starts only from verified page-memory H128 evidence and
 uses request-owned single flight. This execution slice does not close M1, M2,
-M6, human UAT, deployment, prior H128 server issuance, or external approval and
+M6, human UAT, deployment, or external approval and
 does not authorize any provider, AWS, G2B, upload, training, promotion, deploy,
 bid, legal, or contractual effect.
+
+H128 now conditionally creates and exact-read-backs one hash-only same-backend
+issuance metadata object per canonical receipt SHA-256. H129 v2 independently
+validates and embeds only that metadata plus its hash; v1 stays immutable and
+Legacy issuance unrecorded. This proof is not a signature, actor attestation,
+currentness, atomic snapshot, approval, or external authenticity, and stores no
+H128 body, reviewer/session/network/token value, rationale, secret, or
+execution authority.
 
 Until then, DecisionDoc AI should be described as an actively developed MVP with strong local governance and review workflow foundations.
 

@@ -193,6 +193,16 @@ Browser가 exact body/header/contract/scope를 검증한 H127 receipt만 page me
 POST route는 strict H127 receipt, canonical receipt hash, route project/current
 bundle, current handoff/fingerprint, expected status를 다시 검증한다.
 
+H128 canonical body는 기존 byte contract를 유지한다. 성공 응답 전 selected
+backend에는 tenant/project/bundle/exact H128 SHA-256 scope의 strict
+`guided-decision-review-disposition-issuance.v1` metadata가 conditional-create와
+exact read-back으로 존재해야 한다. H129 v2는 이 same-backend issuance metadata를
+독립 재검증해 metadata와 hash만 embed하며, v1 record는 migration 없이 Legacy
+issuance unrecorded로 남는다. New H129 operation은 v2만 create하고 public v1
+request는 matching existing v1의 exact replay만 허용하며 missing v1 write는 없다.
+이 proof는 signature, actor attestation,
+currentness, atomic snapshot, approval 또는 external authenticity가 아니다.
+
 `guided-decision-review-disposition-receipt.v1`은 source receipt hash, current
 handoff/fingerprint hash, `unchanged|changed` status와 disposition을 canonical
 binding으로 결속한다. `unchanged`에는
@@ -249,11 +259,11 @@ Bandit medium/high, secret hygiene, portfolio와 diff gates도 통과했다.
 ```bash
 python3 scripts/count_readme_metrics.py --field router_files      # → 23 (top-level 라우터 파일)
 python3 scripts/count_readme_metrics.py --field service_files     # → 50 (서비스)
-python3 scripts/count_readme_metrics.py --field storage_files     # → 52 (top-level storage modules)
+python3 scripts/count_readme_metrics.py --field storage_files     # → 53 (top-level storage modules)
 python3 scripts/count_readme_metrics.py --field middleware_files  # → 12 (미들웨어)
 python3 scripts/count_readme_metrics.py --field route_decorators  # → 296 (라우트)
-python3 scripts/count_readme_metrics.py --field test_files        # → 277 (테스트 파일)
-python3 scripts/count_readme_metrics.py --field test_functions    # → 3833 (Python AST test_ 정의; pass 수 아님)
+python3 scripts/count_readme_metrics.py --field test_files        # → 278 (테스트 파일)
+python3 scripts/count_readme_metrics.py --field test_functions    # → 3845 (Python AST test_ 정의; pass 수 아님)
 ```
 
 ```text

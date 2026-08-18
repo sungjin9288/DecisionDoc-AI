@@ -3,7 +3,9 @@
 ## Purpose
 
 `guided-decision-review-disposition-receipt.v1` binds one allowlisted review
-disposition to one exact H127 recheck receipt. It lets an authorized reviewer
+disposition to one exact H127 recheck receipt. Before a successful canonical
+H128 body returns, the server creates and exact-read-backs a hash-only,
+same-backend issuance metadata object for that exact body SHA-256. It lets an authorized reviewer
 carry a deterministic statement such as “unchanged state acknowledged” or “new
 handoff required” without creating reviewer identity evidence, workflow state,
 approval, persistence, or execution authority.
@@ -172,7 +174,13 @@ disposition, binding SHA-256, response SHA-256, and fixed false boundary fields.
 The audit entry omits source receipt and handoff bodies, rationale, reviewer
 identity binding, session ID, token, IP, and User-Agent.
 
-The receipt is not persisted server-side and does not prove prior issuance,
+The H128 receipt body is not persisted server-side. Its separate issuance
+metadata proves only that the selected backend contains one strict metadata
+object for this exact canonical body hash; it stores no receipt body, reviewer,
+session, network value, token, rationale, secret, approval, or execution
+authority. This same-backend existential proof is not a signature, actor
+attestation, currentness proof, atomic snapshot, approval, or external
+authenticity. It does not prove prior issuance,
 human identity, human approval, future currentness, an atomic snapshot,
 requirement satisfaction, export execution, provider execution, bid submission,
 legal or contractual commitment, dataset upload, training, model promotion,

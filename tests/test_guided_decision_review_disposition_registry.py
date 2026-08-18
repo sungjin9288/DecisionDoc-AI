@@ -19,7 +19,11 @@ from app.schemas import (
 from app.services.auth_service import create_access_token
 from app.storage.audit_store import AuditStore
 from app.storage.guided_decision_review_disposition_registry import (
+    canonical_guided_review_registry_json_bytes,
     get_guided_decision_review_disposition_registry,
+)
+from app.storage.guided_decision_review_disposition_issuance_registry import (
+    get_guided_decision_review_disposition_issuance_registry,
 )
 from app.storage.user_store import get_user_store
 
@@ -192,11 +196,15 @@ def _h128_receipt(
     return receipt.json(), hashlib.sha256(receipt.content).hexdigest()
 
 
-def _create_payload(receipt: dict, receipt_hash: str, operation_id: str) -> dict:
+def _create_payload(
+    receipt: dict,
+    receipt_hash: str,
+    operation_id: str,
+    *,
+    contract_version: str = "guided-decision-review-disposition-record-request.v2",
+) -> dict:
     return {
-        "contract_version": (
-            "guided-decision-review-disposition-record-request.v1"
-        ),
+        "contract_version": contract_version,
         "operation_id": operation_id,
         "source_disposition_receipt": receipt,
         "source_disposition_receipt_sha256": receipt_hash,
@@ -221,7 +229,7 @@ def test_h129_create_replay_list_read_and_download_are_canonical(
     assert replay.content == first.content
     record = first.json()
     assert record["contract_version"] == (
-        "guided-decision-review-disposition-record.v1"
+        "guided-decision-review-disposition-record.v2"
     )
     assert record["tenant_id"] == "system"
     assert record["project_id"] == project_id
@@ -229,6 +237,7 @@ def test_h129_create_replay_list_read_and_download_are_canonical(
     assert record["reviewer_identity_bound"] is True
     assert record["registry_record_persisted"] is True
     assert record["source_disposition_receipt"] == receipt
+    assert record["issuance_provenance"] == "server_issued"
     assert receipt["reviewer_identity_bound"] is False
     assert receipt["disposition_receipt_persisted"] is False
     assert first.headers["cache-control"] == "no-store"
@@ -274,6 +283,173 @@ def test_h129_create_replay_list_read_and_download_are_canonical(
     )
     assert conflict.status_code == 409
     assert client.get(f"{path}/{operation_id}{BUNDLE_QUERY}", headers=admin).content == first.content
+
+
+def test_h129_v1_missing_operation_is_rejected_without_write(
+    client: TestClient,
+) -> None:
+    admin = _login(client, "h129-v1-missing-admin")
+    project_id = _ready_project(client, admin)
+    receipt, receipt_hash = _h128_receipt(client, admin, project_id)
+    operation_id = str(uuid4())
+    path = f"/projects/{project_id}/guided-decision-review-dispositions"
+    registry = get_guided_decision_review_disposition_registry(
+        tenant_id="system",
+        project_id=project_id,
+        bundle_type="proposal_kr",
+        backend=client.app.state.state_backend,
+    )
+
+    response = client.post(
+        path + BUNDLE_QUERY,
+        headers=admin,
+        json=_create_payload(
+            receipt,
+            receipt_hash,
+            operation_id,
+            contract_version="guided-decision-review-disposition-record-request.v1",
+        ),
+    )
+
+    assert response.status_code == 422
+    assert "source_disposition_receipt" not in response.text
+    assert client.app.state.state_backend.read_bytes(registry.record_path(operation_id)) is None
+
+
+def test_h129_v1_public_post_replays_existing_legacy_record_exactly(
+    client: TestClient,
+) -> None:
+    admin = _login(client, "h129-v1-replay-admin")
+    project_id = _ready_project(client, admin)
+    receipt, receipt_hash = _h128_receipt(client, admin, project_id)
+    operation_id = str(uuid4())
+    path = f"/projects/{project_id}/guided-decision-review-dispositions"
+    user = get_user_store(
+        "system",
+        data_dir=client.app.state.data_dir,
+        backend=client.app.state.state_backend,
+    ).get_by_username("h129-v1-replay-admin")
+    assert user is not None
+    registry = get_guided_decision_review_disposition_registry(
+        tenant_id="system",
+        project_id=project_id,
+        bundle_type="proposal_kr",
+        backend=client.app.state.state_backend,
+    )
+    legacy, created = registry.create(
+        operation_id=operation_id,
+        reviewer_user_id=user.user_id,
+        reviewer_username="historical-name",
+        reviewer_role="member",
+        source_disposition_receipt=receipt,
+        source_disposition_receipt_sha256=receipt_hash,
+    )
+    assert created is True
+    expected = canonical_guided_review_registry_json_bytes(legacy)
+    payload = _create_payload(
+        receipt,
+        receipt_hash,
+        operation_id,
+        contract_version="guided-decision-review-disposition-record-request.v1",
+    )
+
+    replay = client.post(path + BUNDLE_QUERY, headers=admin, json=payload)
+    listing = client.get(path + BUNDLE_QUERY, headers=admin)
+    read = client.get(f"{path}/{operation_id}{BUNDLE_QUERY}", headers=admin)
+    downloaded = client.get(
+        f"{path}/{operation_id}/download{BUNDLE_QUERY}",
+        headers=admin,
+    )
+
+    assert replay.status_code == 200
+    assert replay.content == expected
+    assert replay.json()["reviewer_username"] == "historical-name"
+    assert replay.json()["reviewer_role"] == "member"
+    assert replay.headers[
+        "x-decisiondoc-guided-review-disposition-issuance-provenance"
+    ] == "legacy-unrecorded"
+    assert listing.status_code == read.status_code == downloaded.status_code == 200
+    assert listing.json()["records"][0]["issuance_provenance"] == (
+        "legacy_issuance_unrecorded"
+    )
+    assert read.content == downloaded.content == expected
+
+
+@pytest.mark.parametrize(
+    ("issuance_state", "expected_status"),
+    [("missing", 422), ("corrupt", 503)],
+)
+def test_h129_v2_fails_closed_when_issuance_is_missing_or_corrupt(
+    client: TestClient,
+    issuance_state: str,
+    expected_status: int,
+) -> None:
+    admin = _login(client, f"h129-v2-{issuance_state}-admin")
+    project_id = _ready_project(client, admin)
+    receipt, receipt_hash = _h128_receipt(client, admin, project_id)
+    operation_id = str(uuid4())
+    path = f"/projects/{project_id}/guided-decision-review-dispositions"
+    issuance = get_guided_decision_review_disposition_issuance_registry(
+        tenant_id="system",
+        project_id=project_id,
+        bundle_type="proposal_kr",
+        backend=client.app.state.state_backend,
+    )
+    issuance_path = issuance.record_path(receipt_hash)
+    if issuance_state == "missing":
+        client.app.state.state_backend.delete(issuance_path)
+        expected_raw = None
+    else:
+        expected_raw = b'{"corrupt":true}\n'
+        client.app.state.state_backend.write_bytes(issuance_path, expected_raw)
+    registry = get_guided_decision_review_disposition_registry(
+        tenant_id="system",
+        project_id=project_id,
+        bundle_type="proposal_kr",
+        backend=client.app.state.state_backend,
+    )
+
+    response = client.post(
+        path + BUNDLE_QUERY,
+        headers=admin,
+        json=_create_payload(receipt, receipt_hash, operation_id),
+    )
+
+    assert response.status_code == expected_status
+    assert "source_disposition_receipt" not in response.text
+    assert client.app.state.state_backend.read_bytes(registry.record_path(operation_id)) is None
+    assert client.app.state.state_backend.read_bytes(issuance_path) == expected_raw
+
+
+def test_h129_v2_requires_and_embeds_same_backend_h128_issuance(
+    client: TestClient,
+) -> None:
+    admin = _login(client, "h129-v2-admin")
+    project_id = _ready_project(client, admin)
+    receipt, receipt_hash = _h128_receipt(client, admin, project_id)
+    path = f"/projects/{project_id}/guided-decision-review-dispositions"
+    response = client.post(
+        path + BUNDLE_QUERY,
+        headers=admin,
+        json=_create_payload(
+            receipt,
+            receipt_hash,
+            str(uuid4()),
+            contract_version="guided-decision-review-disposition-record-request.v2",
+        ),
+    )
+
+    assert response.status_code == 201
+    record = response.json()
+    assert record["contract_version"] == "guided-decision-review-disposition-record.v2"
+    assert record["issuance_provenance"] == "server_issued"
+    assert record["source_issuance_metadata"]["disposition_receipt_sha256"] == receipt_hash
+    assert response.headers[
+        "x-decisiondoc-guided-review-disposition-issuance-provenance"
+    ] == "server-issued"
+    assert response.headers[
+        "x-decisiondoc-guided-review-disposition-issuance-record-sha256"
+    ] == record["source_issuance_metadata_sha256"]
 
 
 def test_h129_authorization_and_non_disclosing_owner_boundary(

@@ -794,3 +794,17 @@ revalidation과 redacted audit를 검증한다. Chromium은 verified page-memory
 H128 source, one UUID per source/scope, request-owned single flight,
 stale-A/newer-B race, context drift discard와 pre-Blob verification을
 확인한다. 모든 authority boundary와 external effect count는 false/zero다.
+
+## H128 issuance and H129 v2 provenance
+
+Storage/API/browser regression covers local and fake-S3 conditional issuance
+create concurrency, first-issued-at replay, exact read-back, uncertain-write
+reconciliation, malformed/noncanonical/corrupt/foreign/disappearing/unavailable
+fail-closed behavior, and no source-byte repair. H128 success requires the
+issuance-record hash header before the browser keeps proof in page memory. H129
+v2 creates only from an independently validated H128 body plus authoritative
+same-backend issuance metadata, then checks embedded proof/hash before render
+or Blob creation; v1 replay/list/read/download keeps historical bytes and
+explicit Legacy issuance unrecorded status. These tests do not treat issuance
+as a signature, actor attestation, currentness, atomic snapshot, approval, or
+external authenticity.

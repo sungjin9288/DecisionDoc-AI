@@ -371,6 +371,22 @@ username, role, and `recorded_at`, so the first historical canonical bytes win.
 A separate full-record binding covers all wrapper and nested identity, source,
 hash, and false-authority fields.
 
+H128 first writes a separate
+`guided-decision-review-disposition-issuance.v1` object below the same selected
+tenant/project/bundle `StateBackend`, content-addressed by the exact lowercase
+canonical H128 body SHA-256. Conditional create is followed by strict canonical
+read-back; a lost write response is accepted only after the full binding
+revalidates. The metadata holds only contract/scope/hash/first `issued_at`,
+issuance and full-record bindings, fixed evidence-only false boundaries, and no
+receipt, identity, session, network value, token, rationale, secret, approval,
+or execution authority. New H129 operations use v2, which independently reads
+this proof before create, embeds only metadata plus its hash, and rechecks it
+on list/read/download. A public v1 request can only exact-replay a matching
+existing v1 record; missing v1 never writes, while v1 canonical bytes are never
+migrated and its summary/header label is Legacy issuance unrecorded. This is
+same-backend existential issuance, not a signature, actor
+attestation, currentness, atomic snapshot, approval, or external authenticity.
+
 Create/list/read/download all strict-reparse the H129 record and nested
 H128/H127/H126 chain before returning data. Admin access is project-wide;
 assigned member access is stable-user scoped and direct non-owner reads remain

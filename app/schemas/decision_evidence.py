@@ -368,9 +368,37 @@ class GuidedDecisionReviewDispositionReceipt(_StrictModel):
         return self
 
 
+class GuidedDecisionReviewDispositionIssuanceMetadata(_StrictModel):
+    """Hash-only same-backend issuance proof for one canonical H128 body."""
+
+    contract_version: Literal[
+        "guided-decision-review-disposition-issuance.v1"
+    ] = "guided-decision-review-disposition-issuance.v1"
+    tenant_id: str = Field(min_length=1)
+    project_id: str = Field(min_length=1)
+    bundle_type: DecisionEvidenceBundleType
+    disposition_receipt_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    issued_at: str = Field(min_length=1)
+    issuance_binding_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    issuance_record_binding_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    issuance_status: Literal["issued"] = "issued"
+    evidence_only: Literal[True] = True
+    review_state_only: Literal[True] = True
+    review_only: Literal[True] = True
+    read_only: Literal[True] = True
+    reviewer_identity_bound: Literal[False] = False
+    snapshot_atomic: Literal[False] = False
+    requires_recheck_before_reliance: Literal[True] = True
+    disposition_receipt_persisted: Literal[False] = False
+    authority: DecisionEvidenceAuthority = Field(
+        default_factory=DecisionEvidenceAuthority
+    )
+
+
 class GuidedDecisionReviewDispositionRecordRequest(_StrictModel):
     contract_version: Literal[
-        "guided-decision-review-disposition-record-request.v1"
+        "guided-decision-review-disposition-record-request.v1",
+        "guided-decision-review-disposition-record-request.v2",
     ]
     operation_id: str = Field(
         pattern=(
@@ -442,3 +470,16 @@ class GuidedDecisionReviewDispositionRecord(_StrictModel):
             self.source_disposition_receipt,
         )
         return self
+
+
+class GuidedDecisionReviewDispositionRecordV2(
+    GuidedDecisionReviewDispositionRecord
+):
+    """H129 record whose H128 source is proven by the selected backend."""
+
+    contract_version: Literal[
+        "guided-decision-review-disposition-record.v2"
+    ] = "guided-decision-review-disposition-record.v2"
+    source_issuance_metadata: GuidedDecisionReviewDispositionIssuanceMetadata
+    source_issuance_metadata_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    issuance_provenance: Literal["server_issued"] = "server_issued"

@@ -22,7 +22,9 @@ receipt that compares a browser-verified source with a fresh observation while
 keeping all operational authority false. H128 adds a
 [Guided Decision Review Disposition](./GUIDED_DECISION_REVIEW_DISPOSITION.md)
 receipt that binds one allowlisted review disposition to an exact verified H127
-receipt without persistence, reviewer identity, approval, or execution
+receipt. H128 keeps that canonical receipt body non-persistent and
+reviewer-unbound, while proving same-backend issuance with a separate hash-only
+metadata record; it adds no approval or execution
 authority.
 
 ## Render boundary
@@ -113,7 +115,9 @@ kept in page memory only for an H128 disposition. `unchanged` allows only
 `acknowledged_unchanged` or `review_deferred`; `changed` invalidates the old
 H126 source and allows only `new_handoff_required` or `review_deferred`. A new
 handoff, recheck, project load, or scope drift invalidates the prior
-disposition source.
+disposition source. The verified H128 proof header stays in page memory only.
+H129 v2 checks the returned embedded issuance metadata and its exact hash before
+rendering or creating a Blob; v1 records are labeled Legacy issuance unrecorded.
 
 The panel displays `READ ONLY · NON-ATOMIC · NO APPROVAL/EXPORT/PROVIDER
 EXECUTION`, the selected `bundle_type`, and the first 16 fingerprint characters

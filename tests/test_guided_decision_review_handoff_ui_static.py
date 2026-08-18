@@ -173,8 +173,13 @@ def test_guided_review_registry_static_contract_is_page_memory_bound_and_single_
     assert 'data-guided-decision-review-registry-refresh' in source
     assert 'data-guided-decision-review-registry-list' in source
     assert "/guided-decision-review-dispositions?bundle_type=" in source
-    assert "guided-decision-review-disposition-record-request.v1" in source
+    assert "guided-decision-review-disposition-record-request.v2" in source
     assert "guided-decision-review-disposition-record.v1" in source
+    assert "guided-decision-review-disposition-record.v2" in source
+    assert "GUIDED_DECISION_REVIEW_DISPOSITION_ISSUANCE_SHA256_HEADER" in source
+    assert "normalizeGuidedDecisionReviewIssuanceMetadata" in source
+    assert "Server-issued source" in source
+    assert "Legacy issuance unrecorded" in source
     assert "source_disposition_receipt: source.receipt" in source
     assert "source_disposition_receipt_sha256: source.bodySha256" in source
     assert "crypto.randomUUID().toLowerCase()" in source
