@@ -96,13 +96,16 @@ docker compose --env-file .env.prod -f docker-compose.ha.yml up -d
 ## 6. GitHub Actions CI/CD
 
 - **CI**: [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) 에서 테스트, security scan, lint 실행
-- **Docker server CD**: [`.github/workflows/cd.yml`](../../.github/workflows/cd.yml) 에서 `main` 브랜치와 numeric semver `vMAJOR.MINOR.PATCH` 태그 기준으로 배포
+- **Docker server CD**: [`.github/workflows/cd.yml`](../../.github/workflows/cd.yml) 에서 `main` ref의 명시적 `workflow_dispatch`로 staging을 배포하고, numeric semver `vMAJOR.MINOR.PATCH` 태그 push로 production을 배포
 - **AWS manual deploy**: [`.github/workflows/deploy.yml`](../../.github/workflows/deploy.yml), [`.github/workflows/deploy-smoke.yml`](../../.github/workflows/deploy-smoke.yml) 에서 `workflow_dispatch`
 
 운영 모델과 장기 release 방향은 [../operating_model_roadmap.md](../operating_model_roadmap.md) 를 기준으로 합니다.
 배포 주체, 권한 경계, secret ownership은 [deploy_ownership_map.md](./deploy_ownership_map.md) 를 기준으로 합니다.
 
 ```bash
+# Docker server staging deploy (explicit dispatch from main)
+gh workflow run CD --ref main -f deploy_target=staging
+
 # Docker server production deploy
 python3 scripts/check_release_readiness.py v1.0.0
 git tag v1.0.0
@@ -116,7 +119,8 @@ Docker server CD 필수 GitHub Secrets:
 참고:
 - `scripts/import-github-actions-env-file.sh --stage dev|prod` 는 stage에 맞는 `STAGING_*` 또는 `PROD_*` deploy secrets를 `.github-actions.env` scaffold로 복사한다.
 - 실제 Docker server deploy를 준비할 때는 `scripts/check-github-actions-config.sh --stage dev|prod --env-file .github-actions.env --docker-deploy` 로 deploy secret 3종을 필수값으로 검증한다.
-- staging deploy secret 세 개가 모두 비어 있으면 `main` push CD는 Docker image build/push까지만 수행하고 staging deploy/smoke를 명시적으로 skip한다.
+- 일반 `main` push는 Docker image publish나 staging deploy를 시작하지 않는다. staging은 `main` ref에서 `deploy_target=staging`을 지정한 명시적 `workflow_dispatch`만 허용한다.
+- staging deploy secret 세 개가 모두 비어 있으면 수동 staging CD는 Docker image build/push까지만 수행하고 staging deploy/smoke를 명시적으로 skip한다.
 - staging deploy skip/configured/blocked 판단은 CD run의 GitHub Step Summary `Staging deployment` 섹션에 기록된다.
 - staging deploy를 활성화하려면 `STAGING_HOST`, `STAGING_USER`, `STAGING_SSH_KEY`를 반드시 함께 설정한다.
 - `vMAJOR.MINOR.PATCH` tag production deploy는 staging job에 의존하지 않고 Docker image build/push 성공 후 `PROD_HOST`, `PROD_USER`, `PROD_SSH_KEY` preflight를 통과해야 실행된다.
