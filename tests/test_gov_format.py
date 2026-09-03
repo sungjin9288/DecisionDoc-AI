@@ -16,12 +16,10 @@ Covers:
 from __future__ import annotations
 
 import io
-import json
 import zipfile
 
 import pytest
 from docx import Document
-from docx.shared import Mm
 
 # --- import our modules ---
 from app.schemas import GovDocOptions, EditedExportRequest, EditedDocInput

@@ -1,9 +1,7 @@
 """Tests for GenerationService.clear_cache() and POST /ops/cache/clear."""
 
-import json
 from pathlib import Path
 
-import pytest
 from fastapi.testclient import TestClient
 
 from app.providers.factory import get_provider

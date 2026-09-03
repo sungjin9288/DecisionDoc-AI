@@ -11,20 +11,19 @@ sub-module under the file-size limit. Covers:
   POST /generate/excel
   POST /generate/hwp
   POST /generate/export-edited
-  GET  /generate/export-zip
+  GET  /generate/export-zip (in export_packet.py)
 
-Pure code relocation — no behavior changes.
+This router keeps the ordinary binary export endpoints. The verified review
+packet download is isolated in ``export_packet.py``.
 """
 from __future__ import annotations
 
 import asyncio
-import io
 import json
 import logging
 import re
 import threading
 import urllib.parse
-import zipfile
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -32,7 +31,6 @@ from fastapi.responses import Response, StreamingResponse
 
 from app.ai_profiles.catalog import ensure_bundle_access
 from app.auth.api_key import require_api_key
-from app.dependencies import require_auth as _require_auth
 from app.maintenance.mode import require_not_maintenance
 from app.middleware.billing import acquire_billing_admission
 from app.observability.logging import log_event
@@ -46,26 +44,28 @@ from app.schemas import (
     GenerateVisualAssetsRequest,
     GenerateVisualAssetsResponse,
 )
-from app.services.docx_service import build_docx
 from app.services.excel_service import build_excel
 from app.services.hwp_service import build_hwp
 from app.services.pptx_service import build_pptx_from_docs
 from app.services.generation.context_store import record_direct_provider_usage
 from app.services.visual_asset_service import requires_provider_visuals
 from app.storage.usage_store import UsageStoreError
+from app.storage.generation_export_source_store import GenerationExportSourceStoreError
 
+from app.routers.generate._history import store_generation_history
 from app.routers.generate._shared import (
     _apply_generate_state,
     _build_generate_log_event,
+    _build_generated_docs_response,
     _build_structured_slide_data,
     _ensure_procurement_bundle_enabled,
     _ensure_procurement_override_reason_for_downstream,
     _generate_visual_assets_for_docs,
-    _get_zip_docs,
     _load_pdf_builder,
     _mark_decision_council_handoff_context,
     _mark_procurement_downstream_resolved_context,
     _resolve_gov_options,
+    _store_zip_docs,
 )
 
 logger = logging.getLogger("decisiondoc.generate")
@@ -333,6 +333,21 @@ async def generate_stream(
             if event_type == "done":
                 result = data
                 _apply_generate_state(request, result, template_version)
+                try:
+                    _store_zip_docs(
+                        request_id,
+                        result["docs"],
+                        payload.title,
+                        tenant_id=tenant_id,
+                        source_store=request.app.state.generation_export_source_store,
+                    )
+                except GenerationExportSourceStoreError:
+                    request.state.error_code = "EXPORT_SOURCE_UNAVAILABLE"
+                    yield (
+                        "event: error\ndata: "
+                        f"{json.dumps({'code': 'EXPORT_SOURCE_UNAVAILABLE', 'message': 'Export source could not be persisted.'})}\n\n"
+                    )
+                    return
                 log_event(
                     logger,
                     _build_generate_log_event(request, result, request_id, template_version),
@@ -366,6 +381,16 @@ async def generate_stream(
                     ),
                     decision_evidence_refs=metadata.get("decision_evidence_refs", []),
                     docs=result["docs"],
+                )
+                store_generation_history(
+                    payload,
+                    request,
+                    tenant_id=tenant_id,
+                    request_id=request_id,
+                    docs=_build_generated_docs_response(
+                        result["docs"], result.get("raw_bundle")
+                    ),
+                    applied_references=metadata.get("applied_references", []),
                 )
                 yield f"event: complete\ndata: {resp.model_dump_json()}\n\n"
                 # Auto-link to project if project_id provided
@@ -724,53 +749,4 @@ async def generate_export_edited_endpoint(
                 f"filename*=UTF-8''{encoded_title}.{ext}"
             )
         },
-    )
-
-
-@router.get(
-    "/generate/export-zip",
-    dependencies=[Depends(require_not_maintenance), Depends(require_api_key)],
-)
-def export_zip(request: Request, request_id: str, formats: str = "docx"):
-    """Export cached generation results as a ZIP of converted files."""
-    _require_auth(request)
-    cached = _get_zip_docs(request_id)
-    if cached is None:
-        raise HTTPException(status_code=404, detail="No cached documents found for this request_id.")
-    docs, title = cached
-
-    valid_formats = {"docx", "pdf", "xlsx", "hwp", "pptx"}
-    requested = [f.strip().lower() for f in formats.split(",") if f.strip()]
-    actual_formats = [f for f in requested if f in valid_formats]
-    if not actual_formats:
-        raise HTTPException(status_code=400, detail=f"No valid formats requested. Valid: {', '.join(sorted(valid_formats))}")
-
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for fmt in actual_formats:
-            try:
-                if fmt == "docx":
-                    content = build_docx(docs, title=title)
-                    zf.writestr(f"{title or 'document'}.docx", content)
-                elif fmt == "pdf":
-                    from app.services.pdf_service import build_pdf
-                    content = asyncio.get_event_loop().run_until_complete(build_pdf(docs, title=title))
-                    zf.writestr(f"{title or 'document'}.pdf", content)
-                elif fmt == "xlsx":
-                    content = build_excel(docs, title=title)
-                    zf.writestr(f"{title or 'document'}.xlsx", content)
-                elif fmt == "hwp":
-                    content = build_hwp(docs, title=title)
-                    zf.writestr(f"{title or 'document'}.hwpx", content)
-                elif fmt == "pptx":
-                    content = build_pptx_from_docs(docs, title=title)
-                    zf.writestr(f"{title or 'document'}.pptx", content)
-            except Exception:
-                logger.warning("Failed to convert to %s", fmt, exc_info=True)
-    buf.seek(0)
-    safe_title = urllib.parse.quote(title[:50], safe="") if title else "export"
-    return Response(
-        content=buf.getvalue(),
-        media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{safe_title}.zip"'},
     )

@@ -835,6 +835,7 @@ def test_history_callers_pass_the_application_state_backend() -> None:
     source_paths = (
         Path("app/routers/history.py"),
         Path("app/routers/knowledge.py"),
+        Path("app/routers/generate/_history.py"),
         Path("app/routers/generate/_shared.py"),
     )
     calls = []

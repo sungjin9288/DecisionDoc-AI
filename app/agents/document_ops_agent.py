@@ -19,6 +19,7 @@ from app.agents.schemas import (
     DocumentOpsRequest,
     DocumentOpsResult,
     DocumentOpsSkill,
+    DocumentOpsSkillBinding,
     EvidenceStatus,
 )
 from app.agents.skill_registry import SkillRegistry
@@ -29,6 +30,10 @@ from app.tenant import require_tenant_id
 
 if TYPE_CHECKING:
     from app.storage.trajectory_store import TrajectoryStore
+
+
+class SkillBindingMismatchError(ValueError):
+    """Raised when execution no longer matches a previously resolved skill."""
 
 
 class DocumentOpsAgent:
@@ -56,12 +61,25 @@ class DocumentOpsAgent:
 
         return get_provider_for_capability("generation")
 
+    def skill_catalog(self) -> dict[str, Any]:
+        """Return the registry's read-only public projection."""
+        return self._skill_registry.catalog()
+
+    def resolve_skill_binding(self, request: DocumentOpsRequest) -> DocumentOpsSkillBinding:
+        """Resolve the public binding without accessing a provider."""
+        _, binding = self._skill_registry.resolve_binding(
+            request.task_type,
+            preferred_name=request.skill_name,
+        )
+        return binding
+
     def run(
         self,
         request: DocumentOpsRequest,
         *,
         request_id: str,
         tenant_id: str,
+        expected_skill_binding: DocumentOpsSkillBinding | None = None,
         record_provider_usage: Callable[[Provider], None] | None = None,
     ) -> DocumentOpsResult:
         """Execute a single DocumentOps task.
@@ -71,9 +89,16 @@ class DocumentOpsAgent:
         provider JSON -> apply local QA -> optionally emit a compact trajectory.
         """
         tenant_id = require_tenant_id(tenant_id)
+        skill, skill_binding = self._skill_registry.resolve_binding(
+            request.task_type,
+            preferred_name=request.skill_name,
+        )
+        if expected_skill_binding is not None and skill_binding != expected_skill_binding:
+            raise SkillBindingMismatchError(
+                "DocumentOps skill binding changed before provider execution."
+            )
         provider = self.provider
-        skill = self._skill_registry.select(request.task_type, preferred_name=request.skill_name)
-        prompt = self._build_prompt(request, skill)
+        prompt = self._build_prompt(request, skill, skill_binding)
         draft = self._generate_draft(
             prompt,
             provider=provider,
@@ -82,12 +107,23 @@ class DocumentOpsAgent:
             request_id=request_id,
             record_provider_usage=record_provider_usage,
         )
+        if request.comparison_context is not None:
+            draft = DocumentOpsDraftOutput.model_validate(
+                _redact_comparison_source_echo(
+                    draft.model_dump(),
+                    source_texts=(
+                        request.requirements["baseline_document_text"],
+                        request.requirements["candidate_document_text"],
+                    ),
+                )
+            )
         qa = self._merge_qa(draft.qa, self._local_qa(draft, task_type=request.task_type))
         quality_warnings = list(qa.get("warnings", []))
         trajectory = (
             self._build_trajectory(
                 request,
                 skill,
+                skill_binding,
                 draft,
                 qa,
                 provider=provider,
@@ -104,6 +140,7 @@ class DocumentOpsAgent:
             task_type=request.task_type,
             skill_name=skill.name,
             skill_version=skill.version,
+            skill_binding=skill_binding,
             provider_name=provider.name,
             plan=draft.plan,
             critique=draft.critique,
@@ -112,10 +149,16 @@ class DocumentOpsAgent:
             evidence_status=draft.evidence_status,
             qa=qa,
             quality_warnings=quality_warnings,
+            comparison_context=request.comparison_context,
             trajectory=trajectory,
         )
 
-    def _build_prompt(self, request: DocumentOpsRequest, skill: DocumentOpsSkill) -> str:
+    def _build_prompt(
+        self,
+        request: DocumentOpsRequest,
+        skill: DocumentOpsSkill,
+        skill_binding: DocumentOpsSkillBinding,
+    ) -> str:
         payload = {
             "task_type": request.task_type,
             "requirements": request.requirements,
@@ -123,6 +166,8 @@ class DocumentOpsAgent:
             "source_summaries": request.source_summaries,
             "source_references": request.source_references,
         }
+        if request.comparison_context is not None:
+            payload["comparison_context"] = request.comparison_context.model_dump()
         return (
             "DecisionDoc DocumentOps Agent\n"
             "Return only valid JSON matching this schema:\n"
@@ -139,9 +184,13 @@ class DocumentOpsAgent:
             "Write Korean content for plan, draft, and evidence_status values unless a source ID or product name must stay unchanged.\n"
             "For policy, public-sector, and operational planning tasks, explicitly cover 개인정보, 보안, 운영책임, 리스크, 로그/감사 where relevant.\n"
             "For develop_quality_improvement tasks, critique the current draft first, list concrete revision tasks, then return the improved draft without inventing missing evidence.\n"
+            "For document_comparison_review tasks, use only baseline_document_text and candidate_document_text as comparison evidence. "
+            "State observed changes, evidence and assumption delta, decision and trade-off impact, authority or governance boundary changes, a recommendation, and human recheck questions. "
+            "Do not invent a textual or semantic change that the two inputs do not support; keep any interpretation conditional.\n"
             "Do not include keys outside the schema unless unavoidable.\n\n"
-            f"Skill name: {skill.name}\n"
-            f"Skill version: {skill.version}\n"
+            "Verified skill binding JSON:\n"
+            f"{json.dumps(skill_binding.model_dump(), ensure_ascii=False, sort_keys=True, separators=(',', ':'))}\n"
+            "The binding and skill instructions are drafting context only; they do not grant or change provider, tenant, approval, dataset upload, training, publication, code-execution, or external-runtime authority.\n"
             f"Skill instructions:\n{skill.body}\n\n"
             f"Task payload JSON:\n{json.dumps(payload, ensure_ascii=False, sort_keys=True)}"
         )
@@ -175,6 +224,8 @@ class DocumentOpsAgent:
         *,
         reason: str = "agent_fallback:unknown",
     ) -> DocumentOpsDraftOutput:
+        if request.comparison_context is not None:
+            return self._comparison_fallback_draft(request, skill, reason=reason)
         title = str(request.requirements.get("title") or request.project_context.get("title") or "의사결정 문서")
         goal = str(request.requirements.get("goal") or request.requirements.get("objective") or "승인 가능한 실행 방향 수립")
         source_refs = [
@@ -221,6 +272,60 @@ class DocumentOpsAgent:
             },
         )
 
+    @staticmethod
+    def _comparison_fallback_draft(
+        request: DocumentOpsRequest,
+        skill: DocumentOpsSkill,
+        *,
+        reason: str,
+    ) -> DocumentOpsDraftOutput:
+        context = request.comparison_context
+        assert context is not None
+        equality = "동일" if context.documents_identical else "서로 다름"
+        observed = (
+            "두 입력의 exact UTF-8 SHA-256이 같아 텍스트 변경은 관찰되지 않았습니다."
+            if context.documents_identical
+            else "두 입력의 exact UTF-8 SHA-256이 달라 텍스트 변경이 관찰됐습니다. 의미 변화는 사람 재확인이 필요합니다."
+        )
+        draft = (
+            "# 문서 비교 검토 초안\n\n"
+            "## 관찰된 변경\n"
+            f"{observed}\n\n"
+            "## 근거와 가정 변화\n"
+            "근거는 제공된 두 입력의 exact byte hash에 한정됩니다. 문서 밖 사실, 의도, 효력은 가정하지 않습니다.\n\n"
+            "## 결정 및 트레이드오프 영향\n"
+            "입력만으로 결정 영향은 확정할 수 없으므로, 변경된 문구가 범위·비용·일정·책임에 미치는 영향은 조건부로 재검토합니다.\n\n"
+            "## 권한·거버넌스 경계\n"
+            "이 비교는 읽기 전용 검토 초안이며 승인, provider 권한, 외부 실행, dataset upload, training, publication 권한을 만들지 않습니다.\n\n"
+            "## 권고\n"
+            f"현재 비교 상태는 {equality}입니다. 비교 기준별 사람 검토 후에만 후속 결정을 갱신하세요.\n\n"
+            "## 사람 재확인 질문\n"
+            "- 관찰된 텍스트 차이가 의도한 정책·계약·운영 변경인가?\n"
+            "- 변경으로 인해 승인자, 책임자, 보안·감사 검토 범위가 달라지는가?"
+        )
+        return DocumentOpsDraftOutput(
+            plan=[
+                "두 입력의 exact byte hash와 비교 기준을 확인합니다.",
+                "관찰된 변경과 해석 가정을 분리합니다.",
+                "결정·거버넌스 영향과 사람 재확인 질문을 정리합니다.",
+            ],
+            critique=["Provider 응답을 구조화할 수 없어 raw content를 복사하지 않는 로컬 비교 초안을 사용했습니다."],
+            revision_tasks=["비교 기준별 검토 결과와 근거를 사람이 확인한 뒤 초안을 갱신합니다."],
+            draft=draft,
+            evidence_status=EvidenceStatus(
+                confirmed=["baseline/candidate exact UTF-8 hash comparison"],
+                assumptions=["텍스트 외 형식, 법적 효력, 운영 의도는 입력만으로 확정할 수 없음"],
+                gaps=["변경의 의미와 승인·운영 영향은 사람 재확인 필요"],
+                source_references=["baseline_document", "candidate_document"],
+            ),
+            qa={
+                "hard_gate_pass": False,
+                "warnings": [reason, "텍스트 외 의미와 영향은 사람 재확인 필요"],
+                "fallback_used": True,
+                "skill": skill.name,
+            },
+        )
+
     def _local_qa(self, draft: DocumentOpsDraftOutput, *, task_type: str = "") -> dict[str, Any]:
         gate = evaluate_document_ops_output(
             task_type=task_type,
@@ -258,12 +363,30 @@ class DocumentOpsAgent:
         self,
         request: DocumentOpsRequest,
         skill: DocumentOpsSkill,
+        skill_binding: DocumentOpsSkillBinding,
         draft: DocumentOpsDraftOutput,
         qa: dict[str, Any],
         *,
         provider: Provider,
         request_id: str,
     ) -> dict[str, Any]:
+        output = {
+            "plan": draft.plan,
+            "critique": draft.critique,
+            "revision_tasks": draft.revision_tasks,
+            "evidence_status": draft.evidence_status.model_dump(),
+            "draft_output": draft.draft,
+            "qa": qa,
+        }
+        if request.comparison_context is not None:
+            output = _redact_comparison_source_echo(
+                output,
+                source_texts=(
+                    request.requirements["baseline_document_text"],
+                    request.requirements["candidate_document_text"],
+                ),
+            )
+
         return {
             "trajectory_id": f"trj_{uuid.uuid4().hex}",
             "schema_version": "document_ops_trajectory_v1",
@@ -271,6 +394,7 @@ class DocumentOpsAgent:
             "request_id": request_id,
             "task_type": request.task_type,
             "skill": {"name": skill.name, "version": skill.version},
+            "skill_binding": skill_binding.model_dump(),
             "provider": provider.name,
             "input": _redact_for_trajectory(
                 {
@@ -280,15 +404,15 @@ class DocumentOpsAgent:
                     "source_references": request.source_references,
                 }
             ),
+            "comparison_context": (
+                request.comparison_context.model_dump()
+                if request.comparison_context is not None
+                else None
+            ),
             "requirements_keys": sorted(request.requirements.keys()),
             "source_summary_count": len(request.source_summaries),
             "source_reference_count": len(request.source_references),
-            "plan": draft.plan,
-            "critique": draft.critique,
-            "revision_tasks": draft.revision_tasks,
-            "evidence_status": draft.evidence_status.model_dump(),
-            "draft_output": draft.draft,
-            "qa": qa,
+            **output,
             "human_review_status": "pending",
             "human_feedback": {"accepted": False},
         }
@@ -312,6 +436,69 @@ def _redact_for_trajectory(value: Any) -> Any:
     if isinstance(value, str) and len(value) > 2000:
         digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
         return f"{value[:300]}...[redacted_long_text sha256={digest}]"
+    return value
+
+
+def _redact_comparison_source_echo(value: Any, *, source_texts: tuple[str, str]) -> Any:
+    fragments = frozenset(
+        fragment.strip()
+        for source_text in source_texts
+        for fragment in (source_text, *source_text.splitlines())
+        if fragment.strip()
+    )
+    embedded_fragments = {
+        fragment
+        for fragment in fragments
+        if len(fragment) >= 8
+    }
+    alternatives = "|".join(
+        re.escape(fragment)
+        for fragment in sorted(embedded_fragments, key=len, reverse=True)
+    )
+    matcher = re.compile(rf"(?<!\w)(?:{alternatives})(?!\w)") if alternatives else None
+    return _redact_comparison_source_fragments(
+        value,
+        exact_fragments=fragments,
+        matcher=matcher,
+    )
+
+
+def _redact_comparison_source_fragments(
+    value: Any,
+    *,
+    exact_fragments: frozenset[str],
+    matcher: re.Pattern[str] | None,
+) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: _redact_comparison_source_fragments(
+                item,
+                exact_fragments=exact_fragments,
+                matcher=matcher,
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [
+            _redact_comparison_source_fragments(
+                item,
+                exact_fragments=exact_fragments,
+                matcher=matcher,
+            )
+            for item in value
+        ]
+    if isinstance(value, tuple):
+        return tuple(
+            _redact_comparison_source_fragments(
+                item,
+                exact_fragments=exact_fragments,
+                matcher=matcher,
+            )
+            for item in value
+        )
+    if isinstance(value, str):
+        if value.strip() in exact_fragments or (matcher is not None and matcher.search(value)):
+            return "[redacted_comparison_source_echo]"
     return value
 
 

@@ -1,8 +1,38 @@
 # DecisionDoc AI — 완성을 위한 기능 개발 계획 (Development Plan)
 
-> 기준일: **2026-07-29** (저장소 점검 [docs/inspection-20260630.md](./inspection-20260630.md), M4 CSP nonce 완료, H128 focused no-cost local verification과 최근 확인한 CI/CD success 기준)
+> 기준일: **2026-08-18**. 현재 완료·readiness 결과의 유일한 기준은 아래 **Current Completion/Readiness Snapshot**이며, 이 문서의 이전 수치는 날짜가 붙은 historical evidence다.
 > 원칙: AGENTS.md 정직성 규칙 준수 — 모든 정량 수치는 재현 커맨드를 병기하고, 검증되지 않은 성과·운영 표현은 사용하지 않는다.
 > 상위 방향 문서: [product_direction.md](./product_direction.md) · [product_execution_plan.md](./product_execution_plan.md) · [roadmap.md](./roadmap.md)
+
+---
+
+## 0. Current Completion/Readiness Snapshot
+
+이 절이 현재 완료·readiness의 **유일한 volatile snapshot**이다. README, roadmap,
+evidence checklist와 procurement STATUS는 이 절을 링크만 하며 독립적인 현재
+pytest pass 수를 주장하지 않는다.
+
+- 기준 source commit: `27523032d68d2b217f4537ab96ade23eb20ef38a` (문서 동기화 전 clean source snapshot).
+- 기준일: 2026-08-18. 최종 tree의 mock/local backend 및 E2E 결과는 이 절의 아래 재현 명령과 함께 기록한다.
+- 범위: `DECISIONDOC_PROVIDER=mock`, `DECISIONDOC_STORAGE=local`, `-m 'not live'`의 local/mock 검증이다. provider API, AWS runtime, live G2B, upload, training, promotion, deploy, production service resume, approval, bid/legal/contractual action은 실행하거나 증명하지 않는다.
+- readiness: M1은 historical OpenAI proof가 있어도 Gemini/Claude/fallback external proof가 남아 **partial/blocked**다. M2는 local live G2B smoke가 완료됐지만 durable stage proof가 없어 **partial/blocked**다. M6는 deployment/runtime evidence가 없어 **blocked**다. human UAT와 external approval도 미증명이다.
+
+```bash
+# final-tree backend (mock/local, non-live)
+DECISIONDOC_PROVIDER=mock DECISIONDOC_STORAGE=local PYTHONDONTWRITEBYTECODE=1 \
+  python3 -m pytest tests/ -q \
+  --ignore=tests/e2e -m 'not live' --tb=short --disable-warnings
+
+# final-tree E2E (mock/local, non-live)
+DECISIONDOC_PROVIDER=mock DECISIONDOC_STORAGE=local NODE_OPTIONS=--no-deprecation \
+  PYTHONDONTWRITEBYTECODE=1 \
+  python3 -m pytest tests/e2e -q \
+  -m 'not live' --tb=short --disable-warnings
+```
+
+Final-tree command results (2026-08-18): backend **4,611 passed, 4 deselected**;
+E2E **121 passed, 1 skipped**. Both commands used the local/mock scope above;
+no runtime capability is changed by this documentation-only snapshot.
 
 ---
 
@@ -12,16 +42,15 @@
 
 | 축 | 현재 | 완성 기준 |
 |----|------|-----------|
-| **기능 검증** | H128 + local demo evidence no-cost gate: focused `42 passed`, authorization/audit/security/infrastructure coupling `178 passed`, full non-live `4,512 passed, 1 skipped, 4 deselected` (2026-07-29) | 외부 의존 경로(live LLM, G2B 실데이터)도 최소 1회 실증 + 증적 |
+| **기능 검증** | 현재 local/mock final-tree 결과와 외부 proof gap은 [Current Completion/Readiness Snapshot](#0-current-completionreadiness-snapshot) 기준. 2026-08-11 local live G2B smoke 1건은 historical local evidence | live LLM 잔여 provider와 G2B durable receipt/stage 경로도 실증 + 증적 |
 | **아키텍처 위생** | ✅ 달성 (2026-07-14: 829줄 상수 모듈을 604줄 facade + 314줄 foundation으로 분리하고 800줄 guard 추가 → 초과 0개). CI advisory Ruff E/F/W와 Bandit medium/high 0건 기준 유지 | 전 모듈 800줄 이하 (전역 코딩 가이드), 계층 간 의존 방향 일관 |
-| **운영 준비성** | Docker/SAM 설정 존재, CSP nonce 부채 해소, GitHub Actions CI/CD success 증적 존재. 단, staging deploy/smoke는 설정 부재로 skip되어 배포 접근성은 미검증 | 배포 절차 재검증 + post-deploy smoke 증적 |
+| **운영 준비성** | Docker/SAM 설정 존재, CSP nonce 부채 해소, 과거 GitHub Actions CI/CD success 증적 존재. 2026-08-11 current-main dev deploy-smoke는 AWS 진입 전 OIDC role assume에서 실패 | OIDC trust 복구 + 배포 절차 재검증 + post-deploy smoke 증적 |
 
 ```bash
-# 재현: 테스트 베이스라인
-pytest tests/ -m "not live" -q     # 2026-07-29 current: 4512 passed, 1 skipped, 4 deselected
+# 현재 final-tree backend/E2E command와 result: section 0 Current Completion/Readiness Snapshot
 
 # 재현: CI advisory lint/security 베이스라인
-ruff check app/ --select=E,F,W --ignore=E501
+ruff check app/ tests/ --select=E,F,W --ignore=E501
 bandit -r app/ -x app/providers/mock_provider.py -ll
 
 # 재현: 남은 외부 실증 준비 조건 점검(외부 호출 없음)
@@ -31,6 +60,29 @@ python3 scripts/check_completion_readiness.py
 python3 scripts/check_completion_readiness.py --env-file .env.prod
 python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json
 python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json
+```
+
+2026-08-12 DocumentOps strict skill binding focused gate는 registry·Agent·API·operation store·audit `143 passed`였다. 이는 mock provider와 local/fake-S3 범위의 재측정이며 위 full non-live baseline, live provider 품질 또는 AWS runtime 증거를 대체하지 않는다.
+
+같은 날짜 browser binding boundary의 static focused command는 `4 passed`, local Chromium focused command는 `9 passed`였다. Static check는 exact eight-field binding validator, top-level skill/version agreement, invalid response의 pre-success 차단과 allowlisted provenance renderer를 검사한다. Chromium check는 valid first run과 exact replay, malformed·authority-widened·mismatched response rejection, 기존 Agent recovery 흐름을 검증했고 desktop과 390px mobile screenshot에서 provenance overlap과 horizontal overflow가 없음을 확인했다. Browser console과 page error도 비어 있었다. 이 결과는 local loopback과 mock response 범위이며 live provider나 배포 runtime 증거를 대체하지 않는다.
+
+DocumentOps comparison review는 source-grounded task와 함께 UI에서 선택할 수 있는 first-party skill이다. 비교 입력은 provider·captured-operation claim 전에 검증하고, `comparison_criteria`는 생략 시 `[]`이며 최대 8개·각 120자다. Local mock/backend와 loopback Chromium 측정은 exact UTF-8 hash context, raw-input trajectory redaction, exact replay, malformed context pre-success rejection과 390px overflow를 대상으로 하며 semantic change·policy/legal/operational effect는 사람 재확인 대상으로 남긴다. GitHub-derived skill-pattern reference는 [external repository analysis](./specs/external_repo_integration/ANALYSIS_20260812.md)의 clean-room design 기록만 사용하며 remote skill loading, dynamic install, provider/training/deploy/publication authority를 추가하지 않는다. Live provider, AWS runtime, external completion proof는 M1/M6의 기존 갭으로 변함없다.
+
+Comparison file intake는 동일 task 안의 optional local convenience path다. Existing attachment parser의 20 MB upload와 12,000-character cap을 그대로 사용하고 `.hwp` legacy binary, unsupported, empty, unreadable input을 bounded `422`로 거부한다. API response와 browser check는 exact selected source bytes와 returned UTF-8 text hash를 결속하지만, semantic equivalence, source authenticity, policy/legal effect 또는 file retention을 주장하지 않는다. 이 path는 deterministic server-memory extraction만 제공하며 provider fallback/OCR, storage persistence, training, AWS, deployment, publication과 approval authority를 추가하지 않는다.
+
+Verified line change set은 Agent provider 요청보다 먼저 local-only deterministic evidence를 만든다. 하나의 `SequenceMatcher(autojunk=False)` 결과로 full aggregate와 hunk를 계산하고 response 전체의 양쪽 exposed line 합계를 200으로 제한한 contiguous zero-prefix만 반환한다. 첫 초과 hunk는 exposed array와 half-open range를 함께 clip하며, `total_hunk_count`와 `hunks_truncated`는 전체 opcode coverage를 보존한다. Browser가 exact response bytes/header hash, fatal UTF-8, canonical JSON, strict schema, source hash/line/range/count, all-false authority와 current provenance를 모두 확인해야 Agent POST와 download가 열리고, 입력·criteria·task·tenant·auth 또는 request generation 변경은 evidence와 object URL을 폐기한다. 이 local change set은 semantic review, live provider 품질, AWS/deployment/public edge, persistence, training, approval 또는 external effect evidence가 아니다.
+
+```bash
+python3 -m pytest -q tests/test_infrastructure.py -k document_ops_agent --tb=short
+python3 -m pytest -q tests/e2e/test_main_flow.py -k document_ops_agent --tb=short
+python3 -m pytest -q tests/agents/test_skill_registry.py tests/agents/test_document_ops_agent.py tests/evals/test_document_ops_gates.py tests/test_document_ops_agent_api.py --tb=short
+python3 -m pytest -q tests/test_infrastructure.py -k document_ops --tb=short
+python3 -m pytest -q tests/e2e/test_main_flow.py -k document_ops --tb=short
+python3 -m pytest -q tests/test_document_ops_agent_api.py -k comparison_document --tb=short
+python3 -m pytest -q tests/e2e/test_main_flow.py -k comparison_file_intake --tb=short
+python3 -m pytest -q tests/agents/test_document_ops_agent.py -k comparison --tb=short
+python3 -m pytest -q tests/test_document_ops_agent_api.py -k comparison --tb=short
+python3 -m pytest -q tests/e2e/test_main_flow.py -k comparison_change_set --tb=short
 ```
 
 ### H120 local slice
@@ -169,6 +221,16 @@ Browser가 exact body/header/contract/scope를 검증한 H127 receipt만 page me
 POST route는 strict H127 receipt, canonical receipt hash, route project/current
 bundle, current handoff/fingerprint, expected status를 다시 검증한다.
 
+H128 canonical body는 기존 byte contract를 유지한다. 성공 응답 전 selected
+backend에는 tenant/project/bundle/exact H128 SHA-256 scope의 strict
+`guided-decision-review-disposition-issuance.v1` metadata가 conditional-create와
+exact read-back으로 존재해야 한다. H129 v2는 이 same-backend issuance metadata를
+독립 재검증해 metadata와 hash만 embed하며, v1 record는 migration 없이 Legacy
+issuance unrecorded로 남는다. New H129 operation은 v2만 create하고 public v1
+request는 matching existing v1의 exact replay만 허용하며 missing v1 write는 없다.
+이 proof는 signature, actor attestation,
+currentness, atomic snapshot, approval 또는 external authenticity가 아니다.
+
 `guided-decision-review-disposition-receipt.v1`은 source receipt hash, current
 handoff/fingerprint hash, `unchanged|changed` status와 disposition을 canonical
 binding으로 결속한다. `unchanged`에는
@@ -192,6 +254,47 @@ security/infrastructure expansion `488 passed`, full non-live `4,509 passed,
 1 skipped, 4 deselected`다. Provider, AWS, G2B, dataset upload, training,
 promotion, deployment와 service resume은 실행하지 않았다.
 
+### H129 historical reviewer-attributed registry evidence (2026-08-18)
+
+H129 persists one exact H128 receipt as immutable reviewer-attributed evidence
+under tenant/project/bundle/hashed-operation scope. First create returns 201;
+an exact replay after username or role drift returns 200 with the original
+canonical bytes and historical identity, while stable reviewer or source drift
+conflicts without rewriting the authoritative record. All registry paths
+strictly revalidate the nested H126-H128 chain, request/full-record bindings,
+scope, matrix, hashes, and false authority before returning data.
+
+Admin access is project-wide and assigned member access is stable-user scoped.
+Browser create is enabled only from current verified page-memory H128 evidence,
+uses one UUID per source/scope plus request-owned single flight, and discards
+late responses after auth/tenant/user/project/bundle/source drift. 이 H129
+historical registry evidence는 reviewer-attributed immutable record의 초기 검증
+기록이다. 당시 숫자는 historical evidence이며 아래 H129.1 server-issued
+provenance의 current meaning 또는 현재 final-tree snapshot을 대체하지 않는다.
+H129도 M1/M2/M6, human UAT, deployment, external approval gap을 닫지 않으며,
+provider, AWS, G2B, upload, training, promotion, deploy, approval, bid, legal,
+contractual effects는 범위 밖이다.
+
+2026-08-18 local/mock verification은 H129 focused storage/API/auth/audit
+`16 passed`, adjacent handoff/static `28 passed`, focused Chromium
+`1 passed, 13 deselected`, full non-E2E non-live `4,596 passed, 4 deselected`,
+full non-live E2E `121 passed, 1 skipped`를 확인했다. Ruff E/F/W, `py_compile`,
+Bandit medium/high, secret hygiene, portfolio와 diff gates도 통과했다.
+
+### H129.1 current server-issued provenance (2026-08-18)
+
+H128 success는 selected tenant/project/bundle backend에 exact canonical receipt
+SHA-256의 hash-only issuance metadata를 conditional-create하고 exact read-back한
+뒤에만 반환된다. H129 v2는 그 **same-backend** metadata와 metadata hash만 독립
+재검증하여 `issuance_provenance=server_issued`로 결속한다. v1 bytes는 rewrite나
+migration 없이 `legacy_issuance_unrecorded`로 남는다.
+
+이는 server-issued provenance의 local storage/integrity evidence일 뿐 signature,
+actor attestation, currentness, atomic snapshot, approval 또는 external
+authenticity가 아니다. H129 historical reviewer attribution과 H129.1 provenance를
+혼동하지 않으며, 둘 다 M1/M2/M6, human UAT, deployment, external approval과 모든
+external effect gap을 닫지 않는다.
+
 ---
 
 ## 2. 현재 아키텍처 (실측 기반)
@@ -200,10 +303,12 @@ promotion, deployment와 service resume은 실행하지 않았다.
 
 ```bash
 python3 scripts/count_readme_metrics.py --field router_files      # → 23 (top-level 라우터 파일)
-python3 scripts/count_readme_metrics.py --field service_files     # → 47 (서비스)
-python3 scripts/count_readme_metrics.py --field storage_files     # → 50 (top-level storage modules)
+python3 scripts/count_readme_metrics.py --field service_files     # → 50 (서비스)
+python3 scripts/count_readme_metrics.py --field storage_files     # → 53 (top-level storage modules)
 python3 scripts/count_readme_metrics.py --field middleware_files  # → 12 (미들웨어)
-python3 scripts/count_readme_metrics.py --field route_decorators  # → 289 (라우트)
+python3 scripts/count_readme_metrics.py --field route_decorators  # → 296 (라우트)
+python3 scripts/count_readme_metrics.py --field test_files        # → 278 (테스트 파일)
+python3 scripts/count_readme_metrics.py --field test_functions    # → 3857 (Python AST test_ 정의; pass 수 아님)
 ```
 
 ```text
@@ -218,14 +323,14 @@ FastAPI (app/main.py — create_app(), 모듈 레벨 side-effect 없음)
   │     audit context helpers: document_ops_audit / auth_session_retention_audit
   │       / procurement_review_audit
   │
-  ├─ Routers (23 top-level files, 라우트 289):
+  ├─ Routers (23 top-level files, 라우트 296):
   │     generate / approvals / projects / knowledge / report_workflows
   │     auth / sso / admin / audit / billing / dashboard / history
   │     eval / finetune / local_llm / g2b / document_ops_agent
   │     templates / styles / messages / notifications / events / health
   │
   ▼
-Services (47) — 도메인 오케스트레이션
+Services (50) — 도메인 오케스트레이션
   ├─ generation_service ─ 핵심 파이프라인:
   │     요청 → 캐시 → Provider.generate_bundle() → 스키마 검증
   │        → Stabilizer → Storage 저장 → Jinja2 렌더 → Lint → 반환
@@ -236,7 +341,7 @@ Services (47) — 도메인 오케스트레이션
   │
   ├────────────────┬─────────────────────┐
   ▼                ▼                     ▼
-Providers (5)    Storage (50 modules)   Ops
+Providers (5)    Storage (51 modules)   Ops
   factory +        factory +             CloudWatch 조사
   fallback chain   Local / S3            Statuspage 연동
   mock / openai    (atomic write 공통)   eval / eval_live
@@ -261,11 +366,11 @@ Providers (5)    Storage (50 modules)   Ops
 13. Prompt override, A/B experiment, request pattern mutation은 각 tenant별 state object의 conditional create/CAS로 확정한다. Override save receipt는 operation payload에 결속하고 refresh는 incarnation과 applied count를 유지한다. A/B assignment와 result는 같은 experiment identity에 결속하며, conclusion은 persisted result와 receipt에 맞는 private pending claim만 재개한다. Request clear는 최초 snapshot identity만 제거한다.
 14. Bookmark, style profile, SSO config와 root tenant registry mutation은 각 단일 state object의 conditional create/CAS로 확정한다. 최대 32회 충돌마다 최신 ownership·schema·target identity 위에 operation을 재적용하고 최근 64개 private receipt로 commit 응답 유실 뒤 successor mutation을 조정한다. Bookmark/style target은 private identity/incarnation으로 replacement lifecycle을 구분하며 private metadata는 API와 profile-only reader에 노출하지 않는다.
 15. Project knowledge는 tenant/project별 `index.json`을 단일 mutable authority로 두고 conditional create/CAS 충돌마다 최신 문서 집합에 mutation을 재적용한다. Content/style은 private incarnation 아래 immutable object로 발행하고 canonical path·size·SHA-256 binding이 있는 index record만 사용한다. 최근 64개 receipt와 object metadata는 public knowledge response에서 제거하며 여러 artifact와 index를 하나의 distributed transaction으로 과장하지 않는다.
-16. DocumentOps는 tenant별 `trajectories.jsonl`과 `trajectory_metadata.json`을 선택된 `StateBackend`의 서로 분리된 mutable authority로 사용한다. Trajectory append/review와 governance metadata append는 각각 conditional create/CAS 충돌마다 최신 state에 최대 32회 재적용한다. SFT export, freeze, dry-run approval, execution request, pre-execution audit는 immutable object로 먼저 발행하고 metadata의 identity·size·SHA-256 binding이 있어야 download와 governance authority가 된다. Reviewer sign-off summary도 같은 backend prefix를 read-only로 읽는다. 두 mutable object와 여러 artifact를 한 distributed transaction으로 과장하지 않으며 private trajectory metadata는 public/SFT projection에서 제거한다.
+16. DocumentOps는 tenant별 `trajectories.jsonl`과 `trajectory_metadata.json`을 선택된 `StateBackend`의 서로 분리된 mutable authority로 사용한다. Trajectory append/review와 governance metadata append는 각각 conditional create/CAS 충돌마다 최신 state에 최대 32회 재적용한다. SFT export, freeze, dry-run approval, execution request, pre-execution audit는 immutable object로 먼저 발행하고 metadata의 identity·size·SHA-256 binding이 있어야 download와 governance authority가 된다. Reviewer sign-off summary도 같은 backend prefix를 read-only로 읽는다. Agent run은 service가 operation claim 전에 first-party skill을 strict public binding으로 resolve하고 canonical request identity에 포함한다. Binding은 schema version, skill name/version, risk, content SHA-256, catalog fingerprint와 code-execution/external-runtime false authority만 포함하며 instruction과 source path는 제외한다. Agent는 expected binding drift, unknown skill과 unsupported task mapping을 provider 접근 전에 거부한다. 성공 결과·trajectory·stored replay는 같은 binding을 유지하고 legacy `skill_name`/`skill_version`을 보존한다. 두 mutable object와 여러 artifact를 한 distributed transaction으로 과장하지 않으며 private trajectory metadata는 public/SFT projection에서 제거한다.
 17. DocumentOps governance artifact inventory는 Ops-key가 있는 read-only route에서만 제공한다. Metadata authority를 먼저 엄격 검증하고 다섯 managed directory의 object를 `referenced_verified`, `referenced_missing`, `referenced_tampered`, `invalid_reference`, `unreferenced`로 분류한다. Metadata snapshot 하나는 atomic하지만 여러 object 관측은 transaction이 아니며 자동 삭제 권한도 없으므로 concurrent write 가능성과 실제 cleanup 전에 재확인이 필요하다. Local browser는 같은 Ops-key route를 GET으로만 읽어 exact count와 문제 artifact를 보여주며, tenant 전환이나 후속 재조회보다 늦게 도착한 응답을 폐기하고 삭제 action을 제공하지 않는다.
 18. DocumentOps governance review overview는 training governance, artifact inventory, reviewer sign-off를 service에서 각각 읽어 reviewer-facing 상태로 합성한다. 경계 drift, artifact integrity, governance blocker, human sign-off 순서로 먼저 조치할 문제를 선택하고 다음 검토 행동과 원본 report를 함께 반환한다. 세 조회를 하나의 atomic snapshot으로 과장하지 않으며 수동 재확인과 dataset upload, provider call, training, model promotion 권한 `false`를 응답과 화면에서 유지한다.
 19. Governance overview의 수동 재확인은 source report의 top-level `generated_at`만 제외한 canonical SHA-256을 사용한다. Browser는 성공한 동일 tenant 응답만 현재 인증 세션 메모리에서 비교해 최초·동일·변경을 표시하고 logout·invalid session에서 기준을 제거한다. Fingerprint는 상태 비교용 read-only 값이며 persisted receipt, atomic snapshot, 외부 실행 권한으로 해석하지 않는다.
-20. DocumentOps governance summary·overview·inventory·reviewer sign-off 조회와 sign-off handoff 다운로드는 route가 명시한 action으로 tenant append-only audit에 기록한다. Audit detail은 surface, aggregate status, read-only 여부와 fingerprint 비저장 사실만 보존하고 fingerprint 값, source report, reviewer record를 복사하지 않는다. Governance resource는 trajectory resource와 분리해 Admin Ops에서 독립적으로 필터링한다.
+20. DocumentOps governance summary·overview·inventory·reviewer sign-off 조회와 sign-off handoff 다운로드는 route가 명시한 action으로 tenant append-only audit에 기록한다. Audit detail은 surface, aggregate status, read-only 여부와 fingerprint 비저장 사실만 보존하고 fingerprint 값, source report, reviewer record를 복사하지 않는다. Authenticated Agent run은 별도 action/resource로 task type, binding SHA-256, replay 여부와 code-execution/external-runtime false authority만 DocumentOps detail에 더하고 instruction, source path, request/source body, credential, provider response는 남기지 않는다. Governance resource는 trajectory 및 Agent run resource와 분리해 Admin Ops에서 독립적으로 필터링한다.
 21. Browser에서 governance source를 바꾸는 export·freeze·dry-run approval·execution request·pre-execution audit 저장과 planning provider/model 변경이 성공하면 기존 overview는 즉시 stale 상태가 된다. 이 전환은 진행 중 overview 응답도 무효화하고 이전 fingerprint 기준은 유지한다. 성공한 새 overview 조회만 fresh 상태와 ready badge를 복구하며 실패·download·read-only 조회는 freshness를 올리지 않는다.
 22. DocumentOps Trajectory Stats는 같은 tenant의 연속 조회마다 request version을 증가시키고, 가장 최근 요청의 성공 또는 오류만 화면에 반영한다. 이전 성공·실패와 tenant 전환 전 응답은 accepted·pending·export count나 오류 상태를 덮어쓰지 않는다.
 23. DocumentOps Reviewed SFT export 목록은 export와 freeze 목록을 함께 읽는 요청마다 version을 증가시키고 현재 tenant의 가장 최근 요청만 렌더링한다. 늦게 끝난 이전 성공, HTTP 오류, JSON parse 오류는 최신 task-filtered artifact 목록과 오류 surface를 덮어쓰거나 stale 알림을 만들지 않는다.
@@ -281,9 +386,9 @@ Providers (5)    Storage (50 modules)   Ops
 33. Browser tenant context는 signed token 또는 selector access preflight만으로 부분 전환하지 않는다. `dd_tenant_id` 저장이 성공한 뒤에만 in-memory tenant와 previous-context draft/recovery/marker를 변경하며, storage write 실패는 기존 context evidence를 그대로 보존한다. Browser storage는 durable handoff를 위한 commit point일 뿐 authorization authority가 아니다.
 34. Browser auth session은 login, register, refresh, LDAP login 모두 같은 commit helper를 사용한다. Token claims를 먼저 검증하고 access/refresh token을 쓴 뒤 signed tenant ID를 마지막 commit point로 저장한다. Snapshot을 확보한 뒤 write가 하나라도 실패하면 이전 access/refresh token과 tenant를 복원하고 current user와 DocumentOps evidence를 바꾸지 않는다. 동시 401은 tab 내 하나의 refresh promise에 합류한다. Generic API 오류 경로는 refresh 성공 뒤에도 실패한 mutating request를 자동 replay하지 않고 명시적 재시도를 요구한다. 현재 tab의 commit/cleanup뿐 아니라 같은 origin의 다른 tab에서 access token, refresh token, tenant ID 또는 전체 local storage가 바뀌어도 session revision을 올려 진행 중인 이전 refresh 응답을 폐기하며, unrelated storage key는 revision에 영향을 주지 않는다. 다른 tab의 최종 signed user·tenant·role·credential version이 현재 page와 다르면 reload를 한 번만 요청해 page-memory evidence를 새 authorization context에서 다시 구성하고, 네 값이 같은 token rotation은 reload하지 않는다.
 35. Browser 401 recovery는 refresh 결과를 성공, credential 거절, 일시적 endpoint 장애, browser storage commit 실패로 구분한다. 성공만 원 요청을 한 번 재시도하고 credential 거절만 invalid-session cleanup을 수행한다. 일시 장애와 storage 실패는 기존 token, tenant, current user, review draft와 pending recovery evidence를 보존하고 재시도 가능한 오류를 표시한다.
-36. Protected request authorization은 access token의 signed tenant/user identity를 tenant `UserStore`의 현재 role과 `is_active`에 다시 결속한다. Persisted user가 없거나 비활성이면 token 만료 전에도 `401`, role이 바뀌면 현재 role로 RBAC를 적용하고 state read가 실패하면 `503`으로 fail closed 처리한다. Middleware public 예외인 `/events`도 query access token을 같은 authority로 검사한다. Auth와 SSO user lifecycle route는 앱이 생성될 때 확정한 data root와 `StateBackend`를 공유하므로 process env drift가 request authority를 분리하지 않는다. Fresh install에 user state가 전혀 없는 legacy compatibility만 token payload를 유지하며, 별도 revocation table이나 cross-device push invalidation은 제공하지 않는다.
-37. Password change는 password hash와 persisted `credential_version` 증가를 한 user-state CAS mutation으로 확정한다. Access/refresh token은 발급 시 version을 포함하고 protected request, SSE query token, refresh exchange가 현재 user version과 다르면 `401`로 거부한다. 변경 요청을 보낸 browser만 응답의 새 token pair를 atomic session helper로 commit하고, 같은 origin의 다른 tab은 version mismatch에서 reload한다. Legacy versionless record/token은 현재 version 0일 때만 호환한다. 이는 password change 기반 전체 token 폐기이며 exact-session 선택 폐기는 다음 불변식에서 별도로 정의한다.
-38. 열린 `/events` SSE는 연결 시점의 인증만으로 계속 전달하지 않는다. 최대 15초 간격으로 같은 query token의 expiry와 persisted user/session authority를 다시 확인하고, invalid이면 `auth_revoked`, authority read가 실패하면 `auth_unavailable` control event만 보낸 뒤 unsubscribe한다. Browser는 revoked event를 기존 single-flight refresh에 연결하고 refresh credential 거절만 invalid-session cleanup으로 처리한다. Temporary authority·endpoint·storage failure는 token, current user와 page-memory evidence를 보존하고 polling과 reconnect를 사용한다. Stale source callback은 현재 replacement EventSource를 닫거나 reconnect timer를 만들 수 없다. 이는 bounded revalidation이며 즉시 cross-device push나 15초보다 짧은 termination SLA는 제공하지 않는다.
+36. Protected request authorization은 access token의 signed tenant/user identity를 tenant `UserStore`의 현재 role과 `is_active`에 다시 결속한다. Persisted user가 없거나 비활성이면 token 만료 전에도 `401`, role이 바뀌면 현재 role로 RBAC를 적용하고 state read가 실패하면 `503`으로 fail closed 처리한다. `/events`도 protected route로 두고 Authorization Bearer access token을 같은 authority로 검사한다. Auth와 SSO user lifecycle route는 앱이 생성될 때 확정한 data root와 `StateBackend`를 공유하므로 process env drift가 request authority를 분리하지 않는다. Fresh install에 user state가 전혀 없는 legacy compatibility만 token payload를 유지하며, 별도 revocation table이나 cross-device push invalidation은 제공하지 않는다.
+37. Password change는 password hash와 persisted `credential_version` 증가를 한 user-state CAS mutation으로 확정한다. Access/refresh token은 발급 시 version을 포함하고 protected request, SSE Bearer token, refresh exchange가 현재 user version과 다르면 `401`로 거부한다. 변경 요청을 보낸 browser만 응답의 새 token pair를 atomic session helper로 commit하고, 같은 origin의 다른 tab은 version mismatch에서 reload한다. Legacy versionless record/token은 현재 version 0일 때만 호환한다. 이는 password change 기반 전체 token 폐기이며 exact-session 선택 폐기는 다음 불변식에서 별도로 정의한다.
+38. 열린 `/events` SSE는 연결 시점의 인증만으로 계속 전달하지 않는다. Browser는 access token을 URL에 넣지 않고 fetch-stream의 Authorization header로 전달한다. Server는 최대 15초 간격으로 같은 Bearer token의 expiry와 persisted user/session authority를 다시 확인하고, invalid이면 `auth_revoked`, authority read가 실패하면 `auth_unavailable` control event만 보낸 뒤 unsubscribe한다. Browser는 revoked event를 기존 single-flight refresh에 연결하고 refresh credential 거절만 invalid-session cleanup으로 처리한다. Temporary authority·endpoint·storage failure는 token, current user와 page-memory evidence를 보존하고 polling과 reconnect를 사용한다. Stale stream callback은 현재 replacement stream을 닫거나 reconnect timer를 만들 수 없다. 이는 bounded revalidation이며 즉시 cross-device push나 15초보다 짧은 termination SLA는 제공하지 않는다.
 39. Register·login·invite·LDAP·SAML·GCloud·password-change token pair는 selected local/S3 backend에 conditional create한 tenant-scoped `auth-session.v2` object의 random session ID를 공유하고 refresh도 그 ID를 유지한다. 기존 `auth-session.v1` object는 strict read compatibility를 유지하고 label mutation 시 v2로 승격한다. Protected request, refresh와 `/events`는 exact owner·credential version·expiry·revoked state를 확인한다. `/auth/logout`은 현재 signed session만 CAS로 폐기하고 다른 로그인 session을 보존한다. 본인 inventory는 tenant prefix 전체를 strict 검증한 뒤 현재 credential version의 active record만 `no-store`로 반환한다. `PATCH /auth/sessions/label`은 본인 active session에 최대 40자의 user-supplied 기기 이름 또는 `null`을 CAS 저장하고 foreign·missing·inactive target을 같은 `404`로 숨긴다. Selected revoke는 current target을 `409`, foreign/missing target을 같은 `404`로 거부하고 already-revoked owner retry를 success로 조정한다. Other-session bulk revoke는 strict `confirm=true` 뒤 current를 제외한 active snapshot을 폐기하고, all-device bulk revoke는 같은 user·version의 snapshot 전체를 current-last 순서로 폐기한다. Browser profile은 session ID를 DOM에 넣지 않고 label/save/revoke action에 같은 single-flight와 stale-response guard를 적용하며 all-device 성공 뒤에만 local credential과 page-memory evidence를 정리한다. Corrupt·unavailable state는 원본 보존 `503`으로 닫고 audit은 action/result, aggregate count만 남기며 token, session ID와 user-supplied label을 복사하지 않는다. Bulk 작업은 distributed transaction이 아니므로 중간 write failure가 일부 다른 session 폐기를 남길 수 있고 current-write response-loss와 요청 뒤 생성된 session도 원자적으로 조정하지 않는다. 일반 browser logout은 local cleanup을 즉시 수행하고 endpoint failure를 서버 폐기 미확인 경고로 구분한다. Legacy sessionless token은 exact logout·inventory·label·selected/bulk revoke를 사용할 수 없다. Session state/inventory에 User-Agent/IP를 자동 결합하는 기능, admin mass revoke, expired-session GC와 즉시 push는 제공하지 않는다.
 40. Auth-session label은 request boundary에서 trim한 뒤 40자로 제한하고 API schema와 persisted-state decode가 같은 validator를 사용한다. Unicode control, surrogate, line/paragraph separator와 bidirectional·invisible format 문자는 거부하되 ZWNJ/ZWJ는 자연어와 emoji 조합을 위해 허용한다. Direct storage mutation의 비정규 입력과 persisted drift는 원본 bytes를 다시 쓰지 않고 fail closed 처리한다.
 41. Auth-session retention preview는 admin JWT 또는 Ops key만 허용하고 selected local/S3 backend의 tenant prefix 전체를 strict 검증한다. `auth-session-retention-preview.v1` 응답과 audit은 user ID, session ID와 label을 제외한 aggregate만 사용하고 `read_only=true`, `deletion_authorized=false`, `no-store`를 유지한다. 조회는 object를 쓰거나 삭제하지 않으며 corrupt·unavailable state는 원본 보존 `503`으로 닫는다. 실제 deletion, scheduler와 retention policy 적용은 별도 명시 승인 전까지 이 계약 밖이다.
@@ -299,12 +404,16 @@ Providers (5)    Storage (50 modules)   Ops
 | # | 갭 | 근거 (실측) | 심각도 | 상태 (2026-07-13) |
 |---|-----|------------|--------|--------------------|
 | G1 | **Live provider 부분 실증** — OpenAI 1회 통과, Gemini/Claude/fallback 성공 proof 잔여 | 2026-07-13 M1 blocked receipt | HIGH | 진행 중 (Gemini quota, Anthropic credits 필요) |
-| G2 | **G2B 실데이터 미실증** — collector 코드 존재, `G2B_API_KEY` 없이 비동작 | `app/services/g2b_collector.py` | HIGH | 미착수 (키 필요) |
+| G2 | **G2B stage proof 잔여** — local live 수집·평가 1건은 통과했지만 durable receipt와 AWS stage 경로는 미검증 | `scripts/run_local_procurement_smoke.py`, `docs/specs/public_procurement_copilot/STATUS.md` | HIGH | 부분 완료 (2026-08-11 local live smoke) |
 | G3 | **800줄 초과 모듈** — 계획 수립 시 15개 | `find app -name '*.py' -print0 \| xargs -0 wc -l \| awk '$2 != "total" && $1 > 800 {print}'` | MED | **✅ 해소 및 guard 적용** (2026-07-14, 상수 모듈 drift 재분할 → 초과 0개) |
 | G4 | **excel export 비대칭** — 84줄로 타 export 대비 최소 구현 | `wc -l app/services/excel_service.py` | MED | **완료** (커밋 e9ecabc, 309줄·테스트 14개) |
 | G5 | **CSP nonce 부채** — served HTML `script-src 'unsafe-inline'` 의존 해소 필요 | `app/middleware/security_headers.py`, `app/static/index.html` | MED | **✅ 완료** — inline `on*=` 핸들러 0개, HTML 응답 nonce 기본 on, `DECISIONDOC_CSP_NONCE_ENFORCED=0` local diagnostic opt-out 유지 |
-| G6 | **배포 접근성 미검증** — 최근 확인한 GitHub Actions CD는 성공했지만 staging deploy/smoke와 production deploy는 skip되어 운영 URL 동작 보장 없음 (README §Scope 명시) | GitHub Actions CD `29484598720` success, image build/push passed, deploy/smoke skipped | MED | 미착수 |
+| G6 | **배포 접근성 미검증** — current-main dev deploy-smoke가 AWS OIDC `AssumeRoleWithWebIdentity`에서 차단돼 stack inspection과 runtime smoke에 도달하지 못함 | GitHub Actions `deploy-smoke` run `31452991725` | MED | OIDC trust 복구 필요 |
 | G7 | **모듈 레벨 side-effect** — `app/main.py`의 `app = create_app()`이 import 시점에 `.env`를 로드해 테스트 격리를 해침 | — | MED | **✅ 해결** (2026-07-02, 커밋 0023c7c) — PEP 562 모듈 `__getattr__`로 lazy 생성(캐싱). `uvicorn app.main:app`·Mangum·기존 import 전부 무변경 동작 |
+
+---
+
+생성 export packet의 source는 이제 selected local/S3 backend에 bounded durable state로 보존되어 restart·독립 worker 재다운로드를 지원한다. 이는 local implementation/integrity 범위를 보강한 것이며 M1 live provider, M2 G2B stage receipt, M6 AWS deploy/runtime proof의 외부 실증 갭을 해소하지 않는다.
 
 ---
 
@@ -327,7 +436,8 @@ Providers (5)    Storage (50 modules)   Ops
   2. 산출 결과를 fixture로 고정해 회귀 테스트화 (키 없는 CI에서도 재현).
   3. GO / CONDITIONAL_GO / NO_GO 판정 재현성 확인.
 - DoD: 실데이터 1건의 end-to-end 실행 증적 + 해당 케이스의 키-불필요 회귀 테스트. 입찰 제출·법적 승인은 범위 밖(기존 boundary 유지).
-- 2026-07-14 local 준비: `run_stage_procurement_smoke.py --proof-receipt`가 preflight를 미실행 `blocked` 상태로, 실제 smoke를 `passed` 또는 `failed` 상태로 atomic 기록한다. Host와 안전한 공고 식별자만 남기고 API key, password, URL userinfo/query는 receipt에서 제외한다. 실 G2B 호출은 아직 실행하지 않았다.
+- 2026-07-14 local 준비: `run_stage_procurement_smoke.py --proof-receipt`가 preflight를 미실행 `blocked` 상태로, 실제 smoke를 `passed` 또는 `failed` 상태로 atomic 기록한다. Host와 안전한 공고 식별자만 남기고 API key, password, URL userinfo/query는 receipt에서 제외한다.
+- 2026-08-11 local 실증: real FastAPI app, temporary local storage, mock LLM provider와 live G2B auto-discovery로 공고 `R26BK01664082`를 수집·정규화·평가하고 `NO_GO`, Decision Council, downstream block/override/retry smoke를 통과했다. 이 결과는 no-AWS local evidence이며 M2 durable proof receipt나 deployed stage runtime을 대신하지 않는다.
 
 ### M3 — Export 5종 대칭성 (G4) · 외부 의존 없음 · ✅ 완료 (2026-07-02, 커밋 e9ecabc)
 
@@ -388,6 +498,7 @@ PY
   3. 데모 URL 접근성 확인 후 README Links의 "Demo: (접근 검증 후 추가)" 갱신.
 - DoD: 신규 환경에서 README 절차만으로 배포 재현 + smoke 통과 로그.
 - 2026-07-14 local 준비: `run_deployed_smoke.py --proof-receipt`가 preflight와 실제 deployed smoke의 상태·UTC 시각·runtime host·남은 제한을 validator-compatible receipt로 남긴다. Preflight는 AWS runtime 실행 증거로 취급하지 않으며 실제 runtime은 아직 실행하지 않았다.
+- 2026-08-11 무료 local baseline: `DECISIONDOC_FREE_MODE=1`에서 cloud provider 직접 생성과 factory chain, S3 bundle/state storage, remote local-LLM endpoint를 fail closed로 차단한다. `run_free_local.py`는 mock 또는 loopback Ollama만 선택하고 provider capability, local data root, search/finetune disablement와 cloud secret clearing을 강제한다. Inherited AWS profile/container/web-identity source를 제거하고 metadata/shared config credential lookup도 비활성화한다. 기본 `docker-compose.yml`도 mock/local/free mode로 시작하며 production compose와 SAM 전환은 별도 proof 경계로 유지한다.
 
 ---
 

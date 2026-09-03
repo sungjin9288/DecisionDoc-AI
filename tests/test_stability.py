@@ -18,10 +18,7 @@
 """
 from __future__ import annotations
 
-import json
-import os
 from pathlib import Path
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -33,7 +30,6 @@ def test_low_rating_threshold_invalid_env(monkeypatch) -> None:
     """잘못된 LOW_RATING_THRESHOLD env → default 3 반환 (crash 없음)."""
     monkeypatch.setenv("LOW_RATING_THRESHOLD", "not-a-number")
     # Import the function fresh each time via the module
-    import importlib
     import app.routers.generate as _gen
     # The function should not crash and return 3
     result = _gen._get_low_rating_threshold()
@@ -166,7 +162,6 @@ def test_retry_succeeds_on_first_attempt(tmp_path: Path, monkeypatch) -> None:
     """첫 번째 시도에 성공 → 단 1회 호출."""
     monkeypatch.setenv("LLM_RETRY_ATTEMPTS", "3")
 
-    from app.services.generation_service import GenerationService, ProviderFailedError
     from app.bundle_catalog.spec import BundleSpec
 
     svc, _ = _make_generation_service(tmp_path)

@@ -48,6 +48,23 @@ python3 scripts/check_completion_readiness.py \
   --output reports/completion-readiness/latest.json
 ```
 
+이 검사는 현재 process environment와 `--env-file`로 지정한 파일만 읽는다.
+`.env`, `.github-actions.env`, GitHub repository secrets, AWS stack output은
+자동으로 합치거나 조회하지 않는다. 따라서 `missing_env`는 해당 실행 입력에 값이
+없다는 뜻이며, 다른 secret store에서 값이 발급되지 않았다는 뜻은 아니다.
+GitHub Actions 배포 입력은 별도로 다음 명령으로 확인한다.
+
+```bash
+bash scripts/check-github-actions-config.sh \
+  --stage dev \
+  --env-file .github-actions.env \
+  --procurement-smoke
+```
+
+이 helper도 gitignored local mirror만 검사한다. GitHub에 저장된 secret은 값을
+다시 읽을 수 없으므로 `gh secret list`로 이름 존재 여부만 확인할 수 있고, OIDC
+trust와 실제 사용 가능 여부는 승인된 workflow run으로만 증명한다.
+
 receipt 계약을 확인한다.
 
 ```bash

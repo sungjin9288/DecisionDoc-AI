@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
 
 from scripts import create_pilot_handoff as create_pilot_handoff_script
 from scripts.create_pilot_handoff import (
-    build_pilot_handoff_markdown,
     build_pilot_handoff_payload,
     create_pilot_handoff,
     parse_uat_summary,

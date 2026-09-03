@@ -38,6 +38,10 @@ def _is_procurement_review_action(action: str) -> bool:
             "procurement.guided_review_handoff_download",
             "procurement.guided_review_handoff_recheck",
             "procurement.guided_review_disposition",
+            "procurement.guided_review_registry_create",
+            "procurement.guided_review_registry_list",
+            "procurement.guided_review_registry_read",
+            "procurement.guided_review_registry_download",
         }
     )
 
@@ -82,6 +86,8 @@ def procurement_review_audit_detail(
         "guided_review_disposition_receipt_sha256": (
             "disposition_receipt_sha256"
         ),
+        "guided_review_issuance_record_sha256": "issuance_record_sha256",
+        "guided_review_issuance_binding_sha256": "issuance_binding_sha256",
     }
     for state_field, detail_field in text_fields.items():
         value = getattr(request.state, state_field, "") or ""
@@ -120,4 +126,40 @@ def procurement_review_audit_detail(
         False,
     ):
         detail["procurement_review_handoff_used"] = True
+    registry_detail = getattr(request.state, "guided_review_registry_detail", None)
+    if isinstance(registry_detail, dict):
+        allowed_registry_fields = {
+            "operation_id",
+            "record_sha256",
+            "source_disposition_receipt_sha256",
+            "source_recheck_receipt_sha256",
+            "current_handoff_sha256",
+            "current_review_state_fingerprint_sha256",
+            "review_state_status",
+            "review_disposition",
+            "disposition_binding_sha256",
+            "issuance_provenance",
+            "source_issuance_metadata_sha256",
+            "replay",
+            "review_state_only",
+            "review_only",
+            "read_only",
+            "reviewer_identity_bound",
+            "registry_record_persisted",
+            "snapshot_atomic",
+            "requires_recheck_before_reliance",
+            "mutation",
+            "approval",
+            "export_execution",
+            "provider_call",
+            "bid_submission",
+            "legal_contractual_commitment",
+        }
+        detail.update(
+            {
+                field: registry_detail[field]
+                for field in allowed_registry_fields
+                if field in registry_detail
+            }
+        )
     return detail

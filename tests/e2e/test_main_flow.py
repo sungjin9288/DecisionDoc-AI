@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import uuid
 from urllib import request as urllib_request
 
@@ -2477,6 +2478,82 @@ def test_password_change_rotates_session_and_reloads_other_tabs(page, live_serve
         second_page.close()
 
 
+def test_sse_uses_bearer_header_without_query_token(page):
+    page.evaluate("stopSSE()")
+
+    with page.expect_request(lambda request: "/events" in request.url) as request_info:
+        page.evaluate("startSSE()")
+
+    request = request_info.value
+    assert request.url.endswith("/events")
+    assert "token=" not in request.url
+    assert request.headers["authorization"].startswith("Bearer ")
+
+
+def test_sse_parser_preserves_named_multiline_events_across_chunks(page):
+    result = page.evaluate(
+        r"""async () => {
+          stopSSE();
+          const nativeFetch = window.fetch;
+          let capturedRequest = null;
+
+          window.fetch = async (url, options = {}) => {
+            capturedRequest = { url, headers: options.headers };
+            const encoder = new TextEncoder();
+            const chunks = [
+              'event: notifi',
+              'cation\r\ndata: {"part":"first"}',
+              '\r\ndata: second\r\n\r\n',
+            ];
+            let index = 0;
+            const body = new ReadableStream({
+              pull(controller) {
+                if (index < chunks.length) {
+                  controller.enqueue(encoder.encode(chunks[index++]));
+                  return;
+                }
+                controller.close();
+              },
+            });
+            return new Response(body, {
+              status: 200,
+              headers: { 'Content-Type': 'text/event-stream' },
+            });
+          };
+
+          try {
+            const source = createAuthenticatedEventStream('/events', {
+              Authorization: 'Bearer parser-test-token',
+            });
+            const data = await new Promise((resolve, reject) => {
+              const timeout = setTimeout(
+                () => reject(new Error('Timed out waiting for parsed SSE event.')),
+                1000,
+              );
+              source.addEventListener('notification', event => {
+                clearTimeout(timeout);
+                resolve(event.data);
+              });
+            });
+            source.close();
+            return { data, capturedRequest };
+          } finally {
+            window.fetch = nativeFetch;
+            startSSE();
+          }
+        }"""
+    )
+
+    assert result["data"] == '{"part":"first"}\nsecond'
+    assert result["capturedRequest"] == {
+        "url": "/events",
+        "headers": {
+            "Authorization": "Bearer parser-test-token",
+            "Accept": "text/event-stream",
+        },
+    }
+
+
 def test_open_sse_session_closes_after_password_credential_rotation(
     page,
     live_server,
@@ -2501,7 +2578,7 @@ def test_open_sse_session_closes_after_password_credential_rotation(
           startSSE();
         }"""
     )
-    page.wait_for_function("() => _sse?.readyState === EventSource.OPEN", timeout=5000)
+    page.wait_for_function("() => _sse?.readyState === 1", timeout=5000)
 
     password_changed = False
     try:
@@ -2554,12 +2631,13 @@ def test_sse_stale_callbacks_do_not_close_replacement_session(page):
         """() => {
           stopSSE();
           stopNotifPolling();
-          const NativeEventSource = window.EventSource;
+          const nativeEventStreamFactory = _eventStreamFactory;
           const sources = [];
 
-          class FakeEventSource {
-            constructor(url) {
+          class FakeEventStream {
+            constructor(url, headers) {
               this.url = url;
+              this.headers = headers;
               this.closed = false;
               this.listeners = new Map();
               sources.push(this);
@@ -2575,7 +2653,7 @@ def test_sse_stale_callbacks_do_not_close_replacement_session(page):
             }
           }
 
-          window.EventSource = FakeEventSource;
+          _eventStreamFactory = (url, headers) => new FakeEventStream(url, headers);
           _documentOpsReviewDrafts.set('sse-authority-unavailable-draft', {
             notes: '일시 장애 뒤에도 남아야 하는 검토 메모',
             scoreText: '0.7',
@@ -2605,7 +2683,7 @@ def test_sse_stale_callbacks_do_not_close_replacement_session(page):
 
           stopSSE();
           stopNotifPolling();
-          window.EventSource = NativeEventSource;
+          _eventStreamFactory = nativeEventStreamFactory;
           startSSE();
           return { staleCallback, unavailable };
         }"""
@@ -2756,7 +2834,7 @@ def test_logout_closes_same_session_in_another_browser_context(
             }"""
         )
         copied_page.wait_for_function(
-            "() => _sse?.readyState === EventSource.OPEN",
+            "() => _sse?.readyState === 1",
             timeout=5000,
         )
 
@@ -4364,8 +4442,20 @@ def test_document_ops_agent_run_keeps_the_latest_result_and_observes_stale_compl
             JSON.stringify(body),
             { status, headers: { 'Content-Type': 'application/json' } },
           );
+          const skillBinding = skillName => ({
+            schema_version: 'document_ops_skill_binding_v1',
+            skill_name: skillName,
+            skill_version: '1.2.3',
+            risk_level: 'low',
+            content_sha256: 'a'.repeat(64),
+            catalog_fingerprint: 'b'.repeat(64),
+            code_execution_authorized: false,
+            external_runtime_authorized: false,
+          });
           const agentResult = (suffix, taskType) => ({
             skill_name: `skill-${suffix}`,
+            skill_version: '1.2.3',
+            skill_binding: skillBinding(`skill-${suffix}`),
             task_type: taskType,
             provider_name: 'mock',
             plan: [`plan-${suffix}`],
@@ -4507,8 +4597,20 @@ def test_document_ops_agent_button_sends_one_retry_identity_for_captured_run(pag
             JSON.stringify(body),
             { status: 200, headers: { 'Content-Type': 'application/json' } },
           );
+          const skillBinding = {
+            schema_version: 'document_ops_skill_binding_v1',
+            skill_name: 'decision-brief',
+            skill_version: '1.2.3',
+            risk_level: 'low',
+            content_sha256: 'a'.repeat(64),
+            catalog_fingerprint: 'b'.repeat(64),
+            code_execution_authorized: false,
+            external_runtime_authorized: false,
+          };
           const agentResult = {
             skill_name: 'decision-brief',
+            skill_version: '1.2.3',
+            skill_binding: skillBinding,
             task_type: 'decision_brief',
             provider_name: 'mock',
             plan: ['plan'],
@@ -4592,9 +4694,423 @@ def test_document_ops_agent_button_sends_one_retry_identity_for_captured_run(pag
     assert result["disabledAfter"] is False
 
 
+def test_document_ops_agent_renders_verified_provenance_and_rejects_invalid_bindings(page, tmp_path):
+    console_errors: list[str] = []
+    page_errors: list[str] = []
+    page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
+    page.on("pageerror", lambda error: page_errors.append(str(error)))
+    page.locator('[data-page="document-ops-page"]').click()
+    page.wait_for_timeout(250)
+    page.locator("#docops-task-type").select_option("decision_brief")
+
+    result = page.evaluate(
+        """async () => {
+          const nativeFetch = window.fetch;
+          const response = body => new Response(
+            JSON.stringify(body),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+          const binding = {
+            schema_version: 'document_ops_skill_binding_v1',
+            skill_name: 'decision-brief',
+            skill_version: '1.2.3',
+            risk_level: 'medium',
+            content_sha256: 'a'.repeat(64),
+            catalog_fingerprint: 'b'.repeat(64),
+            code_execution_authorized: false,
+            external_runtime_authorized: false,
+          };
+          const agentResult = (skillBinding, overrides = {}) => ({
+            skill_name: 'decision-brief',
+            skill_version: '1.2.3',
+            skill_binding: skillBinding,
+            task_type: 'decision_brief',
+            provider_name: 'mock',
+            plan: ['verified plan'],
+            draft: 'verified draft',
+            qa: { hard_gate_pass: true, scores: {}, gate_issues: [] },
+            evidence_status: {
+              confirmed: [], assumptions: [], gaps: [], source_references: [],
+            },
+            quality_warnings: [],
+            trajectory_id: 'verified-trajectory',
+            trajectory_saved: true,
+            ...overrides,
+          });
+          const responses = [
+            agentResult(binding),
+            agentResult({ ...binding, content_sha256: 'A'.repeat(64) }, {
+              draft: 'untrusted malformed draft',
+              plan: ['untrusted malformed plan'],
+            }),
+            agentResult({ ...binding, source_path: 'secret-local-source-path' }, {
+              draft: 'untrusted extra draft',
+            }),
+            agentResult(null, {
+              draft: 'untrusted missing draft',
+            }),
+            agentResult({ ...binding, code_execution_authorized: true }, {
+              draft: 'untrusted authority draft',
+            }),
+            agentResult(binding, {
+              skill_version: '9.9.9',
+              draft: 'untrusted mismatch draft',
+            }),
+            agentResult(binding, {
+              operation_replayed: 'false',
+              draft: 'untrusted replay-state draft',
+            }),
+          ];
+          const trajectoryFetches = [];
+          window.fetch = (input, options = {}) => {
+            const url = String(input || '');
+            if (url === '/api/agent/document-ops/run') {
+              return Promise.resolve(response(responses.shift()));
+            }
+            if (url === '/api/agent/document-ops/trajectories/stats') {
+              trajectoryFetches.push(url);
+              return Promise.resolve(response({
+                total_records: 1,
+                accepted_records: 0,
+                pending_records: 1,
+                export_count: 0,
+              }));
+            }
+            if (url.startsWith('/api/agent/document-ops/trajectories?')) {
+              trajectoryFetches.push(url);
+              return Promise.resolve(response({
+                trajectories: [], total: 0, offset: 0, returned: 0,
+                has_more: false, order: 'newest',
+              }));
+            }
+            return nativeFetch(input, options);
+          };
+          const button = document.querySelector('[data-docops-action="run-agent"]');
+          document.querySelector('#docops-title').value = 'Binding verification';
+          document.querySelector('#docops-capture-trajectory').checked = false;
+          const run = async () => {
+            document.querySelector('#notification-container').replaceChildren();
+            button.click();
+            while (button.disabled) {
+              await new Promise(resolve => setTimeout(resolve, 0));
+            }
+            return {
+              result: document.querySelector('#document-ops-result').textContent,
+              notification: document.querySelector('#notification-container').textContent,
+              trajectoryFetchCount: trajectoryFetches.length,
+            };
+          };
+          window.__documentOpsBindingTest = {
+            run,
+            restore: () => { window.fetch = nativeFetch; },
+          };
+          return run();
+        }"""
+    )
+
+    assert "실행 provenance" in result["result"]
+    assert "decision-brief · 1.2.3" in result["result"]
+    assert "medium" in result["result"]
+    assert "a" * 64 in result["result"]
+    assert "b" * 64 in result["result"]
+    assert "first run" in result["result"]
+    assert "code execution: not authorized" in result["result"]
+    assert result["trajectoryFetchCount"] == 2
+
+    page.set_viewport_size({"width": 1440, "height": 1000})
+    page.screenshot(path=str(tmp_path / "document-ops-provenance-desktop.png"), full_page=True)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.screenshot(path=str(tmp_path / "document-ops-provenance-mobile.png"), full_page=True)
+    assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth")
+
+    invalid_results = page.evaluate(
+        """async () => {
+          const test = window.__documentOpsBindingTest;
+          try {
+            return [
+              await test.run(), await test.run(), await test.run(), await test.run(), await test.run(),
+              await test.run(),
+            ];
+          } finally {
+            test.restore();
+            delete window.__documentOpsBindingTest;
+          }
+        }"""
+    )
+    for invalid in invalid_results:
+        assert "실행 provenance를 검증하지 못했습니다" in invalid["result"]
+        assert "실행 provenance를 검증하지 못했습니다" in invalid["notification"]
+        assert "생성했습니다" not in invalid["notification"]
+        assert "저장했습니다" not in invalid["notification"]
+        assert "복구했습니다" not in invalid["notification"]
+        assert invalid["trajectoryFetchCount"] == result["trajectoryFetchCount"]
+        for untrusted in (
+            "untrusted malformed draft",
+            "untrusted malformed plan",
+            "untrusted extra draft",
+            "untrusted missing draft",
+            "untrusted authority draft",
+            "untrusted mismatch draft",
+            "untrusted replay-state draft",
+            "secret-local-source-path",
+        ):
+            assert untrusted not in invalid["result"]
+
+    assert page_errors == []
+    assert console_errors == []
+
+
+def _assert_document_ops_comparison_mode_validates_and_renders_trusted_context(page, tmp_path):
+    console_errors: list[str] = []
+    page_errors: list[str] = []
+    page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
+    page.on("pageerror", lambda error: page_errors.append(str(error)))
+    page.locator('[data-page="document-ops-page"]').click()
+    page.wait_for_timeout(250)
+
+    task_type = page.locator("#docops-task-type")
+    task_type.select_option("source_grounded_document")
+    assert page.locator("#docops-comparison-inputs").is_hidden()
+    task_type.select_option("document_comparison_review")
+    assert page.locator("#docops-comparison-inputs").is_visible()
+    assert page.locator("#docops-baseline-document").get_attribute("required") is not None
+    assert page.locator("#docops-candidate-document").get_attribute("required") is not None
+
+    missing_input = page.evaluate(
+        """async () => {
+          const nativeFetch = window.fetch;
+          let runPosts = 0;
+          try {
+            window.fetch = (input, options) => {
+              if (String(input || '') === '/api/agent/document-ops/run') runPosts += 1;
+              return nativeFetch(input, options);
+            };
+            document.querySelector('#docops-title').value = 'Comparison client validation';
+            document.querySelector('#docops-baseline-document').value = '';
+            document.querySelector('#docops-candidate-document').value = 'candidate text';
+            document.querySelector('#docops-capture-trajectory').checked = true;
+            await runDocumentOpsAgent();
+            return {
+              runPosts,
+              marker: readDocumentOpsPendingRunMarker(),
+              notification: document.querySelector('#notification-container').textContent,
+            };
+          } finally {
+            window.fetch = nativeFetch;
+          }
+        }"""
+    )
+    assert missing_input["runPosts"] == 0
+    assert missing_input["marker"] is None
+    assert "Baseline document를 입력해주세요." in missing_input["notification"]
+
+    baseline = "BASELINE_RAW_ONLY: scope is review-only.\nOwner: team-a"
+    candidate = "CANDIDATE_RAW_ONLY: scope is review-only.\nOwner: team-b"
+    page.locator("#docops-title").fill("Trusted comparison")
+    page.locator("#docops-baseline-document").fill(baseline)
+    page.locator("#docops-candidate-document").fill(candidate)
+    page.locator("#docops-comparison-criteria").fill("")
+    page.locator("#docops-capture-trajectory").check()
+    page.locator('[data-docops-action="run-agent"]').click()
+    _wait_until_text_contains(page, "#document-ops-result", "비교 context", timeout_ms=10000)
+
+    result_text = page.locator("#document-ops-result").inner_text()
+    baseline_sha256 = hashlib.sha256(baseline.encode("utf-8")).hexdigest()
+    candidate_sha256 = hashlib.sha256(candidate.encode("utf-8")).hexdigest()
+    assert "document-comparison-review · 0.1.0" in result_text
+    assert baseline_sha256 in result_text
+    assert candidate_sha256 in result_text
+    assert "Equality\nfalse" in result_text
+    assert baseline not in result_text
+    assert candidate not in result_text
+    trajectory_id = re.search(r"trajectory_id=([^\s]+)", result_text)
+    assert trajectory_id is not None
+
+    trajectory = page.evaluate(
+        """async trajectoryId => {
+          const token = localStorage.getItem('dd_access_token');
+          const response = await fetch(`/api/agent/document-ops/trajectories/${trajectoryId}`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          });
+          if (!response.ok) throw new Error(`trajectory fetch failed: ${response.status}`);
+          return response.json();
+        }""",
+        trajectory_id.group(1),
+    )
+    serialized_trajectory = json.dumps(trajectory, ensure_ascii=False)
+    assert baseline not in serialized_trajectory
+    assert candidate not in serialized_trajectory
+    assert "[redacted]" in serialized_trajectory
+    assert trajectory["trajectory"]["comparison_context"] == {
+        "schema_version": "document_ops_comparison_context_v1",
+        "baseline_sha256": baseline_sha256,
+        "candidate_sha256": candidate_sha256,
+        "documents_identical": False,
+        "comparison_criteria": [],
+        "raw_content_included": False,
+    }
+
+    page.locator("#notification-container").evaluate("container => container.replaceChildren()")
+    page.set_viewport_size({"width": 1440, "height": 1000})
+    page.screenshot(path=str(tmp_path / "document-ops-comparison-desktop.png"), full_page=True)
+    page.locator("#notification-container").evaluate("container => container.replaceChildren()")
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.screenshot(path=str(tmp_path / "document-ops-comparison-mobile.png"), full_page=True)
+    assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth")
+
+    malformed_result = page.evaluate(
+        """async () => {
+          const nativeFetch = window.fetch;
+          const response = body => new Response(JSON.stringify(body), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+          const binding = {
+            schema_version: 'document_ops_skill_binding_v1',
+            skill_name: 'document-comparison-review',
+            skill_version: '0.1.0',
+            risk_level: 'medium',
+            content_sha256: 'a'.repeat(64),
+            catalog_fingerprint: 'b'.repeat(64),
+            code_execution_authorized: false,
+            external_runtime_authorized: false,
+          };
+          try {
+            window.fetch = (input, options) => {
+              if (String(input || '') === '/api/agent/document-ops/run') {
+                return Promise.resolve(response({
+                  skill_name: 'document-comparison-review',
+                  skill_version: '0.1.0',
+                  skill_binding: binding,
+                  task_type: 'document_comparison_review',
+                  provider_name: 'mock',
+                  plan: ['untrusted plan'],
+                  draft: 'untrusted raw context draft',
+                  qa: { hard_gate_pass: false, scores: {}, gate_issues: [] },
+                  evidence_status: { confirmed: [], assumptions: [], gaps: [], source_references: [] },
+                  quality_warnings: [],
+                  trajectory_saved: false,
+                  comparison_context: {
+                    schema_version: 'document_ops_comparison_context_v1',
+                    baseline_sha256: 'a'.repeat(64),
+                    candidate_sha256: 'b'.repeat(64),
+                    documents_identical: false,
+                    comparison_criteria: [],
+                    raw_content_included: true,
+                  },
+                }));
+              }
+              return nativeFetch(input, options);
+            };
+            document.querySelector('#docops-capture-trajectory').checked = false;
+            await runDocumentOpsAgent();
+            return {
+              result: document.querySelector('#document-ops-result').textContent,
+              notification: document.querySelector('#notification-container').textContent,
+            };
+          } finally {
+            window.fetch = nativeFetch;
+          }
+        }"""
+    )
+    assert "실행 provenance를 검증하지 못했습니다" in malformed_result["result"]
+    assert "untrusted raw context draft" not in malformed_result["result"]
+    assert "생성했습니다" not in malformed_result["notification"]
+
+    task_type_downgrade = page.evaluate(
+        """async () => {
+          const nativeFetch = window.fetch;
+          const runPayloads = [];
+          let trajectoryFetchCount = 0;
+          const response = body => new Response(JSON.stringify(body), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+          const binding = {
+            schema_version: 'document_ops_skill_binding_v1',
+            skill_name: 'policy-planning',
+            skill_version: '1.2.3',
+            risk_level: 'low',
+            content_sha256: 'a'.repeat(64),
+            catalog_fingerprint: 'b'.repeat(64),
+            code_execution_authorized: false,
+            external_runtime_authorized: false,
+          };
+          try {
+            window.fetch = (input, options = {}) => {
+              const url = String(input || '');
+              if (url === '/api/agent/document-ops/run') {
+                const payload = JSON.parse(String(options.body || '{}'));
+                runPayloads.push(payload);
+                return Promise.resolve(response({
+                  skill_name: 'policy-planning',
+                  skill_version: '1.2.3',
+                  skill_binding: binding,
+                  task_type: 'policy_planning_brief',
+                  provider_name: 'mock',
+                  plan: ['untrusted policy plan'],
+                  draft: 'untrusted policy-planning draft',
+                  qa: { hard_gate_pass: true, scores: {}, gate_issues: [] },
+                  evidence_status: { confirmed: [], assumptions: [], gaps: [], source_references: [] },
+                  quality_warnings: [],
+                  trajectory_id: 'untrusted-policy-trajectory',
+                  trajectory_saved: true,
+                  operation_id: payload.operation_id,
+                  operation_replayed: false,
+                }));
+              }
+              if (url === '/api/agent/document-ops/trajectories/stats') {
+                trajectoryFetchCount += 1;
+                return Promise.resolve(response({
+                  total_records: 0,
+                  accepted_records: 0,
+                  pending_records: 0,
+                  export_count: 0,
+                }));
+              }
+              if (url.startsWith('/api/agent/document-ops/trajectories?')) {
+                trajectoryFetchCount += 1;
+                return Promise.resolve(response({
+                  trajectories: [], total: 0, offset: 0, returned: 0,
+                  has_more: false, order: 'newest',
+                }));
+              }
+              return nativeFetch(input, options);
+            };
+            document.querySelector('#notification-container').replaceChildren();
+            document.querySelector('#docops-capture-trajectory').checked = true;
+            await runDocumentOpsAgent();
+            const marker = readDocumentOpsPendingRunMarker();
+            return {
+              runPayload: runPayloads[0],
+              marker,
+              result: document.querySelector('#document-ops-result').textContent,
+              notification: document.querySelector('#notification-container').textContent,
+              trajectoryFetchCount,
+            };
+          } finally {
+            window.fetch = nativeFetch;
+            const marker = readDocumentOpsPendingRunMarker();
+            if (marker) clearDocumentOpsPendingRunMarker(marker.operation_id);
+          }
+        }"""
+    )
+    assert task_type_downgrade["runPayload"]["task_type"] == "document_comparison_review"
+    assert task_type_downgrade["marker"]["operation_id"] == task_type_downgrade["runPayload"]["operation_id"]
+    assert "실행 provenance를 검증하지 못했습니다" in task_type_downgrade["result"]
+    assert "untrusted policy-planning draft" not in task_type_downgrade["result"]
+    assert "untrusted policy plan" not in task_type_downgrade["result"]
+    assert "생성했습니다" not in task_type_downgrade["notification"]
+    assert "저장했습니다" not in task_type_downgrade["notification"]
+    assert task_type_downgrade["trajectoryFetchCount"] == 0
+    assert page_errors == []
+    assert console_errors == []
+
+
 def test_document_ops_agent_recovers_a_lost_success_with_the_same_operation_identity(page):
     page.locator('[data-page="document-ops-page"]').click()
     page.wait_for_timeout(250)
+    page.locator("#docops-task-type").select_option("decision_brief")
 
     result = page.evaluate(
         """async () => {
@@ -4610,8 +5126,20 @@ def test_document_ops_agent_recovers_a_lost_success_with_the_same_operation_iden
             JSON.stringify(body),
             { status: 200, headers: { 'Content-Type': 'application/json' } },
           );
+          const skillBinding = {
+            schema_version: 'document_ops_skill_binding_v1',
+            skill_name: 'decision-brief',
+            skill_version: '1.2.3',
+            risk_level: 'low',
+            content_sha256: 'a'.repeat(64),
+            catalog_fingerprint: 'b'.repeat(64),
+            code_execution_authorized: false,
+            external_runtime_authorized: false,
+          };
           const agentResult = {
             skill_name: 'decision-brief',
+            skill_version: '1.2.3',
+            skill_binding: skillBinding,
             task_type: 'decision_brief',
             provider_name: 'mock',
             plan: ['plan'],
@@ -4708,6 +5236,8 @@ def test_document_ops_agent_recovers_a_lost_success_with_the_same_operation_iden
     assert result["statusTenant"] == result["originalTenant"]
     assert result["replayTenant"] == result["originalTenant"]
     assert "recovered exact replay" in result["resultText"]
+    assert "실행 provenance" in result["resultText"]
+    assert "exact replay" in result["resultText"]
     assert "replay" in result["resultText"]
     assert result["disabledAfter"] is False
 
@@ -4715,6 +5245,7 @@ def test_document_ops_agent_recovers_a_lost_success_with_the_same_operation_iden
 def test_document_ops_agent_rechecks_pending_operation_before_exact_replay(page):
     page.locator('[data-page="document-ops-page"]').click()
     page.wait_for_timeout(250)
+    page.locator("#docops-task-type").select_option("decision_brief")
 
     result = page.evaluate(
         """async () => {
@@ -4726,6 +5257,16 @@ def test_document_ops_agent_rechecks_pending_operation_before_exact_replay(page)
             JSON.stringify(body),
             { status: 200, headers: { 'Content-Type': 'application/json' } },
           );
+          const skillBinding = {
+            schema_version: 'document_ops_skill_binding_v1',
+            skill_name: 'decision-brief',
+            skill_version: '1.2.3',
+            risk_level: 'low',
+            content_sha256: 'a'.repeat(64),
+            catalog_fingerprint: 'b'.repeat(64),
+            code_execution_authorized: false,
+            external_runtime_authorized: false,
+          };
           try {
             window.fetch = (input, options = {}) => {
               const url = String(input || '');
@@ -4737,6 +5278,8 @@ def test_document_ops_agent_rechecks_pending_operation_before_exact_replay(page)
                 }
                 return Promise.resolve(response({
                   skill_name: 'decision-brief',
+                  skill_version: '1.2.3',
+                  skill_binding: skillBinding,
                   task_type: 'decision_brief',
                   provider_name: 'mock',
                   plan: ['plan'],
@@ -7090,6 +7633,440 @@ def test_document_ops_trajectory_detail_records_explicit_human_review(page, tmp_
     assert unexpected_console_errors == []
 
 
+def test_document_ops_comparison_mode_validates_and_renders_trusted_context(page, tmp_path):
+    """Run after shared trajectory pagination tests because it persists one redacted record."""
+    _assert_document_ops_comparison_mode_validates_and_renders_trusted_context(page, tmp_path)
+
+
+def test_document_ops_comparison_file_intake_validates_bytes_response_and_stale_state(page, tmp_path):
+    console_errors: list[str] = []
+    page_errors: list[str] = []
+    page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
+    page.on("pageerror", lambda error: page_errors.append(str(error)))
+    page.locator('[data-page="document-ops-page"]').click()
+    page.locator("#docops-task-type").select_option("document_comparison_review")
+
+    baseline_bytes = "baseline file text\nreview only".encode("utf-8")
+    candidate_bytes = "candidate file text\nreview only\nsecurity check".encode("utf-8")
+    page.set_input_files(
+        "#docops-baseline-file",
+        {"name": "baseline.txt", "mimeType": "text/plain", "buffer": baseline_bytes},
+    )
+    page.set_input_files(
+        "#docops-candidate-file",
+        {"name": "candidate.txt", "mimeType": "text/plain", "buffer": candidate_bytes},
+    )
+    _wait_until_text_contains(page, "#docops-baseline-file-status", "검증된 파일 intake")
+    _wait_until_text_contains(page, "#docops-candidate-file-status", "검증된 파일 intake")
+    assert page.input_value("#docops-baseline-document") == baseline_bytes.decode("utf-8")
+    assert page.input_value("#docops-candidate-document") == candidate_bytes.decode("utf-8")
+
+    page.locator("#docops-title").fill("Verified file comparison")
+    page.locator('[data-docops-action="run-agent"]').click()
+    _wait_until_text_contains(page, "#document-ops-result", "비교 context", timeout_ms=10000)
+    result = page.locator("#document-ops-result").inner_text()
+    assert hashlib.sha256(baseline_bytes).hexdigest() in result
+    assert hashlib.sha256(candidate_bytes).hexdigest() in result
+    assert baseline_bytes.decode("utf-8") not in result
+    assert candidate_bytes.decode("utf-8") not in result
+
+    malformed_bytes = b"malformed intake source"
+    page.evaluate(
+        """() => {
+          window.__comparisonIntakeNativeFetch = window.fetch;
+          window.fetch = (input, options) => {
+            if (String(input) === '/api/agent/document-ops/comparison-documents/extract') {
+              return Promise.resolve(new Response(JSON.stringify({
+                schema_version: 'document_ops_comparison_document_v1',
+                filename: 'malformed.txt', source_size_bytes: 23,
+                source_sha256: 'a'.repeat(64), extracted_text: 'must not fill',
+                extracted_text_sha256: 'b'.repeat(64), extracted_char_count: 13,
+                content_may_be_truncated: false,
+                extraction_mode: 'deterministic_local_existing_parser',
+                provider_called: false, persisted: false, unexpected: true,
+              }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+            }
+            return window.__comparisonIntakeNativeFetch(input, options);
+          };
+        }"""
+    )
+    page.set_input_files(
+        "#docops-baseline-file",
+        {"name": "malformed.txt", "mimeType": "text/plain", "buffer": malformed_bytes},
+    )
+    _wait_until_text_contains(page, "#docops-baseline-file-status", "파일 검증 실패")
+    assert page.input_value("#docops-baseline-document") == ""
+
+    stale_a = b"stale first file"
+    stale_b = b"current second file"
+    stale_a_text = stale_a.decode("utf-8")
+    stale_b_text = stale_b.decode("utf-8")
+
+    def intake_response(filename: str, raw: bytes) -> dict[str, object]:
+        text = raw.decode("utf-8")
+        return {
+            "schema_version": "document_ops_comparison_document_v1",
+            "filename": filename,
+            "source_size_bytes": len(raw),
+            "source_sha256": hashlib.sha256(raw).hexdigest(),
+            "extracted_text": text,
+            "extracted_text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+            "extracted_char_count": len(text),
+            "content_may_be_truncated": False,
+            "extraction_mode": "deterministic_local_existing_parser",
+            "provider_called": False,
+            "persisted": False,
+        }
+
+    page.evaluate(
+        """() => {
+          window.__comparisonIntakeResolvers = [];
+          window.fetch = (input, options) => {
+            if (String(input) === '/api/agent/document-ops/comparison-documents/extract') {
+              return new Promise(resolve => window.__comparisonIntakeResolvers.push(resolve));
+            }
+            return window.__comparisonIntakeNativeFetch(input, options);
+          };
+        }"""
+    )
+    page.set_input_files(
+        "#docops-baseline-file",
+        {"name": "stale-a.txt", "mimeType": "text/plain", "buffer": stale_a},
+    )
+    page.wait_for_function("() => window.__comparisonIntakeResolvers.length === 1")
+    page.set_input_files(
+        "#docops-baseline-file",
+        {"name": "stale-b.txt", "mimeType": "text/plain", "buffer": stale_b},
+    )
+    page.wait_for_function("() => window.__comparisonIntakeResolvers.length === 2")
+    page.evaluate(
+        """body => window.__comparisonIntakeResolvers.shift()(
+          new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+        )""",
+        intake_response("stale-a.txt", stale_a),
+    )
+    page.wait_for_timeout(100)
+    assert page.input_value("#docops-baseline-document") != stale_a_text
+    page.evaluate(
+        """body => window.__comparisonIntakeResolvers.shift()(
+          new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+        )""",
+        intake_response("stale-b.txt", stale_b),
+    )
+    _wait_until_text_contains(page, "#docops-baseline-file-status", "stale-b.txt")
+    assert page.input_value("#docops-baseline-document") == stale_b_text
+    page.locator("#docops-baseline-document").fill("edited direct text")
+    assert "직접 편집" in page.locator("#docops-baseline-file-status").inner_text()
+    assert page.evaluate("() => _documentOpsComparisonFileProvenance.baseline") is None
+    assert page.locator("#docops-baseline-file").input_value() == ""
+    page.evaluate("() => { window.fetch = window.__comparisonIntakeNativeFetch; }")
+
+    page.evaluate(
+        """() => {
+          const bytes = new Uint8Array((20 * 1024 * 1024) + 1);
+          const transfer = new DataTransfer();
+          transfer.items.add(new File([bytes], 'too-large.txt', { type: 'text/plain' }));
+          const input = document.querySelector('#docops-baseline-file');
+          input.files = transfer.files;
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+        }"""
+    )
+    _wait_until_text_contains(page, "#docops-baseline-file-status", "20 MB")
+    assert page.input_value("#docops-baseline-document") == "edited direct text"
+
+    page.locator("#notification-container").evaluate("container => container.replaceChildren()")
+    page.set_viewport_size({"width": 1440, "height": 1000})
+    page.screenshot(path=str(tmp_path / "document-ops-comparison-file-intake-desktop.png"), full_page=True)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.screenshot(path=str(tmp_path / "document-ops-comparison-file-intake-mobile.png"), full_page=True)
+    assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth")
+    assert page_errors == []
+    assert console_errors == []
+
+
+@pytest.mark.parametrize(
+    "failure_mode",
+    ["missing_hash", "wrong_hash", "invalid_utf8", "invalid_json", "invalid_schema"],
+)
+def test_document_ops_comparison_change_set_rejects_untrusted_bytes_before_agent_post(
+    page,
+    failure_mode,
+):
+    page.locator('[data-page="document-ops-page"]').click()
+    page.locator("#docops-task-type").select_option("document_comparison_review")
+    page.locator("#docops-title").fill(f"Rejected {failure_mode}")
+    page.locator("#docops-baseline-document").fill("baseline\nold")
+    page.locator("#docops-candidate-document").fill("baseline\nnew")
+    page.locator("#docops-capture-trajectory").uncheck()
+
+    result = page.evaluate(
+        r"""async mode => {
+          const nativeFetch = window.fetch;
+          const endpoint = '/api/agent/document-ops/comparison-documents/change-set';
+          const requestBody = JSON.stringify({
+            schema_version: 'document_ops_comparison_change_set_request_v1',
+            baseline_document_text: document.querySelector('#docops-baseline-document').value,
+            candidate_document_text: document.querySelector('#docops-candidate-document').value,
+            comparison_criteria: [],
+          });
+          const trusted = await nativeFetch(endpoint, {
+            method: 'POST',
+            headers: { ...getAuthHeaders(_currentTenantId), 'Content-Type': 'application/json' },
+            body: requestBody,
+          });
+          const trustedBytes = new Uint8Array(await trusted.arrayBuffer());
+          const trustedText = new TextDecoder().decode(trustedBytes);
+          let agentPosts = 0;
+          try {
+            window.fetch = async (input, options = {}) => {
+              const url = String(input || '');
+              if (url === '/api/agent/document-ops/run') {
+                agentPosts += 1;
+                return new Response('{}', { status: 500 });
+              }
+              if (url !== endpoint) return nativeFetch(input, options);
+              const headers = new Headers(trusted.headers);
+              let bytes = trustedBytes;
+              if (mode === 'missing_hash') headers.delete(DOCUMENT_OPS_COMPARISON_CHANGE_SET_HASH_HEADER);
+              if (mode === 'wrong_hash') headers.set(DOCUMENT_OPS_COMPARISON_CHANGE_SET_HASH_HEADER, '0'.repeat(64));
+              if (mode === 'invalid_utf8') bytes = new Uint8Array([0xff, 0xfe, 0xfd]);
+              if (mode === 'invalid_json') bytes = new TextEncoder().encode('not-json\n');
+              if (mode === 'invalid_schema') {
+                const value = JSON.parse(trustedText);
+                value.unexpected = true;
+                bytes = new TextEncoder().encode(`${JSON.stringify(value)}\n`);
+              }
+              if (!['missing_hash', 'wrong_hash'].includes(mode)) {
+                headers.set(
+                  DOCUMENT_OPS_COMPARISON_CHANGE_SET_HASH_HEADER,
+                  await documentOpsSha256Bytes(bytes),
+                );
+              }
+              return new Response(bytes, { status: 200, headers });
+            };
+            document.querySelector('#notification-container').replaceChildren();
+            await runDocumentOpsAgent();
+            return {
+              agentPosts,
+              notification: document.querySelector('#notification-container').textContent,
+              evidence: _documentOpsVerifiedComparisonChangeSet,
+              downloadDisabled: document.querySelector('#document-ops-comparison-change-set-download').disabled,
+            };
+          } finally {
+            window.fetch = nativeFetch;
+          }
+        }""",
+        failure_mode,
+    )
+
+    assert result["agentPosts"] == 0
+    assert result["evidence"] is None
+    assert result["downloadDisabled"] is True
+    assert "검증 실패" in result["notification"]
+
+
+def test_document_ops_comparison_change_set_keeps_only_current_exact_download_and_layout(
+    page,
+    tmp_path,
+):
+    console_errors: list[str] = []
+    page_errors: list[str] = []
+    page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
+    page.on("pageerror", lambda error: page_errors.append(str(error)))
+    page.locator('[data-page="document-ops-page"]').click()
+    page.locator("#docops-task-type").select_option("document_comparison_review")
+    page.locator("#docops-title").fill("Exact change set download")
+    page.locator("#docops-baseline-document").fill(
+        "same\ndelete-only\nanchor-a\nreplace-old\nanchor-b\ntail"
+    )
+    page.locator("#docops-candidate-document").fill(
+        "same\nanchor-a\nreplace-new\nanchor-b\ninsert-only\ntail"
+    )
+    page.locator("#docops-capture-trajectory").uncheck()
+    page.locator('[data-docops-action="run-agent"]').click()
+    _wait_until_text_contains(page, "#document-ops-comparison-change-set", "Verified line change set")
+    _wait_until_text_contains(page, "#document-ops-result", "비교 context", timeout_ms=10000)
+
+    expected_bytes = page.evaluate(
+        "() => Array.from(_documentOpsVerifiedComparisonChangeSet.exactBytes)",
+    )
+    stale_url = page.evaluate("() => _documentOpsVerifiedComparisonChangeSet.objectUrl")
+    page.evaluate(
+        """() => {
+          window.__comparisonRevokedUrls = [];
+          window.__comparisonNativeRevokeObjectUrl = URL.revokeObjectURL;
+          URL.revokeObjectURL = value => {
+            window.__comparisonRevokedUrls.push(value);
+            window.__comparisonNativeRevokeObjectUrl.call(URL, value);
+          };
+        }"""
+    )
+    with page.expect_download() as download_info:
+        page.locator("#document-ops-comparison-change-set-download").click()
+    download = download_info.value
+    assert download.suggested_filename == "document-ops-comparison-change-set.json"
+    assert download.path().read_bytes() == bytes(expected_bytes)
+
+    panel = page.locator("#document-ops-comparison-change-set")
+    assert panel.is_visible()
+    assert panel.locator('[data-comparison-opcode="identical"]').count() >= 1
+    assert panel.locator('[data-comparison-opcode="add"]').count() == 1
+    assert panel.locator('[data-comparison-opcode="remove"]').count() == 1
+    assert panel.locator('[data-comparison-opcode="replace"]').count() == 1
+    assert panel.locator('[data-comparison-opcode="identical"]').first.is_visible()
+    assert panel.locator('[data-comparison-opcode="add"]').is_visible()
+    assert panel.locator('[data-comparison-opcode="remove"]').is_visible()
+    assert panel.locator('[data-comparison-opcode="replace"]').is_visible()
+    assert "authority all false" in panel.inner_text()
+    assert page.locator("#document-ops-comparison-change-set-download").is_visible()
+    assert page.locator("#document-ops-comparison-change-set-download").is_enabled()
+
+    line_ending_result = page.evaluate(
+        """async () => {
+          const baseline = 'same content\\r\\n';
+          const candidate = 'same content\\n';
+          const response = await fetch('/api/agent/document-ops/comparison-documents/change-set', {
+            method: 'POST',
+            headers: { ...getAuthHeaders(_currentTenantId), 'Content-Type': 'application/json' },
+            cache: 'no-store',
+            body: JSON.stringify({
+              schema_version: 'document_ops_comparison_change_set_request_v1',
+              baseline_document_text: baseline,
+              candidate_document_text: candidate,
+              comparison_criteria: [],
+            }),
+          });
+          const value = await response.json();
+          const validated = await documentOpsValidatedComparisonChangeSet(
+            value,
+            baseline,
+            candidate,
+            [],
+          );
+          if (validated) renderDocumentOpsComparisonChangeSet({ value: validated });
+          return {
+            validated: Boolean(validated),
+            opcode: validated?.hunks?.[0]?.opcode || '',
+            baselineLine: validated?.hunks?.[0]?.baseline_lines?.[0] || '',
+            candidateLine: validated?.hunks?.[0]?.candidate_lines?.[0] || '',
+            rendered: document.querySelector('#document-ops-comparison-change-set')?.innerText || '',
+          };
+        }"""
+    )
+    assert line_ending_result["validated"] is True
+    assert line_ending_result["opcode"] == "replace"
+    assert line_ending_result["baselineLine"] == "same content\r\n"
+    assert line_ending_result["candidateLine"] == "same content\n"
+    assert "same content\\r\\n" in line_ending_result["rendered"]
+    assert "same content\\n" in line_ending_result["rendered"]
+    page.evaluate("() => renderDocumentOpsComparisonChangeSet(_documentOpsVerifiedComparisonChangeSet)")
+
+    page.set_viewport_size({"width": 1440, "height": 1000})
+    assert panel.is_visible()
+    page.screenshot(path=str(tmp_path / "document-ops-change-set-desktop.png"), full_page=True)
+    page.set_viewport_size({"width": 390, "height": 844})
+    assert panel.is_visible()
+    assert panel.locator('[data-comparison-opcode="replace"]').is_visible()
+    assert page.locator("#document-ops-comparison-change-set-download").is_visible()
+    page.screenshot(path=str(tmp_path / "document-ops-change-set-mobile.png"), full_page=True)
+    assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth")
+
+    page.locator("#docops-comparison-criteria").fill("security")
+    assert page.evaluate("() => _documentOpsVerifiedComparisonChangeSet") is None
+    assert page.evaluate("() => window.__comparisonRevokedUrls").count(stale_url) == 1
+    assert page.locator("#document-ops-comparison-change-set-download").is_disabled()
+    assert page_errors == []
+    assert console_errors == []
+
+
+def test_document_ops_comparison_change_set_discards_reverse_order_task_and_auth_stale_work(page):
+    page.locator('[data-page="document-ops-page"]').click()
+    page.locator("#docops-task-type").select_option("document_comparison_review")
+    page.locator("#docops-title").fill("Stale change set guard")
+    page.locator("#docops-baseline-document").fill("same\nfirst-old")
+    page.locator("#docops-candidate-document").fill("same\nnew")
+    page.locator("#docops-capture-trajectory").uncheck()
+
+    result = page.evaluate(
+        r"""async () => {
+          const nativeFetch = window.fetch;
+          const endpoint = '/api/agent/document-ops/comparison-documents/change-set';
+          const pending = [];
+          let agentPosts = 0;
+          const waitForPending = async count => {
+            for (let index = 0; index < 200 && pending.length < count; index += 1) {
+              await new Promise(resolve => setTimeout(resolve, 5));
+            }
+            if (pending.length < count) throw new Error(`missing deferred request ${count}`);
+          };
+          const fulfill = async request => {
+            const response = await nativeFetch(request.input, request.options);
+            const bytes = await response.arrayBuffer();
+            request.resolve(new Response(bytes, { status: response.status, headers: response.headers }));
+          };
+          try {
+            window.fetch = (input, options = {}) => {
+              const url = String(input || '');
+              if (url === endpoint) {
+                return new Promise(resolve => pending.push({ resolve, input, options }));
+              }
+              if (url === '/api/agent/document-ops/run') agentPosts += 1;
+              return nativeFetch(input, options);
+            };
+
+            const firstRun = runDocumentOpsAgent();
+            await waitForPending(1);
+            const baseline = document.querySelector('#docops-baseline-document');
+            baseline.value = 'same\ncurrent-old';
+            baseline.dispatchEvent(new Event('input', { bubbles: true }));
+            const secondRun = runDocumentOpsAgent();
+            await waitForPending(2);
+            await fulfill(pending[1]);
+            await secondRun;
+            await fulfill(pending[0]);
+            await firstRun;
+            const reverseOrder = {
+              agentPosts,
+              baseline: _documentOpsVerifiedComparisonChangeSet?.snapshot?.baseline,
+            };
+
+            pending.splice(0);
+            const taskRun = runDocumentOpsAgent();
+            await waitForPending(1);
+            const taskSelect = document.querySelector('#docops-task-type');
+            taskSelect.value = 'policy_planning_brief';
+            taskSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            await fulfill(pending[0]);
+            await taskRun;
+            const afterTaskInvalidation = agentPosts;
+
+            taskSelect.value = 'document_comparison_review';
+            taskSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            pending.splice(0);
+            const authRun = runDocumentOpsAgent();
+            await waitForPending(1);
+            _authSessionRevision += 1;
+            invalidateDocumentOpsComparisonIntake({ clearFileText: false, reason: 'auth test revision' });
+            await fulfill(pending[0]);
+            await authRun;
+            return {
+              reverseOrder,
+              afterTaskInvalidation,
+              afterAuthInvalidation: agentPosts,
+              evidence: _documentOpsVerifiedComparisonChangeSet,
+            };
+          } finally {
+            window.fetch = nativeFetch;
+          }
+        }"""
+    )
+
+    assert result["reverseOrder"] == {"agentPosts": 1, "baseline": "same\ncurrent-old"}
+    assert result["afterTaskInvalidation"] == 1
+    assert result["afterAuthInvalidation"] == 1
+    assert result["evidence"] is None
+
+
 # ── 생성 플로우 ───────────────────────────────────────────────────────────────
 
 def test_generate_flow_produces_results(page):
@@ -7170,13 +8147,35 @@ def test_localStorage_form_draft_saved(page):
 
 
 def test_history_saved_after_generate(page):
-    """After a successful generate, dd_history must contain the latest entry."""
+    """A successful stream generation must appear in local and server history."""
     _generate_to_results(page, "이력 테스트", "이력 확인")
     raw = page.evaluate("localStorage.getItem('dd_history')")
     assert raw is not None
     history = json.loads(raw)
     assert len(history) >= 1
     assert history[0]["title"] == "이력 테스트"
+
+    page.click("#history-toggle-btn")
+    page.wait_for_selector("#history-list .history-item", timeout=5000)
+    assert "이력 테스트" in page.locator("#history-list .history-item").first.inner_text()
+
+
+def test_completed_generation_clears_screen_reader_status(page):
+    """A completed result must not remain announced as an in-progress generation."""
+    _generate_to_results(page, "상태 완료 테스트", "완료 상태 확인")
+
+    assert page.locator("#sr-live-region").text_content() == ""
+
+
+def test_bundle_badge_matches_loaded_catalog(page):
+    """The visible bundle count must follow the loaded server catalog."""
+    expected_count = page.locator(".bundle-card").count()
+
+    assert expected_count > 0
+    assert (
+        page.locator("#bundle-count-badge").inner_text()
+        == f"🗂️ {expected_count}가지 번들"
+    )
 
 
 # ── 스케치 플로우 ─────────────────────────────────────────────────────────────

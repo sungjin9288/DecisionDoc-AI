@@ -12,6 +12,7 @@ DocumentOpsIssueCode = Literal[
     "unsupported_confirmed_claims",
     "certainty_with_open_gaps",
     "missing_governance_privacy_security",
+    "missing_comparison_sections",
     "missing_output_sections",
     "missing_plan",
 ]

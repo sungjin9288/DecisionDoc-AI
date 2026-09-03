@@ -1,8 +1,11 @@
 # DecisionDoc AI Product Execution Plan
 
-Updated: 2026-07-13
+Updated: 2026-08-18
 
 This document translates [DecisionDoc AI Product Direction](./product_direction.md) into an execution plan. It is an internal planning document and does not claim production readiness, customer adoption, measured business impact, or autonomous approval capability.
+
+Current completion/readiness is owned only by the [Development Plan — Current
+Completion/Readiness Snapshot](./development-plan.md#0-current-completionreadiness-snapshot).
 
 ## 1. Execution Goal
 
@@ -123,7 +126,7 @@ Current local evidence slice:
 - The DocumentOps workbench now reduces three separate governance reads to one reviewer-facing overview request. The service reads training governance, selected-backend artifact inventory, and reviewer sign-off independently, then returns the first actionable state and next review action while preserving all source reports. It fingerprints each source after excluding only its top-level generation time and combines those values into a review-state fingerprint. The browser compares successful same-tenant observations in memory, labels the recheck as first, unchanged, or changed, and keeps one stale tenant/request guard. A successful export, freeze, dry-run approval, execution request, pre-execution audit write, or a planning provider/model change invalidates an in-flight read and marks the open result as a previous observation; only a successful new overview request restores the fresh state. Trajectory Stats, the task-filtered Reviewed SFT export/freeze list, Training Readiness, and Training Execution Request Records increment independent same-tenant request versions and accept only the latest success or error, so older responses cannot roll back current counts, artifact rows, the freeze offered for dry-run approval, or two-person guard evidence. The list refresh after a successful execution request also supersedes a read that started before the save. Training Audit Checklist applies the same ordering guard with an exact tenant and provider/model query binding. Planning changes remove the previous audit action until recheck, and a completed audit export invalidates an older in-flight checklist read. Adapter Contract and Rehearsal use separate request versions and exact tenant/provider/model bindings, reject older success and error responses, and replace an open result with `RECHECK REQUIRED` as soon as the planning selection changes. SFT Export Preview and the reviewed artifact list also bind their results to the selected task, while Training Plan Preview binds to the exact provider/model query; changing those inputs invalidates both in-flight and open evidence. Governance views and sign-off handoff downloads append a redacted tenant audit entry containing only the surface, aggregate status, and read-only state; the fingerprint and source reports are not copied into audit history. The comparison is not persisted, does not make the combined snapshot atomic, and keeps dataset upload, provider calls, training, job creation, and model promotion unauthorized.
 - Concurrent DocumentOps Agent runs bind the result panel to the latest initiated run and tenant. A late same-tenant trajectory save refreshes history without resetting the current filters or replacing the latest draft, while a stale failure remains warning-only.
 - DocumentOps controls that can create an export, freeze, dry-run approval, execution request, audit artifact, or provider-backed Agent request run as browser single-flight actions. The initiating button is disabled before the async action starts and restored after success or failure, while read-only refresh controls remain independent. The browser assigns one UUID operation identity to each governance write and captured Agent run. Governance records bind it to the canonical request payload in private metadata, return the original verified artifact for an exact replay, and reject changed input with `409`. Captured Agent runs claim a separate private receipt before provider execution; exact replay returns the stored trajectory-bound result without another provider call or usage event. The API-key protected status route reads only the current tenant receipt, omits private owner/hash/result fields, and audits the operation ID, status, and replay decision. After a lost response, the browser reads status without cache and requires the schema, operation ID, state-specific fields, read-only flag, and provider-call denial to agree. Mismatched, unavailable, or running state keeps the captured tenant and payload only in page memory, and both the Agent button and status recheck join one recovery promise. Failed state ends pending recovery after surfacing the evidence action; verified success alone exact-replays the original payload. A captured POST first records an exact three-field marker in a tenant-scoped same-origin storage key and serializes the claim with a tenant-scoped Web Lock when supported. Reload, another tab, and a page reopened after the owner tab closes use that marker for status-only inspection and block a new POST without persisting or reconstructing payload. Different tenant markers coexist; foreign tenant read/write/clear does not remove them, and H96 base-key markers remain owner-readable. Login, registration, refresh, and LDAP login validate token claims before one helper commits access/refresh credentials and the signed tenant. Any failed browser write restores the previous session and prevents current user or DocumentOps evidence from changing. The upper 401 recovery path consumes an explicit refresh outcome and joins concurrent callers to one refresh promise. The provider retry helper retries once only after refresh, while generic mutating requests require an explicit retry and are never replayed automatically. Rejected credentials clear the current auth context; endpoint or storage failures preserve credentials and unsaved evidence, and a superseded response cannot overwrite a newer login session. Authorized switching likewise writes the next tenant ID before clearing the previous context, so storage failure leaves the current tenant, draft, recovery promise, and marker intact. Explicit release confirms that backend execution continues and trajectory/audit evidence still requires review. Strict marker validation rejects extra fields and mismatched schema, tenant, or UUID in the scoped slot; logout and invalid session clear the current context. Shared storage failure uses tenant-scoped tab storage, and failure of both stores keeps only same-page execution available. Uncaptured runs keep their existing behavior. Governance CAS can still leave an unreferenced immutable artifact, while Agent receipts do not provide cross-device coordination, atomic simultaneous claims without Web Locks, process-crash recovery, cross-ID semantic deduplication, exactly-once execution, or automatic GC.
-- Same-origin auth storage changes now advance the receiving tab's session revision for access token, refresh token, tenant ID, and full local-storage clear events. An older in-flight refresh is discarded even when another tab reuses the same refresh-token bytes; unrelated storage keys are ignored. The receiving page compares the final signed user, tenant, and role with its current context. A mismatch requests one reload so current user and page-memory evidence are rebuilt under the new authorization context, while a same-identity and same-role token rotation leaves current work in place. Protected requests and SSE query-token subscriptions resolve current role and active state from tenant user storage, so a stale JWT role cannot preserve removed privileges and a deactivated user cannot open a new subscription. This is per-request backend authorization plus same-origin browser reconciliation; it does not provide an administrator-wide revocation table or cross-device push coordination.
+- Same-origin auth storage changes now advance the receiving tab's session revision for access token, refresh token, tenant ID, and full local-storage clear events. An older in-flight refresh is discarded even when another tab reuses the same refresh-token bytes; unrelated storage keys are ignored. The receiving page compares the final signed user, tenant, and role with its current context. A mismatch requests one reload so current user and page-memory evidence are rebuilt under the new authorization context, while a same-identity and same-role token rotation leaves current work in place. Protected requests and SSE Bearer-header subscriptions resolve current role and active state from tenant user storage, so a stale JWT role cannot preserve removed privileges and a deactivated user cannot open a new subscription. The browser uses an authenticated fetch stream instead of placing the access token in the event URL. This is per-request backend authorization plus same-origin browser reconciliation; it does not provide an administrator-wide revocation table or cross-device push coordination.
 - Password change also advances a persisted credential version in the same CAS as the password hash. Older access and refresh tokens fail on their next protected request or refresh exchange, the profile flow commits the returned replacement pair, and another same-origin tab reloads when the version changes. Register, login, invite, LDAP, SAML, GCloud, and password-change pairs additionally share a random tenant-scoped `auth-session.v2` identity; refresh preserves it, and strict v1 reads remain compatible. `POST /auth/logout` revokes only the signed current session through selected-backend CAS, so a separate login remains active while copied same-session credentials fail on their next protected request, refresh, or open SSE recheck. Self-service inventory validates every direct object in the tenant session prefix, then returns only the current user's active current-version sessions with `no-store`. `PATCH /auth/sessions/label` lets the owner set or clear a bounded user-supplied device name through CAS without adding User-Agent or IP fields to session state or inventory; missing, foreign, stale-version, revoked, and expired targets share one `404`. Selected revoke is strict, owner-bound, retry-safe, protects current, and hides foreign versus missing targets. Confirmed other-session bulk revoke preserves current, while confirmed all-device revoke writes the same validated snapshot with current last. The scan and writes are not a multi-object transaction: a mid-operation backend failure may leave partial other-session progress, a lost current-write response may leave the server revoked before browser cleanup, and a session created after the snapshot remains for the next inspection. `GET /admin/auth-sessions/retention-preview` gives an admin JWT or Ops key an aggregate-only view of old expired/revoked state after strict whole-prefix validation. Its read-only contract discloses no user, session, or label identity and grants no deletion authority. The profile keeps session IDs out of the DOM and uses one single-flight plus request/token/modal/mutation generations for label and revoke actions. All-device success clears browser credentials and page-memory evidence; a failed response preserves the initiating browser. Open SSE subscriptions revalidate expiry and persisted user/session authority every 15 seconds. General browser logout completes local cleanup immediately even if server revocation is unavailable. Corrupt session state fails closed and audit omits tokens, user IDs, target session IDs, and user-supplied labels while retaining aggregate counts. Legacy sessionless exact logout/inventory/label/selected/bulk revoke, immediate cross-device push, automatic User-Agent/IP session inventory, administrator mass revoke, actual expired-session deletion or scheduling, and a shorter stream-termination SLA remain outside this plan.
 - Auth-session labels use one API/storage validator. It trims request input, limits the result to 40 characters, rejects Unicode control and display-direction formatting characters, and preserves ZWNJ/ZWJ for natural text and emoji composition.
 - Trajectory history reads bind each response to the exact tenant, task/review filters, search query, and ordering captured at request start. A query change during the search debounce invalidates the older response immediately, before the replacement request begins.
@@ -206,21 +209,42 @@ Prepare the product workflow for external evaluation without overstating operati
 - The product story is consistent across README, roadmap, case study, and resume materials.
 - No public material claims customer adoption, production deployment, or measured business impact without evidence.
 
-## 6. Immediate Backlog
+## 6. Completed Core-Loop Evidence
 
-| Priority | Work item | Output | Completion check |
-|---|---|---|---|
-| 1 | Define `Decision Package` shape | schema or typed internal structure | local test validates required fields |
-| 2 | Create procurement package sample | sample input and output folder | deterministic mock run produces package |
-| 3 | Add evidence summary | Markdown or JSON summary | source references and uncertainty visible |
-| 4 | Add package handoff | handoff JSON/MD | validator confirms no authorization boundary break |
-| 5 | Add pending sign-off path | template and generator | pending record validates and remains non-approval |
-| 6 | Add export packet | deterministic ZIP plus embedded manifest | create/verify path proves package, evidence, validation, sign-off, tamper detection, and non-approval boundary |
-| 7 | Add demo runbook | concise operator instructions | new user can follow local path |
-| 8 | Add versioned CLI evidence contract | `cli_contract_manifest.json` plus validator/checker receipt | success/failure matrix and docs contract tests pass |
-| 9 | Add packet-bound review receipt | companion `procurement_review_receipt.json` | pending/init, completed record, stale packet, reviewer, re-record, and non-approval checks pass |
+The original nine-item local core loop is implemented. This is an evidence map,
+not an Immediate Backlog and not a claim of deployed, live-provider, human-UAT,
+or operational approval completion. All paths below are repository evidence for
+the local/mock scope.
 
-## 7. Engineering Guardrails
+H129 historical reviewer-attributed evidence and H129.1 current server-issued provenance
+are distinct: H128 same-backend metadata is server-issued local
+provenance, not a signature, actor attestation, currentness, atomic snapshot,
+approval, or external authenticity. M1 remains partial/blocked after historical
+OpenAI proof; M2 has completed local live G2B smoke but no durable stage proof;
+M6, human UAT, and external approval remain unproven.
+
+| Implemented capability | Repository evidence | Local contract boundary |
+|---|---|---|
+| Decision Package shape | `docs/samples/procurement_decision_package_local_demo/expected_decision_package.json`, `tests/test_procurement_decision_package_builder.py` | Required package shape is compared locally. |
+| Deterministic sample | `docs/samples/procurement_decision_package_local_demo/sample_input.json`, `docs/samples/procurement_decision_package_local_demo/expected_decision_package.json` | Fixture input and expected output remain deterministic. |
+| Evidence summary | `app/services/procurement_decision_package/artifact_evidence.py`, `tests/test_procurement_decision_package_sample.py` | Evidence and uncertainty remain review material, not approval. |
+| Package handoff | `app/services/procurement_decision_package/package_builder.py`, `scripts/build_procurement_decision_package_sample.py` | Handoff stays limited to local drafting/review preparation. |
+| Pending sign-off | `app/services/procurement_decision_package/review_receipt.py`, `scripts/manage_procurement_review_receipt.py` | Pending/completed receipt is not operational approval. |
+| Export packet | `app/services/procurement_decision_package/review_packet.py`, `scripts/manage_procurement_decision_review_packet.py` | Deterministic packet verification remains local. |
+| Demo runbook | `docs/product_local_demo_runbook.md`, `scripts/run_procurement_decision_package_demo.py` | Demo forces the local evidence workflow. |
+| CLI evidence contract | `docs/samples/procurement_decision_package_local_demo/cli_contract_manifest.json`, `tests/test_procurement_decision_package_docs_contract.py` | Versioned stdout JSON success/failure contract. |
+| Packet-bound review receipt | `app/services/procurement_decision_package/review_receipt_workspace.py`, `app/services/procurement_decision_package/reviewed_package.py`, `scripts/manage_procurement_reviewed_package.py` | Receipt and reviewed package bind exact local packet bytes. |
+
+## 7. Future Feature Gate
+
+No new capability enters a backlog until a decision record supplies all of the
+following: target user; concrete observed problem/evidence; current workaround;
+desired outcome; bounded acceptance criteria; affected boundaries; explicit authority scope;
+and a local verification path. The authority scope must state
+whether the proposal remains review-only and what approval, provider, storage,
+browser, deployment, or external action is explicitly excluded.
+
+## 8. Engineering Guardrails
 
 - Preserve route, service, schema, provider, and storage boundaries.
 - Keep `mock` provider deterministic.
@@ -229,7 +253,7 @@ Prepare the product workflow for external evaluation without overstating operati
 - Keep approval records separate from operational execution approval.
 - Add tests around boundaries, not only happy-path document generation.
 
-## 8. Product Guardrails
+## 9. Product Guardrails
 
 - Do not build a generic document marketplace.
 - Do not optimize for many document types before one high-stakes workflow is clear.
@@ -237,7 +261,7 @@ Prepare the product workflow for external evaluation without overstating operati
 - Do not merge reviewer acceptance with service resume or training approval.
 - Do not update public claims without verification evidence.
 
-## 9. Demo Script Target
+## 10. Demo Script Target
 
 The target demo should take less than ten minutes and follow this script:
 
@@ -251,7 +275,7 @@ The target demo should take less than ten minutes and follow this script:
 8. Explain that provider calls, training, deployment, and service resume remain unauthorized.
 9. Export the package.
 
-## 10. Definition Of Done
+## 11. Definition Of Done
 
 The product execution plan is working when the repository contains:
 
@@ -272,4 +296,28 @@ H121 applies the same session boundary to assignment and read access. It preserv
 
 H122 completes the evidence retrieval loop with a verified original-packet re-download. The route authorizes before reading, revalidates the immutable bytes and record binding, returns only safe evidence headers, and keeps browser downloads bound to the current review projection and auth context. It adds no reassignment, review completion, approval, provider, training, deployment, or service-resume authority.
 
+H129 historical evidence adds the immutable reviewer-evidence boundary to Guided Decision
+Review dispositions. It conditionally creates one canonical record per
+tenant/project/bundle/operation, binds replay to the stable reviewer and exact
+H128 source, and exposes only strictly revalidated scoped list/read/download
+views. Browser work starts only from verified page-memory H128 evidence and
+uses request-owned single flight. This execution slice does not close M1, M2,
+M6, human UAT, deployment, or external approval and
+does not authorize any provider, AWS, G2B, upload, training, promotion, deploy,
+bid, legal, or contractual effect.
+
+H128 now conditionally creates and exact-read-backs one hash-only same-backend
+issuance metadata object per canonical receipt SHA-256. H129.1 server-issued
+provenance independently validates and embeds only that metadata plus its hash;
+v1 stays immutable and Legacy issuance unrecorded. This proof is not a signature,
+actor attestation, currentness, atomic snapshot, approval, or external authenticity, and stores no
+H128 body, reviewer/session/network/token value, rationale, secret, or
+execution authority.
+
 Until then, DecisionDoc AI should be described as an actively developed MVP with strong local governance and review workflow foundations.
+
+## Generated export packet execution slice
+
+The current generated-document export slice keeps the existing `GET /generate/export-zip` user flow but binds it to a signed tenant/request source held in the selected local/S3 `StateBackend`. `GenerationExportSourceStore` publishes an immutable content-addressed source object then conditional-create/CAS updates the tenant index, so the same local `DATA_DIR` supports restart and independent-worker export. The fixed source boundary is one hour, 500 references, 8 MiB per source, and 64 MiB referenced bytes per tenant with deterministic oldest-first eviction; missing/expired/foreign remains one no-store `404`, while corrupt/tampered/unavailable state fails closed as generic `503 EXPORT_SOURCE_UNAVAILABLE`. It canonicalizes the requested conversion set, produces only fixed artifact paths, builds all conversions before delivery, then independently verifies the exact ZIP bytes and canonical manifest. The transient result and a project document with a non-empty server-loaded `request_id` each expose one `검증된 검토 ZIP` action; both use the same browser path and request exactly `docx,pdf,pptx,hwp,excel`. The browser passes only that request identity to the existing route, checks ZIP media type, packet and manifest SHA-256 header shapes, `verified=true`, `operational_approval=false`, and the exact packet bytes before any Blob/download action. Project export captures auth revision, tenant, signed user, project-detail generation, project/document identity, and request ID; stale completions cannot create a Blob, download, notification, or current-page mutation, while successful project URLs use bounded scoped cleanup on detail close/reload/project change. A missing or expired source gives regeneration guidance without a project snapshot fallback; malformed evidence, hash/crypto failure, fetch failure, and `503` remain non-disclosing and do not download.
+
+This is execution evidence for local integrity and review readiness only. Source persistence does not persist the packet or create an approval record: `review_only=true`, `packet_persisted=false`, false human-review/operational-approval state, and the all-false external authority object remain part of the packet contract. This slice adds no human completion, provider call, AWS runtime, G2B action, dataset upload, training, deployment, or publishing path, and does not close M1/M2/M6, human UAT, deployment, or external-approval proof gaps.

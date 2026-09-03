@@ -6,7 +6,11 @@ from pathlib import Path
 from typing import Any, Callable
 
 from app.agents.document_ops_agent import DocumentOpsAgent
-from app.agents.schemas import DocumentOpsRequest, DocumentOpsResult
+from app.agents.schemas import (
+    DocumentOpsRequest,
+    DocumentOpsResult,
+    DocumentOpsSkillBinding,
+)
 from app.providers.base import Provider
 from app.services.document_ops_governance import (
     build_document_ops_governance_overview,
@@ -61,6 +65,11 @@ def _trajectory_summary(record: dict[str, Any]) -> dict[str, Any]:
     input_data = record.get("input") if isinstance(record.get("input"), dict) else {}
     requirements = input_data.get("requirements") if isinstance(input_data.get("requirements"), dict) else {}
     skill = record.get("skill") if isinstance(record.get("skill"), dict) else {}
+    skill_binding = (
+        record.get("skill_binding")
+        if isinstance(record.get("skill_binding"), dict)
+        else {}
+    )
     feedback = record.get("human_feedback") if isinstance(record.get("human_feedback"), dict) else {}
     qa = record.get("qa") if isinstance(record.get("qa"), dict) else {}
     overall_score = qa.get("overall_score")
@@ -75,6 +84,7 @@ def _trajectory_summary(record: dict[str, Any]) -> dict[str, Any]:
         "request_id": str(record.get("request_id") or ""),
         "task_type": str(record.get("task_type") or ""),
         "skill": dict(skill),
+        "skill_binding": dict(skill_binding),
         "provider": str(record.get("provider") or ""),
         "created_at": record.get("created_at"),
         "human_review_status": str(record.get("human_review_status") or "pending"),
@@ -108,15 +118,22 @@ class DocumentOpsService:
         *,
         tenant_id: str,
         request_id: str,
+        record_skill_binding: Callable[[DocumentOpsSkillBinding], None] | None = None,
         record_provider_usage: Callable[[Provider], None] | None = None,
     ) -> dict[str, Any]:
         request_payload = dict(payload)
         operation_id = request_payload.pop("operation_id", None)
         req = DocumentOpsRequest.model_validate(request_payload)
+        skill_binding = self._agent.resolve_skill_binding(req)
+        if record_skill_binding is not None:
+            record_skill_binding(skill_binding)
         claim = self._claim_run_operation(
             tenant_id=tenant_id,
             operation_id=operation_id,
-            request_payload=req.model_dump(),
+            request_payload={
+                **req.model_dump(),
+                "skill_binding": skill_binding.model_dump(),
+            },
         )
         if claim is not None and not claim.should_execute:
             return {
@@ -130,6 +147,7 @@ class DocumentOpsService:
                 req,
                 request_id=request_id,
                 tenant_id=tenant_id,
+                expected_skill_binding=skill_binding,
                 record_provider_usage=record_provider_usage,
             )
             body = self._serialize_result(result)
@@ -155,6 +173,10 @@ class DocumentOpsService:
             if claim is not None:
                 self._fail_run_operation(claim)
             raise
+
+    def skill_catalog(self) -> dict[str, Any]:
+        """Read the immutable local skill catalog without provider or state access."""
+        return self._agent.skill_catalog()
 
     def _claim_run_operation(
         self,

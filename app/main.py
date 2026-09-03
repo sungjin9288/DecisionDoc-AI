@@ -45,6 +45,7 @@ from app.storage.project_store import ProjectStore
 from app.storage.report_workflow_store import ReportWorkflowStore
 from app.storage.trajectory_store import TrajectoryStore
 from app.storage.feedback_store import FeedbackStore
+from app.storage.generation_export_source_store import GenerationExportSourceStore
 from app.storage.prompt_override_store import PromptOverrideStore
 from app.storage.state_backend import get_state_backend
 from app.tenant import SYSTEM_TENANT_ID
@@ -141,6 +142,7 @@ def create_app() -> FastAPI:
 
     storage = get_storage()
     state_backend = get_state_backend(data_dir=data_dir)
+    generation_export_source_store = GenerationExportSourceStore(backend=state_backend)
 
     # ── Multi-tenant setup ──────────────────────────────────────────────────
     from app.storage.tenant_store import TenantStore, migrate_legacy_data
@@ -253,7 +255,8 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def _lifespan(app: FastAPI):
-        """FastAPI lifespan: drain background eval executor on shutdown."""
+        """Configure runtime logging and drain the eval executor on shutdown."""
+        setup_logging()
         yield
         if os.getenv("AWS_LAMBDA_FUNCTION_NAME") or os.getenv("LAMBDA_TASK_ROOT"):
             return
@@ -327,6 +330,7 @@ def create_app() -> FastAPI:
     app.state.data_dir = data_dir
     app.state.storage = storage
     app.state.state_backend = state_backend
+    app.state.generation_export_source_store = generation_export_source_store
     app.state.environment = environment
     from app.services.event_bus import get_event_bus
     app.state.event_bus = get_event_bus()

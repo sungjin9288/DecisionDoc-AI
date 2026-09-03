@@ -1,11 +1,21 @@
+import hashlib
 import json
 
 import pytest
 
-from app.agents.document_ops_agent import DocumentOpsAgent
+from app.agents.document_ops_agent import (
+    DocumentOpsAgent,
+    SkillBindingMismatchError,
+)
 from app.agents.schemas import DocumentOpsRequest
+from app.agents.skill_registry import SkillNotFoundError
 from app.providers.base import Provider, ProviderError
 from app.providers.mock_provider import MockProvider
+from app.schemas.document_ops import (
+    DocumentOpsComparisonChangeSetRequest,
+    DocumentOpsComparisonChangeSetResponse,
+)
+from app.services.document_ops_comparison import build_document_ops_comparison_change_set
 from app.storage.trajectory_store import TrajectoryStore
 
 
@@ -47,6 +57,17 @@ class NamedRawProvider(RawTextProvider):
         self.name = name
 
 
+class ProviderTrackingAgent(DocumentOpsAgent):
+    def __init__(self) -> None:
+        super().__init__()
+        self.provider_accesses = 0
+
+    @property
+    def provider(self) -> Provider:
+        self.provider_accesses += 1
+        return FailingProvider()
+
+
 def test_document_ops_agent_runs_policy_planning_with_mock_provider() -> None:
     agent = DocumentOpsAgent(provider=MockProvider())
     result = agent.run(
@@ -65,11 +86,457 @@ def test_document_ops_agent_runs_policy_planning_with_mock_provider() -> None:
 
     assert result.provider_name == "mock"
     assert result.skill_name == "policy-planning"
+    assert result.skill_version == result.skill_binding.skill_version
+    assert result.skill_name == result.skill_binding.skill_name
+    assert result.skill_binding.code_execution_authorized is False
+    assert result.skill_binding.external_runtime_authorized is False
     assert result.plan
     assert "보행자 안전 정책 기획 사업" in result.draft
     assert result.qa["hard_gate_pass"] is True
     assert result.trajectory is not None
     assert result.trajectory["skill"]["name"] == "policy-planning"
+    assert result.trajectory["skill_binding"] == result.skill_binding.model_dump()
+
+
+def test_document_ops_agent_selects_source_grounded_skill_and_includes_governed_instructions() -> None:
+    prompts: list[str] = []
+
+    class PromptProvider(StaticJsonProvider):
+        def generate_raw(self, prompt: str, *, request_id: str, max_output_tokens: int | None = None) -> str:
+            prompts.append(prompt)
+            return self.raw
+
+    raw = json.dumps(
+        {
+            "plan": ["의사결정 의도와 source mapping을 확인합니다."],
+            "draft": "확인된 근거와 TODO를 구분한 검토 초안입니다.",
+            "evidence_status": {
+                "confirmed": ["source-1"],
+                "assumptions": ["운영 범위는 확인 필요"],
+                "gaps": ["추가 원문 확인 필요"],
+                "source_references": ["source-1"],
+            },
+            "qa": {"hard_gate_pass": False, "warnings": ["review required"]},
+        },
+        ensure_ascii=False,
+    )
+    result = DocumentOpsAgent(provider=PromptProvider(raw)).run(
+        DocumentOpsRequest(
+            task_type="source_grounded_document",
+            requirements={"title": "근거 기반 의사결정", "decision_intent": "검토 범위 결정"},
+            source_references=[{"id": "source-1", "title": "확인된 원문"}],
+        ),
+        request_id="agent-source-grounded",
+        tenant_id="system",
+    )
+
+    assert result.skill_name == "source-grounded-document"
+    binding_json = json.dumps(
+        result.skill_binding.model_dump(),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    assert prompts and prompts[0].count(binding_json) == 1
+    assert "decision intent" in prompts[0]
+    assert "source reference" in prompts[0]
+    assert "Non-authorization" in prompts[0]
+    assert "do not grant or change provider, tenant, approval" in prompts[0]
+    assert "training, publication, code-execution, or external-runtime authority" in prompts[0]
+
+
+@pytest.mark.parametrize(
+    "requirements",
+    [
+        {},
+        {"baseline_document_text": "", "candidate_document_text": "candidate"},
+        {"baseline_document_text": "baseline", "candidate_document_text": "   "},
+        {"baseline_document_text": 1, "candidate_document_text": "candidate"},
+        {"baseline_document_text": "baseline", "candidate_document_text": ["candidate"]},
+        {"baseline_document_text": "x" * 20_001, "candidate_document_text": "candidate"},
+        {"baseline_document_text": "baseline", "candidate_document_text": "candidate", "comparison_criteria": "not-a-list"},
+        {"baseline_document_text": "baseline", "candidate_document_text": "candidate", "comparison_criteria": ["same", " same "]},
+        {"baseline_document_text": "baseline", "candidate_document_text": "candidate", "comparison_criteria": ["x"] * 9},
+        {"baseline_document_text": "baseline", "candidate_document_text": "candidate", "comparison_criteria": ["x" * 121]},
+    ],
+)
+def test_document_comparison_request_validation_rejects_before_skill_or_provider(requirements: dict) -> None:
+    agent = ProviderTrackingAgent()
+
+    with pytest.raises(ValueError):
+        request = DocumentOpsRequest(
+            task_type="document_comparison_review",
+            requirements=requirements,
+        )
+        agent.resolve_skill_binding(request)
+
+    assert agent.provider_accesses == 0
+
+
+def test_document_ops_agent_runs_grounded_document_comparison_with_redacted_trajectory() -> None:
+    baseline = "목적: 운영 범위 확인\n담당: PM"
+    candidate = "목적: 운영 범위와 보안 검토 확인\n담당: PM\n검토: 보안 담당"
+    request = DocumentOpsRequest(
+        task_type="document_comparison_review",
+        requirements={
+            "title": "운영 변경 비교",
+            "baseline_document_text": baseline,
+            "candidate_document_text": candidate,
+            "comparison_criteria": [" 관찰된 변경 ", "결정 영향"],
+        },
+        capture_trajectory=True,
+    )
+
+    result = DocumentOpsAgent(provider=MockProvider()).run(
+        request,
+        request_id="agent-document-comparison",
+        tenant_id="system",
+    )
+
+    expected_context = {
+        "schema_version": "document_ops_comparison_context_v1",
+        "baseline_sha256": hashlib.sha256(baseline.encode("utf-8")).hexdigest(),
+        "candidate_sha256": hashlib.sha256(candidate.encode("utf-8")).hexdigest(),
+        "documents_identical": False,
+        "comparison_criteria": ["관찰된 변경", "결정 영향"],
+        "raw_content_included": False,
+    }
+    assert result.skill_name == "document-comparison-review"
+    assert result.qa["hard_gate_pass"] is False
+    assert "missing_comparison_sections" not in {issue["code"] for issue in result.qa["gate_issues"]}
+    assert result.comparison_context is not None
+    assert result.comparison_context.model_dump() == expected_context
+    assert result.trajectory is not None
+    assert result.trajectory["comparison_context"] == expected_context
+    assert result.trajectory["input"]["requirements"]["baseline_document_text"] == "[redacted]"
+    assert result.trajectory["input"]["requirements"]["candidate_document_text"] == "[redacted]"
+    assert baseline not in json.dumps(result.trajectory, ensure_ascii=False)
+    assert candidate not in json.dumps(result.trajectory, ensure_ascii=False)
+    for heading in (
+        "관찰된 변경",
+        "근거와 가정 변화",
+        "결정 및 트레이드오프 영향",
+        "권한·거버넌스 경계",
+        "권고",
+        "사람 재확인 질문",
+    ):
+        assert heading in result.draft
+
+
+def test_document_ops_agent_redacts_provider_echo_from_comparison_trajectory() -> None:
+    baseline = "first private line\nsecond private line"
+    candidate = "a\nb"
+    raw = json.dumps(
+        {
+            "plan": [
+                "first private line",
+                "baseline and candidate",
+                "Option a remains viable",
+            ],
+            "critique": ["second private line"],
+            "revision_tasks": [baseline],
+            "draft": "baseline and candidate",
+            "evidence_status": {
+                "confirmed": ["a"],
+                "assumptions": [],
+                "gaps": ["b"],
+                "source_references": [],
+            },
+            "qa": {
+                "hard_gate_pass": True,
+                "warnings": ["review second private line"],
+            },
+        }
+    )
+    result = DocumentOpsAgent(provider=StaticJsonProvider(raw)).run(
+        DocumentOpsRequest(
+            task_type="document_comparison_review",
+            requirements={
+                "baseline_document_text": baseline,
+                "candidate_document_text": candidate,
+            },
+            capture_trajectory=True,
+        ),
+        request_id="agent-document-comparison-echo",
+        tenant_id="system",
+    )
+
+    serialized_result = result.model_dump_json()
+    assert "first private line" not in serialized_result
+    assert "second private line" not in serialized_result
+    assert result.draft == "baseline and candidate"
+    assert "Option a remains viable" in result.plan
+    assert result.evidence_status.confirmed == ["[redacted_comparison_source_echo]"]
+    assert result.evidence_status.gaps == ["[redacted_comparison_source_echo]"]
+    assert result.trajectory is not None
+    serialized_trajectory = json.dumps(result.trajectory, ensure_ascii=False)
+    assert "first private line" not in serialized_trajectory
+    assert "second private line" not in serialized_trajectory
+    assert "[redacted_comparison_source_echo]" in serialized_trajectory
+
+    from app.agents.document_ops_agent import _redact_comparison_source_echo
+
+    many_lines = "\n".join(f"private source line {index}" for index in range(1_400))
+    safe_output = ["ordinary provider output"] * 8
+    assert _redact_comparison_source_echo(
+        safe_output,
+        source_texts=(many_lines, "candidate source"),
+    ) == safe_output
+
+
+def test_document_ops_agent_compares_identical_documents_without_inventing_a_change() -> None:
+    document = "동일 문서\n검토 대기"
+    result = DocumentOpsAgent(provider=MockProvider()).run(
+        DocumentOpsRequest(
+            task_type="document_comparison_review",
+            requirements={
+                "baseline_document_text": document,
+                "candidate_document_text": document,
+            },
+        ),
+        request_id="agent-document-comparison-identical",
+        tenant_id="system",
+    )
+
+    assert result.comparison_context is not None
+    assert result.comparison_context.documents_identical is True
+    assert "텍스트 변경은 관찰되지 않았습니다" in result.draft
+
+
+def test_document_comparison_request_omits_criteria_as_an_empty_normalized_list() -> None:
+    request = DocumentOpsRequest(
+        task_type="document_comparison_review",
+        requirements={
+            "baseline_document_text": "baseline",
+            "candidate_document_text": "candidate",
+        },
+    )
+
+    assert request.comparison_context is not None
+    assert request.comparison_context.comparison_criteria == []
+
+
+def test_document_comparison_change_set_keeps_complete_long_identical_counts_with_bounded_hunks() -> None:
+    document = "\n".join(f"repeated-{index % 5}" for index in range(500))
+
+    result = build_document_ops_comparison_change_set(
+        DocumentOpsComparisonChangeSetRequest(
+            baseline_document_text=document,
+            candidate_document_text=document,
+        )
+    )
+
+    assert result.documents_identical is True
+    assert result.baseline_line_count == result.candidate_line_count == 500
+    assert result.equal_line_count == 500
+    assert result.added_line_count == result.removed_line_count == result.replaced_line_count == 0
+    assert result.total_hunk_count == 1
+    assert result.hunks_truncated is True
+    assert len(result.hunks) == 1
+    assert result.hunks[0].opcode == "equal"
+    assert len(result.hunks[0].baseline_lines) + len(result.hunks[0].candidate_lines) == 200
+    assert result.hunks[0].baseline_end == result.hunks[0].candidate_end == 100
+
+
+@pytest.mark.parametrize(
+    ("baseline", "candidate"),
+    [
+        ("same content\n", "same content"),
+        ("same content\r\n", "same content\n"),
+    ],
+)
+def test_document_comparison_change_set_reports_line_ending_only_changes(
+    baseline: str,
+    candidate: str,
+) -> None:
+    result = build_document_ops_comparison_change_set(
+        DocumentOpsComparisonChangeSetRequest(
+            baseline_document_text=baseline,
+            candidate_document_text=candidate,
+        )
+    )
+
+    assert result.documents_identical is False
+    assert result.equal_line_count == 0
+    assert result.replaced_line_count == 1
+    assert result.hunks[0].opcode == "replace"
+    assert result.hunks[0].baseline_lines == [baseline]
+    assert result.hunks[0].candidate_lines == [candidate]
+
+
+def test_document_comparison_change_set_aggregates_asymmetric_replace_sides_before_max() -> None:
+    baseline = "same\nA1\nA2\nA3\nanchor\nB1\ntail"
+    candidate = "same\nX1\nanchor\nY1\nY2\nY3\ntail"
+
+    result = build_document_ops_comparison_change_set(
+        DocumentOpsComparisonChangeSetRequest(
+            baseline_document_text=baseline,
+            candidate_document_text=candidate,
+            comparison_criteria=[" replacement balance "],
+        )
+    )
+
+    replace_hunks = [hunk for hunk in result.hunks if hunk.opcode == "replace"]
+    assert [
+        (hunk.baseline_end - hunk.baseline_start, hunk.candidate_end - hunk.candidate_start)
+        for hunk in replace_hunks
+    ] == [(3, 1), (1, 3)]
+    assert result.baseline_replaced_line_count == 4
+    assert result.candidate_replaced_line_count == 4
+    assert result.replaced_line_count == 4
+    assert result.comparison_criteria == ["replacement balance"]
+
+
+def test_document_comparison_change_set_applies_one_global_contiguous_hunk_budget() -> None:
+    baseline = "\n".join(f"line-{index}" for index in range(150)) + "\n"
+    candidate = "\n".join(
+        value
+        for index in range(150)
+        for value in (f"line-{index}", f"add-{index}")
+    ) + "\n"
+
+    result = build_document_ops_comparison_change_set(
+        DocumentOpsComparisonChangeSetRequest(
+            baseline_document_text=baseline,
+            candidate_document_text=candidate,
+        )
+    )
+
+    assert result.total_hunk_count == 300
+    assert result.hunks_truncated is True
+    assert len(result.hunks) < result.total_hunk_count
+    assert sum(
+        len(hunk.baseline_lines) + len(hunk.candidate_lines)
+        for hunk in result.hunks
+    ) == 200
+    baseline_cursor = candidate_cursor = 0
+    for hunk in result.hunks:
+        assert hunk.baseline_start == baseline_cursor
+        assert hunk.candidate_start == candidate_cursor
+        assert hunk.baseline_end - hunk.baseline_start == len(hunk.baseline_lines)
+        assert hunk.candidate_end - hunk.candidate_start == len(hunk.candidate_lines)
+        baseline_cursor = hunk.baseline_end
+        candidate_cursor = hunk.candidate_end
+    assert result.baseline_line_count == 150
+    assert result.candidate_line_count == 300
+    assert result.equal_line_count == 150
+    assert result.added_line_count == 150
+
+
+def test_document_comparison_change_set_models_reject_invalid_request_and_response_contracts() -> None:
+    with pytest.raises(ValueError):
+        DocumentOpsComparisonChangeSetRequest(
+            baseline_document_text="invalid-\ud800",
+            candidate_document_text="candidate",
+        )
+    with pytest.raises(ValueError):
+        DocumentOpsComparisonChangeSetRequest(
+            baseline_document_text="baseline",
+            candidate_document_text="candidate",
+            comparison_criteria=["same", " same "],
+        )
+    with pytest.raises(ValueError):
+        DocumentOpsComparisonChangeSetRequest.model_validate(
+            {
+                "baseline_document_text": "baseline",
+                "candidate_document_text": "candidate",
+                "unknown": True,
+            }
+        )
+
+    valid = build_document_ops_comparison_change_set(
+        DocumentOpsComparisonChangeSetRequest(
+            baseline_document_text="same\nold\ntail",
+            candidate_document_text="same\nnew\ntail",
+        )
+    ).model_dump()
+    invalid_payloads: list[dict] = []
+
+    impossible_counts = json.loads(json.dumps(valid))
+    impossible_counts["baseline_line_count"] += 1
+    invalid_payloads.append(impossible_counts)
+
+    inconsistent_identical = json.loads(json.dumps(valid))
+    inconsistent_identical["documents_identical"] = True
+    invalid_payloads.append(inconsistent_identical)
+
+    incoherent_truncation = json.loads(json.dumps(valid))
+    incoherent_truncation["hunks_truncated"] = True
+    invalid_payloads.append(incoherent_truncation)
+
+    invalid_opcode_sides = json.loads(json.dumps(valid))
+    replace_index = next(
+        index for index, hunk in enumerate(invalid_opcode_sides["hunks"])
+        if hunk["opcode"] == "replace"
+    )
+    invalid_opcode_sides["hunks"][replace_index]["opcode"] = "insert"
+    invalid_payloads.append(invalid_opcode_sides)
+
+    discontinuous = json.loads(json.dumps(valid))
+    discontinuous["hunks"][1]["baseline_start"] += 1
+    invalid_payloads.append(discontinuous)
+
+    incomplete = json.loads(json.dumps(valid))
+    incomplete["hunks"] = incomplete["hunks"][:-1]
+    invalid_payloads.append(incomplete)
+
+    unknown_response = json.loads(json.dumps(valid))
+    unknown_response["unknown"] = True
+    invalid_payloads.append(unknown_response)
+
+    invalid_utf8_criterion = json.loads(json.dumps(valid))
+    invalid_utf8_criterion["comparison_criteria"] = ["invalid-\ud800"]
+    invalid_payloads.append(invalid_utf8_criterion)
+
+    invalid_utf8_source_line = json.loads(json.dumps(valid))
+    invalid_utf8_source_line["hunks"][0]["baseline_lines"][0] = "invalid-\ud800"
+    invalid_utf8_source_line["hunks"][0]["candidate_lines"][0] = "invalid-\ud800"
+    invalid_payloads.append(invalid_utf8_source_line)
+
+    for payload in invalid_payloads:
+        with pytest.raises(ValueError):
+            DocumentOpsComparisonChangeSetResponse.model_validate(payload)
+
+
+def test_document_ops_agent_rejects_skill_resolution_and_binding_drift_before_provider() -> None:
+    unknown_agent = ProviderTrackingAgent()
+    with pytest.raises(SkillNotFoundError, match="unknown skill"):
+        unknown_agent.run(
+            DocumentOpsRequest(
+                task_type="decision_brief",
+                skill_name="unknown-skill",
+            ),
+            request_id="agent-unknown-skill",
+            tenant_id="system",
+        )
+    assert unknown_agent.provider_accesses == 0
+
+    unsupported_agent = ProviderTrackingAgent()
+    with pytest.raises(SkillNotFoundError, match="does not support"):
+        unsupported_agent.run(
+            DocumentOpsRequest(
+                task_type="decision_brief",
+                skill_name="policy-planning",
+            ),
+            request_id="agent-unsupported-skill",
+            tenant_id="system",
+        )
+    assert unsupported_agent.provider_accesses == 0
+
+    drift_agent = ProviderTrackingAgent()
+    request = DocumentOpsRequest(task_type="decision_brief")
+    binding = drift_agent.resolve_skill_binding(request)
+    drifted_binding = binding.model_copy(
+        update={"catalog_fingerprint": "0" * 64}
+    )
+    with pytest.raises(SkillBindingMismatchError, match="binding changed"):
+        drift_agent.run(
+            request,
+            request_id="agent-binding-drift",
+            tenant_id="system",
+            expected_skill_binding=drifted_binding,
+        )
+    assert drift_agent.provider_accesses == 0
 
 
 def test_document_ops_agent_records_provider_attempt_before_propagating_failure() -> None:

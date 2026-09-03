@@ -1,5 +1,4 @@
 """tests/test_style_loader.py — 스타일 로더 테스트."""
-import pytest
 
 
 def setup_function():

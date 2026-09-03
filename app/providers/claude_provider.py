@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 
 from app.domain.schema import build_bundle_prompt
+from app.free_mode import FreeModeConfigurationError, validate_cloud_provider_disabled
 from app.providers.base import Provider, ProviderError, UsageTokenMixin
 
 
@@ -26,6 +27,10 @@ class ClaudeProvider(UsageTokenMixin, Provider):
     name = "claude"
 
     def __init__(self) -> None:
+        try:
+            validate_cloud_provider_disabled()
+        except FreeModeConfigurationError as exc:
+            raise ProviderError(str(exc)) from exc
         self.api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
         if not self.api_key:
             raise ProviderError("Provider configuration error.")

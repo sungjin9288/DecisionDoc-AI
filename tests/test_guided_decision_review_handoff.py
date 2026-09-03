@@ -27,6 +27,10 @@ from app.services.guided_decision_review_service import (
     GuidedDecisionReviewService,
 )
 from app.storage.audit_store import AuditStore
+from app.storage.guided_decision_review_disposition_issuance_registry import (
+    get_guided_decision_review_disposition_issuance_registry,
+)
+from app.storage.state_backend import StateBackendError
 
 
 def _canonical_json_bytes(payload: dict) -> bytes:
@@ -588,6 +592,40 @@ def _ready_project(client: TestClient, headers: dict[str, str]) -> str:
     return project_id
 
 
+def _guided_review_disposition_request(
+    client: TestClient,
+    headers: dict[str, str],
+    project_id: str,
+) -> tuple[str, dict]:
+    handoff = client.get(
+        f"/projects/{project_id}/guided-decision-review-handoff",
+        headers=headers,
+    )
+    assert handoff.status_code == 200
+    recheck = client.post(
+        f"/projects/{project_id}/guided-decision-review-handoff/recheck",
+        headers=headers,
+        json={
+            "contract_version": "guided-decision-review-recheck-request.v1",
+            "source_handoff": handoff.json(),
+            "source_handoff_sha256": hashlib.sha256(handoff.content).hexdigest(),
+        },
+    )
+    assert recheck.status_code == 200
+    return (
+        f"/projects/{project_id}/guided-decision-review-handoff/"
+        "review-disposition",
+        {
+            "contract_version": "guided-decision-review-disposition-request.v1",
+            "source_recheck_receipt": recheck.json(),
+            "source_recheck_receipt_sha256": hashlib.sha256(
+                recheck.content
+            ).hexdigest(),
+            "review_disposition": "acknowledged_unchanged",
+        },
+    )
+
+
 def test_guided_review_handoff_route_is_session_bound_and_hash_verified(
     client: TestClient,
 ) -> None:
@@ -916,6 +954,11 @@ def test_guided_review_disposition_route_is_bound_and_session_scoped(
     assert response.headers[
         "x-decisiondoc-guided-review-disposition-receipt-sha256"
     ] == hashlib.sha256(response.content).hexdigest()
+    assert len(
+        response.headers[
+            "x-decisiondoc-guided-review-disposition-issuance-record-sha256"
+        ]
+    ) == 64
     receipt = response.json()
     assert receipt["contract_version"] == (
         "guided-decision-review-disposition-receipt.v1"
@@ -960,6 +1003,94 @@ def test_guided_review_disposition_route_is_bound_and_session_scoped(
         headers=admin_headers,
     )
     assert tampered.status_code == 422
+
+
+def test_guided_review_disposition_issuance_unavailable_returns_generic_503(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    headers = _login(client, "disposition-issuance-unavailable", role="admin")
+    project_id = _ready_project(client, headers)
+    path, payload = _guided_review_disposition_request(client, headers, project_id)
+    backend = client.app.state.state_backend
+    original_read = backend.read_bytes
+
+    def unavailable_read(relative_path: str) -> bytes | None:
+        if "guided_decision_review_disposition_issuances/" in relative_path:
+            raise StateBackendError("issuance backend unavailable")
+        return original_read(relative_path)
+
+    monkeypatch.setattr(backend, "read_bytes", unavailable_read)
+    response = client.post(path, headers=headers, json=payload)
+
+    assert response.status_code == 503
+    assert "source_recheck_receipt" not in response.text
+    assert (
+        "x-decisiondoc-guided-review-disposition-receipt-sha256"
+        not in response.headers
+    )
+
+
+def test_guided_review_disposition_issuance_disappearance_returns_generic_503(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    headers = _login(client, "disposition-issuance-disappearing", role="admin")
+    project_id = _ready_project(client, headers)
+    path, payload = _guided_review_disposition_request(client, headers, project_id)
+    backend = client.app.state.state_backend
+    original_write = backend.write_bytes_if_absent
+
+    def disappearing_write(
+        relative_path: str,
+        raw: bytes,
+        *,
+        content_type: str = "application/octet-stream",
+    ) -> bool:
+        created = original_write(
+            relative_path,
+            raw,
+            content_type=content_type,
+        )
+        if "guided_decision_review_disposition_issuances/" in relative_path:
+            backend.delete(relative_path)
+        return created
+
+    monkeypatch.setattr(backend, "write_bytes_if_absent", disappearing_write)
+    response = client.post(path, headers=headers, json=payload)
+
+    assert response.status_code == 503
+    assert "source_recheck_receipt" not in response.text
+    assert (
+        "x-decisiondoc-guided-review-disposition-receipt-sha256"
+        not in response.headers
+    )
+
+
+def test_guided_review_disposition_corrupt_issuance_returns_generic_503(
+    client: TestClient,
+) -> None:
+    headers = _login(client, "disposition-issuance-corrupt", role="admin")
+    project_id = _ready_project(client, headers)
+    path, payload = _guided_review_disposition_request(client, headers, project_id)
+    issued = client.post(path, headers=headers, json=payload)
+    assert issued.status_code == 200
+    issuance = get_guided_decision_review_disposition_issuance_registry(
+        tenant_id="system",
+        project_id=project_id,
+        bundle_type="proposal_kr",
+        backend=client.app.state.state_backend,
+    )
+    issuance_path = issuance.record_path(hashlib.sha256(issued.content).hexdigest())
+    corrupt = b'{"corrupt":true}\n'
+    client.app.state.state_backend.write_bytes(issuance_path, corrupt)
+
+    response = client.post(path, headers=headers, json=payload)
+
+    assert response.status_code == 503
+    assert response.content != issued.content
+    assert "source_recheck_receipt" not in response.text
+    assert client.app.state.state_backend.read_bytes(issuance_path) == corrupt
 
 
 def test_guided_review_disposition_rejects_incomplete_or_unknown_receipt_contract(

@@ -1,5 +1,6 @@
-import logging
+import io
 import json
+import logging
 import sys
 from unittest.mock import AsyncMock, patch
 
@@ -193,6 +194,198 @@ def test_json_formatter_includes_traceback_for_exception_records():
     assert payload["message"] == "Unhandled error during test"
     assert "traceback" in payload
     assert "RuntimeError: formatter boom" in payload["traceback"]
+
+
+def test_json_formatter_redacts_sensitive_query_parameters():
+    formatter = JsonLineFormatter()
+    record = logging.getLogger("httpx").makeRecord(
+        name="httpx",
+        level=logging.INFO,
+        fn=__file__,
+        lno=0,
+        msg=(
+            "HTTP Request: GET "
+            "https://example.test/search?serviceKey=g2b-secret&numOfRows=20"
+        ),
+        args=(),
+        exc_info=None,
+    )
+
+    payload = json.loads(formatter.format(record))
+
+    assert "g2b-secret" not in payload["message"]
+    assert "serviceKey=[REDACTED]" in payload["message"]
+    assert "numOfRows=20" in payload["message"]
+
+
+def test_app_startup_redacts_uvicorn_access_query_tokens(tmp_path, monkeypatch):
+    from app.main import create_app
+
+    monkeypatch.setenv("DECISIONDOC_PROVIDER", "mock")
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("DECISIONDOC_ENV", "dev")
+    monkeypatch.delenv("DECISIONDOC_API_KEY", raising=False)
+    monkeypatch.delenv("DECISIONDOC_API_KEYS", raising=False)
+    app = create_app()
+
+    sentinel = "uvicorn-access-token-must-not-leak"
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    access_logger = logging.getLogger("uvicorn.access")
+    original_handlers = list(access_logger.handlers)
+    original_level = access_logger.level
+    original_propagate = access_logger.propagate
+    access_logger.handlers = [handler]
+    access_logger.setLevel(logging.INFO)
+    access_logger.propagate = False
+
+    try:
+        with TestClient(app):
+            access_logger.info(
+                '%s - "%s %s HTTP/%s" %d',
+                "127.0.0.1:12345",
+                "GET",
+                f"/events?token={sentinel}&cursor=1",
+                "1.1",
+                200,
+            )
+    finally:
+        access_logger.handlers = original_handlers
+        access_logger.setLevel(original_level)
+        access_logger.propagate = original_propagate
+
+    output = stream.getvalue()
+    assert sentinel not in output
+    assert "token=[REDACTED]" in output
+    assert "cursor=1" in output
+
+
+def test_json_formatter_redacts_bearer_authorization_in_message():
+    formatter = JsonLineFormatter()
+    record = logging.getLogger("httpx").makeRecord(
+        name="httpx",
+        level=logging.INFO,
+        fn=__file__,
+        lno=0,
+        msg=(
+            "Retry failed with Authorization: Bearer message-secret "
+            "openai_api_key='message-api-key' password=message-password at upstream"
+        ),
+        args=(),
+        exc_info=None,
+    )
+
+    payload = json.loads(formatter.format(record))
+
+    assert "message-secret" not in payload["message"]
+    assert "message-api-key" not in payload["message"]
+    assert "message-password" not in payload["message"]
+    assert "Authorization: Bearer [REDACTED]" in payload["message"]
+    assert "openai_api_key=[REDACTED]" in payload["message"]
+    assert "password=[REDACTED]" in payload["message"]
+    assert "Retry failed" in payload["message"]
+    assert "at upstream" in payload["message"]
+
+
+def test_json_formatter_redacts_bearer_authorization_in_traceback():
+    formatter = JsonLineFormatter()
+    try:
+        raise RuntimeError(
+            "upstream rejected Authorization: Bearer traceback-secret "
+            "access_token=traceback-token secret: 'traceback-shared-secret'"
+        )
+    except RuntimeError:
+        record = logging.getLogger("decisiondoc.test").makeRecord(
+            name="decisiondoc.test",
+            level=logging.ERROR,
+            fn=__file__,
+            lno=0,
+            msg="Upstream request failed",
+            args=(),
+            exc_info=sys.exc_info(),
+        )
+
+    payload = json.loads(formatter.format(record))
+
+    assert "traceback-secret" not in payload["traceback"]
+    assert "traceback-token" not in payload["traceback"]
+    assert "traceback-shared-secret" not in payload["traceback"]
+    assert "Authorization: Bearer [REDACTED]" in payload["traceback"]
+    assert "access_token=[REDACTED]" in payload["traceback"]
+    assert "secret: [REDACTED]" in payload["traceback"]
+    assert "RuntimeError: upstream rejected" in payload["traceback"]
+
+
+def test_json_formatter_redacts_quoted_sensitive_fields_in_message_and_traceback():
+    formatter = JsonLineFormatter()
+    sentinels = (
+        "json-access-secret",
+        "repr-password-secret",
+        "json-auth-secret",
+        "escaped-token-secret",
+        "escaped-auth-secret",
+        "opposite-quote-secret",
+        "escaped-inner-quote-secret",
+        "multi-escaped-secret",
+    )
+    message = (
+        '{"access_token":"json-access-secret",'
+        "'password': 'repr-password-secret',"
+        '"Authorization":"Bearer json-auth-secret"} '
+        r'{\"refresh_token\":\"escaped-token-secret\",'
+        r'\"Authorization\":\"Bearer escaped-auth-secret\"} '
+        '{"api_key":"abc\'opposite-quote-secret"} '
+        r'{\"password\":\"abc\\\"escaped-inner-quote-secret\"} '
+        r'{\\\"access_token\\\":\\\"multi-escaped-secret\\\"}'
+    )
+    try:
+        raise RuntimeError(message)
+    except RuntimeError:
+        record = logging.getLogger("decisiondoc.test").makeRecord(
+            name="decisiondoc.test",
+            level=logging.ERROR,
+            fn=__file__,
+            lno=0,
+            msg=message,
+            args=(),
+            exc_info=sys.exc_info(),
+        )
+
+    payload = json.loads(formatter.format(record))
+    serialized = json.dumps(payload, ensure_ascii=False)
+
+    assert all(sentinel not in serialized for sentinel in sentinels)
+    assert '"access_token":"[REDACTED]"' in payload["message"]
+    assert "'password': '[REDACTED]'" in payload["message"]
+    assert '"Authorization":"[REDACTED]"' in payload["message"]
+    assert r'\"refresh_token\":\"[REDACTED]\"' in payload["message"]
+    assert r'\"Authorization\":\"[REDACTED]\"' in payload["message"]
+    assert all(sentinel not in payload["traceback"] for sentinel in sentinels)
+
+
+def test_json_formatter_redacts_sensitive_structured_fields():
+    formatter = JsonLineFormatter()
+    record = logging.getLogger("decisiondoc.test").makeRecord(
+        name="decisiondoc.test",
+        level=logging.INFO,
+        fn=__file__,
+        lno=0,
+        msg={
+            "event": "upstream.request",
+            "serviceKey": "g2b-secret",
+            "headers": {"Authorization": "Bearer provider-secret"},
+        },
+        args=(),
+        exc_info=None,
+    )
+
+    payload = json.loads(formatter.format(record))
+
+    assert payload["serviceKey"] == "[REDACTED]"
+    assert payload["headers"]["Authorization"] == "[REDACTED]"
+    assert "g2b-secret" not in json.dumps(payload)
+    assert "provider-secret" not in json.dumps(payload)
 
 
 def test_procurement_logs_include_action_state_and_recommendation(tmp_path, monkeypatch, caplog, capsys):

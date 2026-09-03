@@ -69,6 +69,7 @@ class FreeformRequest(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     provider: str
+    free_mode: bool = False
     maintenance: bool | None = None
     checks: dict[str, str] | None = None
     provider_routes: dict[str, str] | None = None

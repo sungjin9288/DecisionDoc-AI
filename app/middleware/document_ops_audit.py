@@ -59,6 +59,31 @@ def document_ops_audit_detail(request: Request) -> dict[str, Any]:
     detail: dict[str, Any] = {}
     _add_if_present(
         detail,
+        "task_type",
+        getattr(state, "document_ops_agent_task_type", ""),
+    )
+    _add_if_present(
+        detail,
+        "skill_binding_sha256",
+        getattr(state, "document_ops_agent_skill_binding_sha256", ""),
+    )
+    _add_if_present(
+        detail,
+        "operation_replayed",
+        getattr(state, "document_ops_agent_operation_replayed", None),
+    )
+    _add_if_present(
+        detail,
+        "code_execution_authorized",
+        getattr(state, "document_ops_agent_code_execution_authorized", None),
+    )
+    _add_if_present(
+        detail,
+        "external_runtime_authorized",
+        getattr(state, "document_ops_agent_external_runtime_authorized", None),
+    )
+    _add_if_present(
+        detail,
         "trajectory_id",
         getattr(state, "document_ops_trajectory_id", ""),
     )
@@ -137,6 +162,13 @@ def document_ops_resource_identity(
 ) -> tuple[str, str] | None:
     if not action.startswith("document_ops."):
         return None
+    if action == "document_ops.agent_run":
+        binding_sha256 = getattr(
+            request.state,
+            "document_ops_agent_skill_binding_sha256",
+            "",
+        )
+        return "document_ops_agent_run", str(binding_sha256 or "")
     surface = getattr(request.state, "document_ops_governance_surface", "")
     if isinstance(surface, str) and surface:
         return "document_ops_governance", surface

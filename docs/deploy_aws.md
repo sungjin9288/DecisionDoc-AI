@@ -287,6 +287,32 @@ fresh-stack preflight contract:
 | Voice Brief smoke가 disabled/configured 에서 멈춤 | `VOICE_BRIEF_API_BASE_URL_<STAGE>`, `VOICE_BRIEF_SMOKE_RECORDING_ID_<STAGE>` |
 | Voice Brief smoke가 login 단계에서 실패 | `VOICE_BRIEF_SMOKE_USERNAME_<STAGE>`, `VOICE_BRIEF_SMOKE_PASSWORD_<STAGE>`, `VOICE_BRIEF_SMOKE_TENANT_ID_<STAGE>` |
 
+#### GitHub OIDC role assume 진단
+
+`Configure AWS credentials (OIDC)`가
+`Not authorized to perform sts:AssumeRoleWithWebIdentity`로 끝나면 deploy를
+재시도하기 전에 IAM role trust relationship을 확인한다. 2026-08-11 기준 이
+repo의 GitHub OIDC 설정은 default subject와 mutable name format을 사용하므로
+`main` workflow의 trust condition은 다음 두 claim과 일치해야 한다.
+
+```json
+{
+  "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+  "token.actions.githubusercontent.com:sub": "repo:sungjin9288/DecisionDoc-AI:ref:refs/heads/main"
+}
+```
+
+현재 GitHub-side subject 설정은 read-only로 다시 확인할 수 있다.
+
+```bash
+gh api repos/sungjin9288/DecisionDoc-AI/actions/oidc/customization/sub
+```
+
+`use_immutable_subject` 또는 workflow `environment`를 도입하면 `sub` shape가
+달라지므로 위 값을 그대로 확장하지 말고 GitHub 설정과 IAM trust를 함께
+갱신한다. Role permission policy와 trust policy는 별도이며, 이 오류는 stack
+inspection 이전 trust 단계에서 발생한다.
+
 ### 6.1 Prod rerun gate
 
 아래 중 하나라도 해당되면 `prod deploy-smoke` 를 바로 다시 실행하지 않는다.

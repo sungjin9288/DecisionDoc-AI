@@ -7,12 +7,13 @@ direction — including slide-by-slide PPT construction guides — even without
 a real API key.
 """
 import base64
-
 from typing import Any
 
 from app.providers.base import Provider
 from app.providers.mock.registry import _CONTENT_BUILDERS
 from app.providers.mock.shared import _ctx_excerpt, _extract_document_ops_payload
+from app.schemas.document_ops import DocumentOpsComparisonChangeSetRequest
+from app.services.document_ops_comparison import build_document_ops_comparison_change_set
 
 
 _MOCK_PNG_BASE64 = (
@@ -206,7 +207,53 @@ class MockProvider(Provider):
                 if isinstance(item, dict) and (item.get("id") or item.get("title") or item.get("path"))
             ]
             gaps = [] if source_labels else ["공식 근거 또는 기준 문서 확인 필요"]
-            if task_type == "develop_quality_improvement":
+            if task_type == "document_comparison_review":
+                baseline = str(requirements.get("baseline_document_text") or "")
+                candidate = str(requirements.get("candidate_document_text") or "")
+                comparison_context = payload.get("comparison_context") if isinstance(payload.get("comparison_context"), dict) else {}
+                criteria = comparison_context.get("comparison_criteria")
+                criteria = [str(item).strip() for item in criteria if isinstance(item, str) and item.strip()] if isinstance(criteria, list) else []
+                criteria_label = ", ".join(criteria) if criteria else "입력된 두 문서"
+                identical = baseline.encode("utf-8") == candidate.encode("utf-8")
+                line_delta = _document_comparison_line_delta(
+                    baseline,
+                    candidate,
+                    criteria=criteria,
+                )
+                observed = (
+                    "두 입력의 exact UTF-8 bytes가 동일하여 텍스트 변경은 관찰되지 않았습니다."
+                    if identical
+                    else f"두 입력의 exact UTF-8 bytes가 다르며 {line_delta}이 관찰됐습니다."
+                )
+                critique = [
+                    "비교 결과는 제공된 두 입력에서 관찰 가능한 범위에 한정해야 합니다.",
+                    "텍스트 차이를 정책·법적 효력·운영 의도로 해석하려면 사람이 근거를 다시 확인해야 합니다.",
+                ]
+                revision_tasks = [
+                    "비교 기준별로 변경의 의도와 근거를 담당자가 확인합니다.",
+                    "승인·보안·운영 책임 영향은 변경관리 절차에서 별도로 재검토합니다.",
+                ]
+                draft = (
+                    f"# {title} 문서 비교 검토\n\n"
+                    "## 관찰된 변경\n"
+                    f"{observed}\n\n"
+                    "## 근거와 가정 변화\n"
+                    "근거는 제공된 baseline과 candidate의 exact UTF-8 byte 비교에 한정됩니다. "
+                    "의미, 사실관계, 외부 효력은 입력만으로 확인되지 않았으므로 가정으로 취급합니다.\n\n"
+                    "## 결정 및 트레이드오프 영향\n"
+                    "텍스트 차이가 확인되더라도 결정 범위, 비용, 일정, 품질의 영향은 조건부입니다. "
+                    "변경의 의도와 적용 범위를 사람이 확인한 뒤에만 trade-off를 확정합니다.\n\n"
+                    "## 권한·거버넌스 경계\n"
+                    "이 결과는 읽기 전용 검토 초안입니다. 승인, provider 호출, 외부 실행, dataset upload, training, publication 권한을 만들지 않습니다.\n\n"
+                    "## 권고\n"
+                    f"비교 기준({criteria_label})별 검토 기록을 보강하고, {('변경 없음' if identical else '관찰된 텍스트 변경')}의 의미를 사람 검토로 확정하세요.\n\n"
+                    "## 사람 재확인 질문\n"
+                    "- 관찰된 차이가 의도한 정책, 계약, 운영 변경인가?\n"
+                    "- 변경으로 승인자, 책임자, 보안·감사 검토 범위가 달라지는가?"
+                )
+                source_labels = ["baseline_document", "candidate_document"]
+                gaps = ["텍스트 외 의미, 사실관계, 법적·운영 영향은 사람 재확인 필요"]
+            elif task_type == "develop_quality_improvement":
                 current_draft = str(
                     requirements.get("draft")
                     or requirements.get("current_draft")
@@ -286,18 +333,29 @@ class MockProvider(Provider):
                     "- 기존 인프라와 운영 절차를 활용하는 실행 경로를 제시합니다.\n"
                     "- 개인정보, 보안, 로그관리, 운영책임, 변경관리를 검토합니다."
                 )
+            plan = [
+                "요구사항과 승인 질문을 분리합니다.",
+                "확인된 근거, 가정, TODO를 구분합니다.",
+                "정책 논리와 운영 절차를 연결해 공유 가능한 초안을 작성합니다.",
+            ]
+            if task_type == "document_comparison_review":
+                plan = [
+                    "두 입력의 exact byte 비교와 비교 기준을 확인합니다.",
+                    "관찰된 변경과 해석 가정을 분리합니다.",
+                    "결정·거버넌스 영향과 사람 재확인 질문을 정리합니다.",
+                ]
             return _json.dumps({
-                "plan": [
-                    "요구사항과 승인 질문을 분리합니다.",
-                    "확인된 근거, 가정, TODO를 구분합니다.",
-                    "정책 논리와 운영 절차를 연결해 공유 가능한 초안을 작성합니다.",
-                ],
+                "plan": plan,
                 "critique": critique,
                 "revision_tasks": revision_tasks,
                 "draft": draft,
                 "evidence_status": {
                     "confirmed": source_labels,
-                    "assumptions": ["입력된 요구사항은 검토 초안 기준으로 유효하다고 가정"],
+                    "assumptions": [
+                        "텍스트 외 의미와 외부 효력은 입력만으로 확정할 수 없음"
+                        if task_type == "document_comparison_review"
+                        else "입력된 요구사항은 검토 초안 기준으로 유효하다고 가정"
+                    ],
                     "gaps": gaps,
                     "source_references": source_labels,
                 },
@@ -420,3 +478,27 @@ class MockProvider(Provider):
             "revised_prompt": prompt,
             "model": "mock-image",
         }
+
+
+def _document_comparison_line_delta(
+    baseline: str,
+    candidate: str,
+    *,
+    criteria: list[str] | None = None,
+) -> str:
+    """Describe the shared deterministic change set without retaining source text."""
+    change_set = build_document_ops_comparison_change_set(
+        DocumentOpsComparisonChangeSetRequest(
+            baseline_document_text=baseline,
+            candidate_document_text=candidate,
+            comparison_criteria=criteria or [],
+        )
+    )
+    parts = []
+    if change_set.added_line_count:
+        parts.append(f"{change_set.added_line_count}개 행 추가")
+    if change_set.removed_line_count:
+        parts.append(f"{change_set.removed_line_count}개 행 삭제")
+    if change_set.replaced_line_count:
+        parts.append(f"{change_set.replaced_line_count}개 행 교체")
+    return ", ".join(parts) if parts else "byte-level 차이"

@@ -8,6 +8,7 @@ from typing import Any  # noqa: F401 — used in _create_kwargs type annotation
 import anyio
 
 from app.domain.schema import build_bundle_prompt
+from app.free_mode import FreeModeConfigurationError, validate_cloud_provider_disabled
 from app.providers.base import Provider, ProviderError, UsageTokenMixin
 
 
@@ -15,6 +16,10 @@ class OpenAIProvider(UsageTokenMixin, Provider):
     name = "openai"
 
     def __init__(self, model_override: str | None = None) -> None:
+        try:
+            validate_cloud_provider_disabled()
+        except FreeModeConfigurationError as exc:
+            raise ProviderError(str(exc)) from exc
         self.api_key = os.getenv("OPENAI_API_KEY", "")
         if not self.api_key:
             raise ProviderError("Provider configuration error.")

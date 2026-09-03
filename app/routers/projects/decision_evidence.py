@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 from dataclasses import dataclass
+from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
 from app.dependencies import (
@@ -17,6 +19,7 @@ from app.routers.projects._shared import _serialize_project_documents
 from app.schemas.decision_evidence import (
     DecisionEvidenceBundleType,
     DecisionEvidenceMapResponse,
+    GuidedDecisionReviewDispositionRecordRequest,
     GuidedDecisionReviewDispositionRequest,
     GuidedDecisionReviewHandoffResponse,
     GuidedDecisionReviewRecheckRequest,
@@ -27,9 +30,22 @@ from app.services.procurement_review_access import (
     review_summary,
 )
 from app.storage.knowledge_store import KnowledgeStore
+from app.storage.guided_decision_review_disposition_registry import (
+    GuidedDecisionReviewDispositionRegistryConflictError,
+    GuidedDecisionReviewDispositionRegistryError,
+    GuidedDecisionReviewDispositionRegistryValidationError,
+    canonical_guided_review_registry_json_bytes,
+    get_guided_decision_review_disposition_registry,
+)
+from app.storage.guided_decision_review_disposition_issuance_registry import (
+    GuidedDecisionReviewDispositionIssuanceRegistryError,
+    get_guided_decision_review_disposition_issuance_registry,
+    guided_review_issuance_sha256,
+)
 
 
 router = APIRouter()
+logger = logging.getLogger("decisiondoc.procurement.guided_review")
 
 @dataclass(frozen=True)
 class _DecisionEvidenceContext:
@@ -321,7 +337,7 @@ def download_guided_decision_review_disposition(
     payload: GuidedDecisionReviewDispositionRequest,
     request: Request,
 ) -> Response:
-    """Issue a non-persistent disposition for one exact H127 receipt."""
+    """Issue a non-persistent H128 receipt after same-backend proof."""
     _apply_procurement_observability(
         request,
         action="guided_review_disposition",
@@ -351,6 +367,24 @@ def download_guided_decision_review_disposition(
         receipt
     )
     body_sha256 = hashlib.sha256(body).hexdigest()
+    try:
+        issuance_metadata, _ = (
+            get_guided_decision_review_disposition_issuance_registry(
+                tenant_id=get_tenant_id(request),
+                project_id=project_id,
+                bundle_type=receipt.bundle_type,
+                backend=request.app.state.state_backend,
+            ).create(
+                disposition_receipt_sha256=body_sha256,
+            )
+        )
+    except GuidedDecisionReviewDispositionIssuanceRegistryError as exc:
+        logger.error("Guided review H128 issuance proof failed closed.", exc_info=exc)
+        raise HTTPException(
+            status_code=503,
+            detail="Guided Decision Review 처리 영수증의 발급 근거를 확인할 수 없습니다.",
+        ) from exc
+    issuance_record_sha256 = guided_review_issuance_sha256(issuance_metadata)
     request.state.decision_evidence_projection_fingerprint = (
         current_handoff.projection_fingerprint
     )
@@ -369,6 +403,10 @@ def download_guided_decision_review_disposition(
         receipt.disposition_binding_sha256
     )
     request.state.guided_review_disposition_receipt_sha256 = body_sha256
+    request.state.guided_review_issuance_record_sha256 = issuance_record_sha256
+    request.state.guided_review_issuance_binding_sha256 = issuance_metadata[
+        "issuance_binding_sha256"
+    ]
     request.state.guided_review_read_only = True
     request.state.guided_review_snapshot_atomic = False
     request.state.guided_review_requires_recheck_before_reliance = True
@@ -388,12 +426,340 @@ def download_guided_decision_review_disposition(
             "X-DecisionDoc-Guided-Review-Disposition-Receipt-SHA256": (
                 body_sha256
             ),
+            "X-DecisionDoc-Guided-Review-Disposition-Issuance-Record-SHA256": (
+                issuance_record_sha256
+            ),
             "X-DecisionDoc-Projection-Fingerprint": (
                 current_handoff.projection_fingerprint
             ),
             "X-DecisionDoc-Review-State-Status": receipt.review_state_status,
             "X-DecisionDoc-Operational-Approval": "false",
         },
+    )
+
+
+def _guided_review_disposition_registry(
+    request: Request,
+    *,
+    project_id: str,
+    bundle_type: DecisionEvidenceBundleType,
+):
+    return get_guided_decision_review_disposition_registry(
+        tenant_id=get_tenant_id(request),
+        project_id=project_id,
+        bundle_type=bundle_type,
+        backend=request.app.state.state_backend,
+    )
+
+
+def _require_guided_review_registry_operation_id(operation_id: str) -> str:
+    try:
+        parsed = UUID(operation_id)
+    except (TypeError, ValueError, AttributeError) as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="operation ID 형식이 올바르지 않습니다.",
+        ) from exc
+    if parsed.version != 4 or str(parsed) != operation_id:
+        raise HTTPException(
+            status_code=422,
+            detail="operation ID 형식이 올바르지 않습니다.",
+        )
+    return operation_id
+
+
+def _guided_review_registry_owner(request: Request) -> str | None:
+    access = get_procurement_review_access(request)
+    return None if access.is_admin else access.user_id
+
+
+def _guided_review_registry_record_response(
+    record: dict,
+    *,
+    status_code: int,
+    attachment: bool = False,
+) -> Response:
+    body = canonical_guided_review_registry_json_bytes(record)
+    headers = {
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+        "X-DecisionDoc-Guided-Review-Disposition-Record-SHA256": (
+            hashlib.sha256(body).hexdigest()
+        ),
+        "X-DecisionDoc-Operational-Approval": "false",
+    }
+    if record["contract_version"] == "guided-decision-review-disposition-record.v1":
+        headers["X-DecisionDoc-Guided-Review-Disposition-Issuance-Provenance"] = (
+            "legacy-unrecorded"
+        )
+    else:
+        headers["X-DecisionDoc-Guided-Review-Disposition-Issuance-Provenance"] = (
+            "server-issued"
+        )
+        headers[
+            "X-DecisionDoc-Guided-Review-Disposition-Issuance-Record-SHA256"
+        ] = record["source_issuance_metadata_sha256"]
+    if attachment:
+        headers["Content-Disposition"] = (
+            'attachment; filename="guided-decision-review-disposition-record-'
+            f'{record["operation_id"]}.json"'
+        )
+    return Response(
+        content=body,
+        status_code=status_code,
+        media_type="application/json; charset=utf-8",
+        headers=headers,
+    )
+
+
+def _set_guided_review_registry_audit(
+    request: Request,
+    record: dict,
+    *,
+    replay: bool,
+) -> None:
+    detail = {
+        "operation_id": record["operation_id"],
+        "record_sha256": hashlib.sha256(
+            canonical_guided_review_registry_json_bytes(record)
+        ).hexdigest(),
+        "source_disposition_receipt_sha256": record[
+            "source_disposition_receipt_sha256"
+        ],
+        "source_recheck_receipt_sha256": record[
+            "source_recheck_receipt_sha256"
+        ],
+        "current_handoff_sha256": record["current_handoff_sha256"],
+        "current_review_state_fingerprint_sha256": record[
+            "current_review_state_fingerprint_sha256"
+        ],
+        "review_state_status": record["review_state_status"],
+        "review_disposition": record["review_disposition"],
+        "disposition_binding_sha256": record["disposition_binding_sha256"],
+        "replay": replay,
+        "review_state_only": True,
+        "review_only": True,
+        "read_only": True,
+        "reviewer_identity_bound": True,
+        "registry_record_persisted": True,
+        "snapshot_atomic": False,
+        "requires_recheck_before_reliance": True,
+        **record["authority"],
+    }
+    if record["contract_version"] == "guided-decision-review-disposition-record.v1":
+        detail["issuance_provenance"] = "legacy_issuance_unrecorded"
+    else:
+        detail["issuance_provenance"] = "server_issued"
+        detail["source_issuance_metadata_sha256"] = record[
+            "source_issuance_metadata_sha256"
+        ]
+    request.state.guided_review_registry_detail = detail
+
+
+def _load_guided_review_registry_scope(
+    request: Request,
+    *,
+    project_id: str,
+    bundle_type: DecisionEvidenceBundleType,
+) -> None:
+    _apply_procurement_observability(
+        request,
+        action="guided_review_disposition_registry",
+        project_id=project_id,
+    )
+    request.state.bundle_type = bundle_type
+    _ensure_procurement_copilot_enabled(request)
+    _load_authorized_decision_evidence_project(project_id, request)
+
+
+@router.post(
+    "/projects/{project_id}/guided-decision-review-dispositions",
+    dependencies=[Depends(require_session_bound_procurement_reviewer)],
+)
+def create_guided_decision_review_disposition_record(
+    project_id: str,
+    payload: GuidedDecisionReviewDispositionRecordRequest,
+    request: Request,
+    bundle_type: DecisionEvidenceBundleType = Query(...),
+) -> Response:
+    """Persist one immutable reviewer-bound H128 record without authority."""
+    request.state.audit_action = "procurement.guided_review_registry_create"
+    _load_guided_review_registry_scope(
+        request,
+        project_id=project_id,
+        bundle_type=bundle_type,
+    )
+    try:
+        record, created = _guided_review_disposition_registry(
+            request,
+            project_id=project_id,
+            bundle_type=bundle_type,
+        ).create(
+            contract_version=payload.contract_version,
+            allow_legacy_create=False,
+            operation_id=payload.operation_id,
+            reviewer_user_id=request.state.user_id,
+            reviewer_username=request.state.username,
+            reviewer_role=request.state.user_role,
+            source_disposition_receipt=payload.source_disposition_receipt,
+            source_disposition_receipt_sha256=(
+                payload.source_disposition_receipt_sha256
+            ),
+        )
+    except GuidedDecisionReviewDispositionRegistryValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="Guided Decision Review 처리 영수증을 검증하지 못했습니다.",
+        ) from exc
+    except GuidedDecisionReviewDispositionRegistryConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="동일 operation ID가 다른 검토 처리 기록에 이미 사용되었습니다.",
+        ) from exc
+    except GuidedDecisionReviewDispositionRegistryError as exc:
+        logger.error("Guided review registry create failed closed.", exc_info=exc)
+        raise HTTPException(
+            status_code=503,
+            detail="Guided Decision Review 처리 이력을 기록할 수 없습니다.",
+        ) from exc
+    _set_guided_review_registry_audit(request, record, replay=not created)
+    return _guided_review_registry_record_response(
+        record,
+        status_code=201 if created else 200,
+    )
+
+
+@router.get(
+    "/projects/{project_id}/guided-decision-review-dispositions",
+    dependencies=[Depends(require_session_bound_procurement_reviewer)],
+)
+def list_guided_decision_review_disposition_records(
+    project_id: str,
+    request: Request,
+    bundle_type: DecisionEvidenceBundleType = Query(...),
+) -> Response:
+    """List strict H129 summaries visible to the current stable reviewer."""
+    request.state.audit_action = "procurement.guided_review_registry_list"
+    _load_guided_review_registry_scope(
+        request,
+        project_id=project_id,
+        bundle_type=bundle_type,
+    )
+    try:
+        records = _guided_review_disposition_registry(
+            request,
+            project_id=project_id,
+            bundle_type=bundle_type,
+        ).list_summaries(
+            reviewer_user_id=_guided_review_registry_owner(request),
+        )
+    except GuidedDecisionReviewDispositionRegistryError as exc:
+        logger.error("Guided review registry list failed closed.", exc_info=exc)
+        raise HTTPException(
+            status_code=503,
+            detail="Guided Decision Review 처리 이력을 조회할 수 없습니다.",
+        ) from exc
+    body = canonical_guided_review_registry_json_bytes({"records": records})
+    return Response(
+        content=body,
+        media_type="application/json; charset=utf-8",
+        headers={
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+            "X-DecisionDoc-Guided-Review-Disposition-Registry-SHA256": (
+                hashlib.sha256(body).hexdigest()
+            ),
+            "X-DecisionDoc-Operational-Approval": "false",
+        },
+    )
+
+
+def _read_guided_review_registry_record(
+    request: Request,
+    *,
+    project_id: str,
+    bundle_type: DecisionEvidenceBundleType,
+    operation_id: str,
+) -> tuple[dict, bytes]:
+    operation_id = _require_guided_review_registry_operation_id(operation_id)
+    try:
+        return _guided_review_disposition_registry(
+            request,
+            project_id=project_id,
+            bundle_type=bundle_type,
+        ).read_canonical(
+            operation_id,
+            reviewer_user_id=_guided_review_registry_owner(request),
+        )
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail="Guided Decision Review 처리 이력이 없습니다.",
+        ) from exc
+    except GuidedDecisionReviewDispositionRegistryError as exc:
+        logger.error("Guided review registry read failed closed.", exc_info=exc)
+        raise HTTPException(
+            status_code=503,
+            detail="Guided Decision Review 처리 이력을 조회할 수 없습니다.",
+        ) from exc
+
+
+@router.get(
+    "/projects/{project_id}/guided-decision-review-dispositions/{operation_id}",
+    dependencies=[Depends(require_session_bound_procurement_reviewer)],
+)
+def read_guided_decision_review_disposition_record(
+    project_id: str,
+    operation_id: str,
+    request: Request,
+    bundle_type: DecisionEvidenceBundleType = Query(...),
+) -> Response:
+    request.state.audit_action = "procurement.guided_review_registry_read"
+    _load_guided_review_registry_scope(
+        request,
+        project_id=project_id,
+        bundle_type=bundle_type,
+    )
+    record, _ = _read_guided_review_registry_record(
+        request,
+        project_id=project_id,
+        bundle_type=bundle_type,
+        operation_id=operation_id,
+    )
+    _set_guided_review_registry_audit(request, record, replay=False)
+    return _guided_review_registry_record_response(record, status_code=200)
+
+
+@router.get(
+    (
+        "/projects/{project_id}/guided-decision-review-dispositions/"
+        "{operation_id}/download"
+    ),
+    dependencies=[Depends(require_session_bound_procurement_reviewer)],
+)
+def download_guided_decision_review_disposition_record(
+    project_id: str,
+    operation_id: str,
+    request: Request,
+    bundle_type: DecisionEvidenceBundleType = Query(...),
+) -> Response:
+    request.state.audit_action = "procurement.guided_review_registry_download"
+    _load_guided_review_registry_scope(
+        request,
+        project_id=project_id,
+        bundle_type=bundle_type,
+    )
+    record, _ = _read_guided_review_registry_record(
+        request,
+        project_id=project_id,
+        bundle_type=bundle_type,
+        operation_id=operation_id,
+    )
+    _set_guided_review_registry_audit(request, record, replay=False)
+    return _guided_review_registry_record_response(
+        record,
+        status_code=200,
+        attachment=True,
     )
 
 

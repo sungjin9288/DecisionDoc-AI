@@ -5657,6 +5657,37 @@
     }
     .docops-chain-item[data-state="pass"] { border-color: rgba(22, 101, 52, .35); }
     .docops-chain-item[data-state="block"] { border-color: rgba(185, 28, 28, .35); }
+    .docops-execution-provenance {
+      display: grid;
+      gap: .4rem;
+      min-width: 0;
+      margin: .65rem 0;
+      color: var(--muted);
+      font-size: .72rem;
+      line-height: 1.45;
+    }
+    .docops-execution-provenance h4 {
+      margin: 0;
+      color: var(--text-strong, #111827);
+      font-size: .76rem;
+    }
+    .docops-execution-provenance dl {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: .35rem .7rem;
+      margin: 0;
+    }
+    .docops-execution-provenance div { min-width: 0; }
+    .docops-execution-provenance dt { font-weight: 800; }
+    .docops-execution-provenance dd {
+      min-width: 0;
+      margin: .08rem 0 0;
+      overflow-wrap: anywhere;
+    }
+    .docops-execution-provenance code {
+      font: inherit;
+      color: var(--text, #1f2937);
+    }
     .docops-trajectory-detail {
       margin-top: .7rem;
       border-top: 1px solid var(--border);
@@ -5780,8 +5811,8 @@
   <h1>Decision<span>Doc</span> AI</h1>
   <p>목적에 맞는 번들을 선택하고, AI가 전문 문서를 즉시 생성합니다</p>
   <div class="hero-stats">
-    <span class="hero-stat-badge">🗂️ 11가지 번들</span>
-    <span class="hero-stat-badge">⚡ 30초 생성</span>
+    <span class="hero-stat-badge" id="bundle-count-badge">🗂️ 문서 번들</span>
+    <span class="hero-stat-badge">⚡ 구성 확인 후 생성</span>
     <span class="hero-stat-badge">🏛️ 나라장터 연동</span>
   </div>
 </div>
@@ -5887,7 +5918,7 @@
 <div id="onboarding-banner" aria-label="시작 안내">
   <div class="ob-steps">
     <strong>👋 처음 오셨나요?</strong>
-    &nbsp;① 번들 선택 &rarr; ② 제목·목표 입력 &rarr; ③ 생성 클릭 — 30초 만에 전문 문서가 완성됩니다!
+    &nbsp;① 번들 선택 &rarr; ② 제목·목표 입력 &rarr; ③ 구성 확인 후 전문 문서를 생성합니다.
   </div>
   <button id="onboarding-dismiss">닫기 ✕</button>
 </div>
@@ -6954,6 +6985,8 @@
         <option value="evidence_gap_review">근거 gap 검수 · evidence_gap_review</option>
         <option value="decision_brief">최종 승인 브리프 · decision_brief</option>
         <option value="develop_quality_improvement">Develop 품질 개선 · develop_quality_improvement</option>
+        <option value="source_grounded_document">Source-grounded 문서 · source_grounded_document</option>
+        <option value="document_comparison_review">문서 비교 검토 · document_comparison_review</option>
       </select>
       <label style="display:block;font-size:.8rem;font-weight:700;margin:.55rem 0 .25rem;">스킬 override</label>
       <select id="docops-skill-name" class="gov-input" style="width:100%;">
@@ -6962,6 +6995,8 @@
         <option value="evidence-gap-checker">evidence-gap-checker</option>
         <option value="decision-brief-builder">decision-brief-builder</option>
         <option value="develop-document-improver">develop-document-improver</option>
+        <option value="source-grounded-document">source-grounded-document</option>
+        <option value="document-comparison-review">document-comparison-review</option>
       </select>
       <label style="display:block;font-size:.8rem;font-weight:700;margin:.55rem 0 .25rem;">제목</label>
       <input id="docops-title" class="gov-input" placeholder="예: AI 교차로 안전 시스템 기획" style="width:100%;">
@@ -6971,6 +7006,29 @@
       <textarea id="docops-source-summaries" class="gov-input" rows="4" placeholder="한 줄에 하나씩 입력. 확인된 자료 요약만 넣으세요." style="width:100%;resize:vertical;"></textarea>
       <label style="display:block;font-size:.8rem;font-weight:700;margin:.55rem 0 .25rem;">source references</label>
       <textarea id="docops-source-refs" class="gov-input" rows="3" placeholder="예: accident-report&#10;rfp-v2&#10;meeting-note-0418" style="width:100%;resize:vertical;"></textarea>
+      <div id="docops-comparison-inputs" hidden aria-hidden="true">
+        <div style="margin-top:.55rem;">
+          <label style="display:block;font-size:.8rem;font-weight:700;margin:0 0 .25rem;" for="docops-baseline-file">Baseline file (선택)</label>
+          <input id="docops-baseline-file" class="gov-input" type="file" accept=".txt,.md,.pdf,.docx,.pptx,.hwpx,.xlsx,.xls,.csv,.tsv,.json,.jsonl,.ndjson,.yaml,.yml,.xml,.html,.htm,.rtf,.log,.ini,.cfg,.conf,.odt,.ods,.odp,.zip" style="width:100%;max-width:100%;">
+          <div id="docops-baseline-file-status" role="status" style="margin-top:.3rem;font-size:.72rem;color:var(--muted);overflow-wrap:anywhere;">직접 입력 또는 검증된 파일 추출을 선택하세요.</div>
+        </div>
+        <label style="display:block;font-size:.8rem;font-weight:700;margin:.55rem 0 .25rem;" for="docops-baseline-document">Baseline document</label>
+        <textarea id="docops-baseline-document" class="gov-input" rows="5" maxlength="20000" placeholder="비교 기준 원문을 입력하세요." style="width:100%;resize:vertical;"></textarea>
+        <div style="margin-top:.55rem;">
+          <label style="display:block;font-size:.8rem;font-weight:700;margin:0 0 .25rem;" for="docops-candidate-file">Candidate file (선택)</label>
+          <input id="docops-candidate-file" class="gov-input" type="file" accept=".txt,.md,.pdf,.docx,.pptx,.hwpx,.xlsx,.xls,.csv,.tsv,.json,.jsonl,.ndjson,.yaml,.yml,.xml,.html,.htm,.rtf,.log,.ini,.cfg,.conf,.odt,.ods,.odp,.zip" style="width:100%;max-width:100%;">
+          <div id="docops-candidate-file-status" role="status" style="margin-top:.3rem;font-size:.72rem;color:var(--muted);overflow-wrap:anywhere;">직접 입력 또는 검증된 파일 추출을 선택하세요.</div>
+        </div>
+        <label style="display:block;font-size:.8rem;font-weight:700;margin:.55rem 0 .25rem;" for="docops-candidate-document">Candidate document</label>
+        <textarea id="docops-candidate-document" class="gov-input" rows="5" maxlength="20000" placeholder="변경 후보 원문을 입력하세요." style="width:100%;resize:vertical;"></textarea>
+        <label style="display:block;font-size:.8rem;font-weight:700;margin:.55rem 0 .25rem;" for="docops-comparison-criteria">Comparison criteria</label>
+        <textarea id="docops-comparison-criteria" class="gov-input" rows="3" maxlength="960" placeholder="선택: 한 줄에 하나씩, 최대 8개" style="width:100%;resize:vertical;"></textarea>
+        <div id="document-ops-comparison-change-set" aria-live="polite" style="margin-top:.65rem;border:1px solid var(--border);border-radius:12px;padding:.7rem;background:rgba(255,255,255,.55);font-size:.74rem;line-height:1.5;overflow-wrap:anywhere;">
+          Agent 실행 전에 line change set을 검증합니다.
+        </div>
+        <button id="document-ops-comparison-change-set-download" type="button" class="action-btn" disabled style="margin-top:.45rem;">검증된 change set JSON 다운로드</button>
+        <p style="margin:.45rem 0 0;font-size:.72rem;color:var(--muted);line-height:1.45;">원문은 이번 비교 요청에만 사용합니다. Change set은 page memory에만 유지하며 의미·정책·법적·운영 판단 권한을 만들지 않습니다.</p>
+      </div>
       <label style="display:flex;align-items:center;gap:.45rem;font-size:.82rem;color:var(--muted);margin:.8rem 0;">
         <input id="docops-capture-trajectory" type="checkbox" checked>
         trajectory 저장 후 리뷰/학습 후보로 관리
@@ -7004,6 +7062,8 @@
             <option value="evidence_gap_review">근거 gap 검수</option>
             <option value="decision_brief">최종 승인 브리프</option>
             <option value="develop_quality_improvement">Develop 품질 개선</option>
+            <option value="source_grounded_document">Source-grounded 문서</option>
+            <option value="document_comparison_review">문서 비교 검토</option>
           </select>
         </label>
         <label class="docops-field">검토 상태
@@ -7811,8 +7871,14 @@
   let _guidedDecisionReviewHandoffRequestId = 0;
   let _guidedDecisionReviewRecheckRequestId = 0;
   let _guidedDecisionReviewDispositionRequestId = 0;
+  let _guidedDecisionReviewRegistryRequestId = 0;
+  let _guidedDecisionReviewRegistryListRequestId = 0;
+  let _guidedDecisionReviewRegistryDownloadRequestId = 0;
   let _guidedDecisionReviewVerifiedHandoff = null;
   let _guidedDecisionReviewVerifiedRecheck = null;
+  let _guidedDecisionReviewVerifiedDisposition = null;
+  let _guidedDecisionReviewRegistryOperation = null;
+  let _guidedDecisionReviewRegistryPending = null;
   let _decisionEvidenceMapState = {
     scopeKey: '',
     query: '',
@@ -7983,6 +8049,11 @@
   let _documentOpsTrainingRehearsalRequestVersion = 0;
   let _documentOpsGovernanceObservation = null;
   let _documentOpsTrajectorySearchTimer = null;
+  let _documentOpsComparisonModeActive = false;
+  const _documentOpsComparisonIntakeVersion = { baseline: 0, candidate: 0 };
+  const _documentOpsComparisonFileProvenance = { baseline: null, candidate: null };
+  let _documentOpsComparisonChangeSetVersion = 0;
+  let _documentOpsVerifiedComparisonChangeSet = null;
   const _documentOpsReviewDrafts = new Map();
 
   function documentOpsReviewDraftKey(
@@ -8007,10 +8078,638 @@
   }
 
   function documentOpsTaskSkill(taskType) {
+    if (taskType === 'policy_planning_brief') return 'policy-planning';
     if (taskType === 'evidence_gap_review') return 'evidence-gap-checker';
     if (taskType === 'decision_brief') return 'decision-brief-builder';
     if (taskType === 'develop_quality_improvement') return 'develop-document-improver';
+    if (taskType === 'source_grounded_document') return 'source-grounded-document';
+    if (taskType === 'document_comparison_review') return 'document-comparison-review';
     return 'policy-planning';
+  }
+
+  const DOCUMENT_OPS_SKILL_BINDING_KEYS = 'catalog_fingerprint,code_execution_authorized,content_sha256,external_runtime_authorized,risk_level,schema_version,skill_name,skill_version';
+  const DOCUMENT_OPS_SKILL_NAME_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
+  const DOCUMENT_OPS_SKILL_VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+  const DOCUMENT_OPS_SHA256_PATTERN = /^[0-9a-f]{64}$/;
+  const DOCUMENT_OPS_COMPARISON_CONTEXT_KEYS = 'baseline_sha256,candidate_sha256,comparison_criteria,documents_identical,raw_content_included,schema_version';
+  const DOCUMENT_OPS_COMPARISON_DOCUMENT_KEYS = 'content_may_be_truncated,extracted_char_count,extracted_text,extracted_text_sha256,extraction_mode,filename,persisted,provider_called,schema_version,source_sha256,source_size_bytes';
+  const DOCUMENT_OPS_COMPARISON_CHANGE_SET_KEYS = 'added_line_count,authority,baseline_line_count,baseline_replaced_line_count,baseline_sha256,candidate_line_count,candidate_replaced_line_count,candidate_sha256,comparison_criteria,documents_identical,equal_line_count,hunks,hunks_truncated,removed_line_count,replaced_line_count,schema_version,total_hunk_count';
+  const DOCUMENT_OPS_COMPARISON_HUNK_KEYS = 'baseline_end,baseline_lines,baseline_start,candidate_end,candidate_lines,candidate_start,opcode';
+  const DOCUMENT_OPS_COMPARISON_AUTHORITY_KEYS = 'approval,code_execution,external_effect,external_runtime,persistence,provider_call,semantic';
+  const DOCUMENT_OPS_COMPARISON_CHANGE_SET_HASH_HEADER = 'X-DecisionDoc-Document-Comparison-SHA256';
+  const DOCUMENT_OPS_COMPARISON_CHANGE_SET_FILENAME = 'document-ops-comparison-change-set.json';
+  const DOCUMENT_OPS_COMPARISON_HUNK_LINE_LIMIT = 200;
+  const DOCUMENT_OPS_COMPARISON_MAX_SOURCE_BYTES = 20 * 1024 * 1024;
+  const DOCUMENT_OPS_COMPARISON_EXTRACTION_MODE = 'deterministic_local_existing_parser';
+  const DOCUMENT_OPS_COMPARISON_MAX_EXTRACTED_CHARS = 12000;
+
+  function documentOpsValidatedSkillBinding(value) {
+    if (
+      !value
+      || typeof value !== 'object'
+      || Array.isArray(value)
+      || Object.keys(value).sort().join(',') !== DOCUMENT_OPS_SKILL_BINDING_KEYS
+      || value.schema_version !== 'document_ops_skill_binding_v1'
+      || typeof value.skill_name !== 'string'
+      || !DOCUMENT_OPS_SKILL_NAME_PATTERN.test(value.skill_name)
+      || typeof value.skill_version !== 'string'
+      || !DOCUMENT_OPS_SKILL_VERSION_PATTERN.test(value.skill_version)
+      || !['low', 'medium', 'high'].includes(value.risk_level)
+      || typeof value.content_sha256 !== 'string'
+      || !DOCUMENT_OPS_SHA256_PATTERN.test(value.content_sha256)
+      || typeof value.catalog_fingerprint !== 'string'
+      || !DOCUMENT_OPS_SHA256_PATTERN.test(value.catalog_fingerprint)
+      || value.code_execution_authorized !== false
+      || value.external_runtime_authorized !== false
+    ) return null;
+    return {
+      skillName: value.skill_name,
+      skillVersion: value.skill_version,
+      riskLevel: value.risk_level,
+      contentSha256: value.content_sha256,
+      catalogFingerprint: value.catalog_fingerprint,
+    };
+  }
+
+  function documentOpsComparisonCriteriaAreNormalized(value) {
+    return (
+      Array.isArray(value)
+      && value.length <= 8
+      && value.every(item => typeof item === 'string' && !!item.trim() && item === item.trim() && item.length <= 120)
+      && new Set(value.map(item => item.toLocaleLowerCase())).size === value.length
+    );
+  }
+
+  function documentOpsValidatedComparisonContext(value) {
+    if (
+      !value
+      || typeof value !== 'object'
+      || Array.isArray(value)
+      || Object.keys(value).sort().join(',') !== DOCUMENT_OPS_COMPARISON_CONTEXT_KEYS
+      || value.schema_version !== 'document_ops_comparison_context_v1'
+      || typeof value.baseline_sha256 !== 'string'
+      || !DOCUMENT_OPS_SHA256_PATTERN.test(value.baseline_sha256)
+      || typeof value.candidate_sha256 !== 'string'
+      || !DOCUMENT_OPS_SHA256_PATTERN.test(value.candidate_sha256)
+      || typeof value.documents_identical !== 'boolean'
+      || value.raw_content_included !== false
+      || !documentOpsComparisonCriteriaAreNormalized(value.comparison_criteria)
+    ) return null;
+    return {
+      baselineSha256: value.baseline_sha256,
+      candidateSha256: value.candidate_sha256,
+      documentsIdentical: value.documents_identical,
+      comparisonCriteria: value.comparison_criteria,
+    };
+  }
+
+  function documentOpsExecutionProvenance(data, payload) {
+    if (
+      !data
+      || typeof data !== 'object'
+      || Array.isArray(data)
+      || !payload
+      || typeof payload !== 'object'
+      || typeof payload.task_type !== 'string'
+      || !payload.task_type
+      || data.task_type !== payload.task_type
+    ) return null;
+    const binding = documentOpsValidatedSkillBinding(data.skill_binding);
+    const comparisonRequest = payload.task_type === 'document_comparison_review';
+    const comparisonContext = comparisonRequest
+      ? documentOpsValidatedComparisonContext(data.comparison_context)
+      : null;
+    if (
+      !binding
+      || data.skill_name !== binding.skillName
+      || data.skill_version !== binding.skillVersion
+      || (
+        comparisonRequest
+        && (!comparisonContext || binding.skillName !== 'document-comparison-review')
+      )
+      || (!comparisonRequest && data.comparison_context != null)
+      || (
+        data.operation_replayed !== undefined
+        && typeof data.operation_replayed !== 'boolean'
+      )
+    ) return null;
+    return {
+      ...binding,
+      replayState: data.operation_replayed === true ? 'exact replay' : 'first run',
+      comparisonContext,
+    };
+  }
+
+  async function documentOpsComparisonContextMatchesInput(payload, provenance) {
+    if (payload?.task_type !== 'document_comparison_review') return true;
+    const context = provenance?.comparisonContext;
+    const requirements = payload?.requirements;
+    if (!context || !requirements || typeof requirements !== 'object') return false;
+    const baseline = requirements.baseline_document_text;
+    const candidate = requirements.candidate_document_text;
+    const criteria = requirements.comparison_criteria;
+    if (
+      typeof baseline !== 'string'
+      || typeof candidate !== 'string'
+      || !documentOpsComparisonCriteriaAreNormalized(criteria)
+    ) return false;
+    try {
+      const digest = async value => {
+        const bytes = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+        return Array.from(new Uint8Array(bytes)).map(item => item.toString(16).padStart(2, '0')).join('');
+      };
+      const [baselineSha256, candidateSha256] = await Promise.all([digest(baseline), digest(candidate)]);
+      return (
+        baselineSha256 === context.baselineSha256
+        && candidateSha256 === context.candidateSha256
+        && (baseline === candidate) === context.documentsIdentical
+        && JSON.stringify(criteria) === JSON.stringify(context.comparisonCriteria)
+      );
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function documentOpsComparisonFileInput(slot) {
+    return $id(`docops-${slot}-file`);
+  }
+
+  function documentOpsComparisonTextInput(slot) {
+    return $id(`docops-${slot}-document`);
+  }
+
+  function setDocumentOpsComparisonFileStatus(slot, message, tone = 'muted') {
+    const el = $id(`docops-${slot}-file-status`);
+    if (!el) return;
+    el.textContent = message;
+    el.style.color = tone === 'error' ? '#b91c1c' : tone === 'verified' ? '#166534' : tone === 'loading' ? '#92400e' : 'var(--muted)';
+  }
+
+  function documentOpsSafeComparisonFilename(value) {
+    const basename = String(value || '').replace(/\\/g, '/').split('/').pop().trim().replace(/[\x00-\x1f\x7f]/g, '_');
+    return basename && basename !== '.' && basename !== '..' ? basename : '';
+  }
+
+  async function documentOpsSha256Bytes(bytes) {
+    const digest = await window.crypto.subtle.digest('SHA-256', bytes);
+    return Array.from(new Uint8Array(digest)).map(item => item.toString(16).padStart(2, '0')).join('');
+  }
+
+  async function documentOpsSha256Text(value) {
+    return documentOpsSha256Bytes(new TextEncoder().encode(value));
+  }
+
+  function documentOpsComparisonSourceLines(value) {
+    const text = String(value || '');
+    const lines = [];
+    const lineEnding = /\r\n|[\n\v\f\r\x1c-\x1e\x85\u2028\u2029]/g;
+    let start = 0;
+    for (const match of text.matchAll(lineEnding)) {
+      const end = match.index + match[0].length;
+      lines.push(text.slice(start, end));
+      start = end;
+    }
+    if (start < text.length) lines.push(text.slice(start));
+    return lines;
+  }
+
+  function documentOpsComparisonDisplayLine(value) {
+    return escapeHtml(JSON.stringify(String(value)).slice(1, -1));
+  }
+
+  function documentOpsComparisonChangeSetSnapshot() {
+    return {
+      taskType: documentOpsSelectedTaskType(),
+      baseline: String($id('docops-baseline-document')?.value || ''),
+      candidate: String($id('docops-candidate-document')?.value || ''),
+      criteria: documentOpsComparisonCriteria(),
+      tenantId: _currentTenantId,
+      authRevision: _authSessionRevision,
+    };
+  }
+
+  function documentOpsComparisonSnapshotIsCurrent(snapshot) {
+    const current = documentOpsComparisonChangeSetSnapshot();
+    return snapshot?.taskType === 'document_comparison_review'
+      && current.taskType === snapshot.taskType
+      && current.baseline === snapshot.baseline
+      && current.candidate === snapshot.candidate
+      && JSON.stringify(current.criteria) === JSON.stringify(snapshot.criteria)
+      && current.tenantId === snapshot.tenantId
+      && current.authRevision === snapshot.authRevision;
+  }
+
+  function renderDocumentOpsComparisonChangeSetInvalid(reason) {
+    const el = $id('document-ops-comparison-change-set');
+    if (el) el.innerHTML = `<div role="status" style="color:var(--muted);">${escapeHtml(reason)}</div>`;
+    const download = $id('document-ops-comparison-change-set-download');
+    if (download) download.disabled = true;
+  }
+
+  function invalidateDocumentOpsComparisonChangeSet(reason = '비교 입력이 변경되어 change set 증거가 무효화되었습니다.') {
+    _documentOpsComparisonChangeSetVersion += 1;
+    if (_documentOpsVerifiedComparisonChangeSet?.objectUrl) {
+      URL.revokeObjectURL(_documentOpsVerifiedComparisonChangeSet.objectUrl);
+    }
+    _documentOpsVerifiedComparisonChangeSet = null;
+    renderDocumentOpsComparisonChangeSetInvalid(reason);
+  }
+
+  function renderDocumentOpsComparisonChangeSet(verified) {
+    const el = $id('document-ops-comparison-change-set');
+    if (!el) return;
+    const value = verified.value;
+    const hunkHtml = value.hunks.map((hunk, index) => {
+      const label = hunk.opcode === 'equal'
+        ? 'identical'
+        : hunk.opcode === 'insert'
+          ? 'add'
+          : hunk.opcode === 'delete'
+            ? 'remove'
+            : 'replace';
+      const baselineText = hunk.baseline_lines.length ? hunk.baseline_lines.map(documentOpsComparisonDisplayLine).join('\n') : '(none)';
+      const candidateText = hunk.candidate_lines.length ? hunk.candidate_lines.map(documentOpsComparisonDisplayLine).join('\n') : '(none)';
+      return `<section data-comparison-opcode="${escapeHtml(label)}" style="border:1px solid var(--border);border-radius:10px;padding:.55rem;margin-top:.5rem;min-width:0;">
+        <div style="font-weight:900;">${escapeHtml(label)} #${index + 1}</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.45rem;margin-top:.4rem;min-width:0;">
+          <div style="min-width:0;"><strong>Baseline [${hunk.baseline_start}, ${hunk.baseline_end})</strong><pre style="white-space:pre-wrap;overflow-wrap:anywhere;margin:.25rem 0 0;max-height:12rem;overflow:auto;">${baselineText}</pre></div>
+          <div style="min-width:0;"><strong>Candidate [${hunk.candidate_start}, ${hunk.candidate_end})</strong><pre style="white-space:pre-wrap;overflow-wrap:anywhere;margin:.25rem 0 0;max-height:12rem;overflow:auto;">${candidateText}</pre></div>
+        </div>
+      </section>`;
+    }).join('');
+    el.innerHTML = `<div style="font-weight:900;color:#166534;">Verified line change set · ${value.documents_identical ? 'identical' : 'changed'}</div>
+      <div style="margin-top:.25rem;color:var(--muted);">equal ${value.equal_line_count} · add ${value.added_line_count} · remove ${value.removed_line_count} · replace ${value.replaced_line_count} · hunks ${value.hunks.length}/${value.total_hunk_count}${value.hunks_truncated ? ' (truncated)' : ''} · authority all false</div>
+      ${hunkHtml}`;
+    const download = $id('document-ops-comparison-change-set-download');
+    if (download) download.disabled = false;
+  }
+
+  async function documentOpsValidatedComparisonChangeSet(value, baseline, candidate, criteria) {
+    if (
+      !value
+      || typeof value !== 'object'
+      || Array.isArray(value)
+      || Object.keys(value).sort().join(',') !== DOCUMENT_OPS_COMPARISON_CHANGE_SET_KEYS
+      || value.schema_version !== 'document_ops_comparison_change_set_v1'
+      || typeof value.baseline_sha256 !== 'string'
+      || !DOCUMENT_OPS_SHA256_PATTERN.test(value.baseline_sha256)
+      || typeof value.candidate_sha256 !== 'string'
+      || !DOCUMENT_OPS_SHA256_PATTERN.test(value.candidate_sha256)
+      || typeof value.documents_identical !== 'boolean'
+      || !documentOpsComparisonCriteriaAreNormalized(value.comparison_criteria)
+      || JSON.stringify(value.comparison_criteria) !== JSON.stringify(criteria)
+      || !value.authority
+      || typeof value.authority !== 'object'
+      || Array.isArray(value.authority)
+      || Object.keys(value.authority).sort().join(',') !== DOCUMENT_OPS_COMPARISON_AUTHORITY_KEYS
+      || !Object.values(value.authority).every(item => item === false)
+      || !Number.isInteger(value.total_hunk_count)
+      || value.total_hunk_count < 1
+      || typeof value.hunks_truncated !== 'boolean'
+      || !Array.isArray(value.hunks)
+      || !value.hunks.length
+      || value.hunks.length > value.total_hunk_count
+    ) return null;
+
+    const countKeys = [
+      'baseline_line_count', 'candidate_line_count', 'equal_line_count',
+      'added_line_count', 'removed_line_count', 'baseline_replaced_line_count',
+      'candidate_replaced_line_count', 'replaced_line_count',
+    ];
+    if (!countKeys.every(key => Number.isInteger(value[key]) && value[key] >= 0)) return null;
+    const baselineLines = documentOpsComparisonSourceLines(baseline);
+    const candidateLines = documentOpsComparisonSourceLines(candidate);
+    if (value.baseline_line_count !== baselineLines.length || value.candidate_line_count !== candidateLines.length) return null;
+    try {
+      const [baselineSha256, candidateSha256] = await Promise.all([
+        documentOpsSha256Text(baseline),
+        documentOpsSha256Text(candidate),
+      ]);
+      if (
+        value.baseline_sha256 !== baselineSha256
+        || value.candidate_sha256 !== candidateSha256
+        || value.documents_identical !== (baseline === candidate)
+      ) return null;
+    } catch (_) {
+      return null;
+    }
+
+    if (
+      value.replaced_line_count !== Math.max(value.baseline_replaced_line_count, value.candidate_replaced_line_count)
+      || value.baseline_line_count !== value.equal_line_count + value.removed_line_count + value.baseline_replaced_line_count
+      || value.candidate_line_count !== value.equal_line_count + value.added_line_count + value.candidate_replaced_line_count
+    ) return null;
+    let baselineCursor = 0;
+    let candidateCursor = 0;
+    let equalCount = 0;
+    let addedCount = 0;
+    let removedCount = 0;
+    let baselineReplaced = 0;
+    let candidateReplaced = 0;
+    let exposedLineCount = 0;
+    for (const hunk of value.hunks) {
+      if (
+        !hunk
+        || typeof hunk !== 'object'
+        || Array.isArray(hunk)
+        || Object.keys(hunk).sort().join(',') !== DOCUMENT_OPS_COMPARISON_HUNK_KEYS
+        || !['equal', 'insert', 'delete', 'replace'].includes(hunk.opcode)
+        || !['baseline_start', 'baseline_end', 'candidate_start', 'candidate_end'].every(key => Number.isInteger(hunk[key]) && hunk[key] >= 0)
+        || hunk.baseline_start !== baselineCursor
+        || hunk.candidate_start !== candidateCursor
+        || hunk.baseline_end < hunk.baseline_start
+        || hunk.candidate_end < hunk.candidate_start
+        || !Array.isArray(hunk.baseline_lines)
+        || !Array.isArray(hunk.candidate_lines)
+        || !hunk.baseline_lines.every(line => typeof line === 'string')
+        || !hunk.candidate_lines.every(line => typeof line === 'string')
+      ) return null;
+      const baselineCount = hunk.baseline_end - hunk.baseline_start;
+      const candidateCount = hunk.candidate_end - hunk.candidate_start;
+      const included = hunk.baseline_lines.length + hunk.candidate_lines.length;
+      if (
+        hunk.baseline_lines.length !== baselineCount
+        || hunk.candidate_lines.length !== candidateCount
+        || JSON.stringify(hunk.baseline_lines) !== JSON.stringify(baselineLines.slice(hunk.baseline_start, hunk.baseline_start + hunk.baseline_lines.length))
+        || JSON.stringify(hunk.candidate_lines) !== JSON.stringify(candidateLines.slice(hunk.candidate_start, hunk.candidate_start + hunk.candidate_lines.length))
+        || (hunk.opcode === 'equal' && (baselineCount <= 0 || baselineCount !== candidateCount || JSON.stringify(hunk.baseline_lines) !== JSON.stringify(hunk.candidate_lines)))
+        || (hunk.opcode === 'insert' && (baselineCount !== 0 || candidateCount <= 0))
+        || (hunk.opcode === 'delete' && (baselineCount <= 0 || candidateCount !== 0))
+        || (hunk.opcode === 'replace' && (baselineCount <= 0 || candidateCount <= 0))
+      ) return null;
+      exposedLineCount += included;
+      baselineCursor = hunk.baseline_end;
+      candidateCursor = hunk.candidate_end;
+      if (hunk.opcode === 'equal') equalCount += baselineCount;
+      else if (hunk.opcode === 'insert') addedCount += candidateCount;
+      else if (hunk.opcode === 'delete') removedCount += baselineCount;
+      else {
+        baselineReplaced += baselineCount;
+        candidateReplaced += candidateCount;
+      }
+    }
+    if (exposedLineCount > DOCUMENT_OPS_COMPARISON_HUNK_LINE_LIMIT) return null;
+    if (value.hunks_truncated) {
+      if (![DOCUMENT_OPS_COMPARISON_HUNK_LINE_LIMIT - 1, DOCUMENT_OPS_COMPARISON_HUNK_LINE_LIMIT].includes(exposedLineCount)) return null;
+      if (
+        equalCount > value.equal_line_count
+        || addedCount > value.added_line_count
+        || removedCount > value.removed_line_count
+        || baselineReplaced > value.baseline_replaced_line_count
+        || candidateReplaced > value.candidate_replaced_line_count
+        || (
+          baselineCursor === baselineLines.length
+          && candidateCursor === candidateLines.length
+          && value.hunks.length === value.total_hunk_count
+        )
+      ) return null;
+    } else if (
+      value.hunks.length !== value.total_hunk_count
+      || baselineCursor !== baselineLines.length
+      || candidateCursor !== candidateLines.length
+      || value.equal_line_count !== equalCount
+      || value.added_line_count !== addedCount
+      || value.removed_line_count !== removedCount
+      || value.baseline_replaced_line_count !== baselineReplaced
+      || value.candidate_replaced_line_count !== candidateReplaced
+    ) return null;
+    return value;
+  }
+
+  function documentOpsComparisonEvidenceMatchesPayload(payload, tenantId) {
+    const verified = _documentOpsVerifiedComparisonChangeSet;
+    const requirements = payload?.requirements;
+    return payload?.task_type !== 'document_comparison_review' || Boolean(
+      verified
+      && tenantId === verified.snapshot.tenantId
+      && documentOpsComparisonSnapshotIsCurrent(verified.snapshot)
+      && requirements?.baseline_document_text === verified.snapshot.baseline
+      && requirements?.candidate_document_text === verified.snapshot.candidate
+      && JSON.stringify(requirements?.comparison_criteria) === JSON.stringify(verified.snapshot.criteria)
+    );
+  }
+
+  async function verifyDocumentOpsComparisonChangeSet(payload, tenantId) {
+    invalidateDocumentOpsComparisonChangeSet('Line change set을 검증하는 중…');
+    const generation = _documentOpsComparisonChangeSetVersion;
+    const snapshot = documentOpsComparisonChangeSetSnapshot();
+    const current = () => generation === _documentOpsComparisonChangeSetVersion
+      && tenantId === _currentTenantId
+      && documentOpsComparisonSnapshotIsCurrent(snapshot);
+    try {
+      const response = await fetch('/api/agent/document-ops/comparison-documents/change-set', {
+        method: 'POST',
+        headers: { ...getAuthHeaders(tenantId), 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({
+          schema_version: 'document_ops_comparison_change_set_request_v1',
+          baseline_document_text: snapshot.baseline,
+          candidate_document_text: snapshot.candidate,
+          comparison_criteria: snapshot.criteria,
+        }),
+      });
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (!current()) return null;
+      const expectedHash = String(response.headers.get(DOCUMENT_OPS_COMPARISON_CHANGE_SET_HASH_HEADER) || '').toLowerCase();
+      const contentDisposition = String(response.headers.get('Content-Disposition') || '');
+      if (
+        !response.ok
+        || !String(response.headers.get('Content-Type') || '').toLowerCase().startsWith('application/json')
+        || String(response.headers.get('Cache-Control') || '').toLowerCase() !== 'no-store'
+        || String(response.headers.get('X-Content-Type-Options') || '').toLowerCase() !== 'nosniff'
+        || contentDisposition !== `attachment; filename="${DOCUMENT_OPS_COMPARISON_CHANGE_SET_FILENAME}"`
+        || !DOCUMENT_OPS_SHA256_PATTERN.test(expectedHash)
+        || await documentOpsSha256Bytes(bytes) !== expectedHash
+      ) throw new Error('change set response headers or exact body hash are invalid');
+      let decoded;
+      try {
+        decoded = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+      } catch (_) {
+        throw new Error('change set response is not valid UTF-8');
+      }
+      let value;
+      try {
+        value = JSON.parse(decoded);
+      } catch (_) {
+        throw new Error('change set response is not valid JSON');
+      }
+      if (decoded !== `${JSON.stringify(value)}\n`) throw new Error('change set response is not canonical JSON');
+      const validated = await documentOpsValidatedComparisonChangeSet(
+        value,
+        snapshot.baseline,
+        snapshot.candidate,
+        snapshot.criteria,
+      );
+      if (!validated) throw new Error('change set response schema or source binding is invalid');
+      if (!current()) return null;
+      const exactBytes = bytes.slice();
+      const objectUrl = URL.createObjectURL(new Blob([exactBytes], { type: 'application/json' }));
+      _documentOpsVerifiedComparisonChangeSet = {
+        value: validated,
+        exactBytes,
+        exactBodySha256: expectedHash,
+        objectUrl,
+        snapshot,
+      };
+      renderDocumentOpsComparisonChangeSet(_documentOpsVerifiedComparisonChangeSet);
+      return _documentOpsVerifiedComparisonChangeSet;
+    } catch (error) {
+      if (!current()) return null;
+      invalidateDocumentOpsComparisonChangeSet('Change set 검증 실패: Agent 요청을 시작하지 않았습니다.');
+      showNotification(`DocumentOps change set 검증 실패: ${error?.message || error}`, 'error');
+      return null;
+    }
+  }
+
+  function downloadVerifiedDocumentOpsComparisonChangeSet() {
+    const verified = _documentOpsVerifiedComparisonChangeSet;
+    if (!verified || !documentOpsComparisonSnapshotIsCurrent(verified.snapshot)) {
+      invalidateDocumentOpsComparisonChangeSet();
+      showNotification('현재 입력에 결속된 verified change set이 없습니다.', 'warn');
+      return;
+    }
+    const link = document.createElement('a');
+    link.href = verified.objectUrl;
+    link.download = DOCUMENT_OPS_COMPARISON_CHANGE_SET_FILENAME;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
+
+  async function documentOpsValidatedComparisonDocument(value, file, sourceSha256) {
+    if (
+      !value
+      || typeof value !== 'object'
+      || Array.isArray(value)
+      || Object.keys(value).sort().join(',') !== DOCUMENT_OPS_COMPARISON_DOCUMENT_KEYS
+      || value.schema_version !== 'document_ops_comparison_document_v1'
+      || value.filename !== documentOpsSafeComparisonFilename(file?.name)
+      || typeof value.source_size_bytes !== 'number'
+      || !Number.isInteger(value.source_size_bytes)
+      || value.source_size_bytes !== file?.size
+      || typeof value.source_sha256 !== 'string'
+      || value.source_sha256 !== sourceSha256
+      || !DOCUMENT_OPS_SHA256_PATTERN.test(value.source_sha256)
+      || typeof value.extracted_text !== 'string'
+      || !value.extracted_text.trim()
+      || typeof value.extracted_text_sha256 !== 'string'
+      || !DOCUMENT_OPS_SHA256_PATTERN.test(value.extracted_text_sha256)
+      || typeof value.extracted_char_count !== 'number'
+      || !Number.isInteger(value.extracted_char_count)
+      || value.extracted_char_count !== value.extracted_text.length
+      || typeof value.content_may_be_truncated !== 'boolean'
+      || value.content_may_be_truncated !== (value.extracted_char_count >= DOCUMENT_OPS_COMPARISON_MAX_EXTRACTED_CHARS)
+      || value.extraction_mode !== DOCUMENT_OPS_COMPARISON_EXTRACTION_MODE
+      || value.provider_called !== false
+      || value.persisted !== false
+    ) return null;
+    try {
+      if (await documentOpsSha256Text(value.extracted_text) !== value.extracted_text_sha256) return null;
+    } catch (_) {
+      return null;
+    }
+    return {
+      filename: value.filename,
+      sourceSha256: value.source_sha256,
+      extractedText: value.extracted_text,
+      extractedTextSha256: value.extracted_text_sha256,
+      extractedCharCount: value.extracted_char_count,
+      contentMayBeTruncated: value.content_may_be_truncated,
+    };
+  }
+
+  function invalidateDocumentOpsComparisonFileProvenance(slot, { clearFileText = false, reason = '직접 입력' } = {}) {
+    invalidateDocumentOpsComparisonChangeSet(`${reason}: change set 증거 무효화`);
+    _documentOpsComparisonIntakeVersion[slot] += 1;
+    const provenance = _documentOpsComparisonFileProvenance[slot];
+    const textInput = documentOpsComparisonTextInput(slot);
+    if (clearFileText && provenance && textInput?.value === provenance.extractedText) textInput.value = '';
+    _documentOpsComparisonFileProvenance[slot] = null;
+    setDocumentOpsComparisonFileStatus(slot, `${reason}: file provenance 없음`);
+  }
+
+  function invalidateDocumentOpsComparisonIntake({ clearFileText = false, reason = '비교 context 변경' } = {}) {
+    ['baseline', 'candidate'].forEach(slot => {
+      invalidateDocumentOpsComparisonFileProvenance(slot, { clearFileText, reason });
+      const input = documentOpsComparisonFileInput(slot);
+      if (input) input.value = '';
+    });
+  }
+
+  function documentOpsComparisonFileRequestIsCurrent(slot, generation, tenantId, authRevision, file) {
+    return (
+      generation === _documentOpsComparisonIntakeVersion[slot]
+      && tenantId === _currentTenantId
+      && authRevision === _authSessionRevision
+      && documentOpsSelectedTaskType() === 'document_comparison_review'
+      && documentOpsComparisonFileInput(slot)?.files?.[0] === file
+    );
+  }
+
+  async function extractDocumentOpsComparisonFile(slot) {
+    const file = documentOpsComparisonFileInput(slot)?.files?.[0];
+    invalidateDocumentOpsComparisonFileProvenance(slot, { clearFileText: true, reason: '새 파일 선택' });
+    if (!file) return;
+    const generation = _documentOpsComparisonIntakeVersion[slot];
+    const tenantId = _currentTenantId;
+    const authRevision = _authSessionRevision;
+    const current = () => documentOpsComparisonFileRequestIsCurrent(slot, generation, tenantId, authRevision, file);
+    if (file.size > DOCUMENT_OPS_COMPARISON_MAX_SOURCE_BYTES) {
+      setDocumentOpsComparisonFileStatus(slot, '파일 검증 실패: comparison document exceeds the 20 MB limit', 'error');
+      return;
+    }
+    setDocumentOpsComparisonFileStatus(slot, '파일 bytes와 추출 결과를 검증하는 중…', 'loading');
+    try {
+      const sourceBytes = await file.arrayBuffer();
+      const sourceSha256 = await documentOpsSha256Bytes(sourceBytes);
+      if (!current()) return;
+      const form = new FormData();
+      form.append('file', file, file.name);
+      const response = await fetch('/api/agent/document-ops/comparison-documents/extract', {
+        method: 'POST',
+        headers: getAuthHeaders(tenantId),
+        body: form,
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(typeof payload?.detail === 'string' ? payload.detail : '파일 추출에 실패했습니다.');
+      const verified = await documentOpsValidatedComparisonDocument(payload, file, sourceSha256);
+      if (!verified) throw new Error('파일 추출 응답 검증에 실패했습니다. 텍스트를 변경하지 않았습니다.');
+      if (!current()) return;
+      const textInput = documentOpsComparisonTextInput(slot);
+      if (!textInput) return;
+      textInput.value = verified.extractedText;
+      _documentOpsComparisonFileProvenance[slot] = verified;
+      setDocumentOpsComparisonFileStatus(
+        slot,
+        verified.contentMayBeTruncated
+          ? `검증된 파일 intake · ${verified.filename} · parser cap으로 일부 내용이 생략됐을 수 있습니다.`
+          : `검증된 파일 intake · ${verified.filename} · local parser only`,
+        'verified',
+      );
+    } catch (error) {
+      if (!current()) return;
+      _documentOpsComparisonFileProvenance[slot] = null;
+      setDocumentOpsComparisonFileStatus(slot, `파일 검증 실패: ${error?.message || error}`, 'error');
+    }
+  }
+
+  async function documentOpsComparisonProvenanceMatchesText(slot) {
+    const provenance = _documentOpsComparisonFileProvenance[slot];
+    if (!provenance) return true;
+    const value = String(documentOpsComparisonTextInput(slot)?.value || '');
+    try {
+      return value === provenance.extractedText
+        && await documentOpsSha256Text(value) === provenance.extractedTextSha256;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function renderDocumentOpsProvenanceVerificationError(resultEl) {
+    if (resultEl) {
+      resultEl.innerHTML = '<div role="alert" style="color:#b91c1c;font-size:.84rem;line-height:1.5;">Agent 응답의 실행 provenance를 검증하지 못했습니다. 결과를 표시하거나 성공 처리하지 않았습니다.</div>';
+    }
+    showNotification('DocumentOps 응답의 실행 provenance를 검증하지 못했습니다.', 'error');
   }
 
   function documentOpsRequiredField(id, label) {
@@ -8031,6 +8730,27 @@
 
   function documentOpsSelectedTaskType() {
     return String($id('docops-task-type')?.value || '').trim();
+  }
+
+  function documentOpsComparisonCriteria() {
+    return documentOpsLines($id('docops-comparison-criteria')?.value || '');
+  }
+
+  function syncDocumentOpsComparisonControls() {
+    const comparisonMode = documentOpsSelectedTaskType() === 'document_comparison_review';
+    const controls = $id('docops-comparison-inputs');
+    const baseline = $id('docops-baseline-document');
+    const candidate = $id('docops-candidate-document');
+    if (controls) {
+      controls.hidden = !comparisonMode;
+      controls.setAttribute('aria-hidden', String(!comparisonMode));
+    }
+    if (baseline) baseline.required = comparisonMode;
+    if (candidate) candidate.required = comparisonMode;
+    if (_documentOpsComparisonModeActive !== comparisonMode) {
+      _documentOpsComparisonModeActive = comparisonMode;
+      invalidateDocumentOpsComparisonIntake({ clearFileText: true, reason: '비교 작업 변경' });
+    }
   }
 
   function documentOpsTrajectoryFilters() {
@@ -8258,6 +8978,9 @@
   }
 
   async function sendDocumentOpsAgentRequest(payload, tenantId) {
+    if (!documentOpsComparisonEvidenceMatchesPayload(payload, tenantId)) {
+      throw new Error('현재 입력에 결속된 verified change set이 없어 Agent 요청을 시작하지 않았습니다.');
+    }
     const res = await fetch('/api/agent/document-ops/run', {
       method: 'POST',
       headers: { ...getAuthHeaders(tenantId), 'Content-Type': 'application/json' },
@@ -8348,8 +9071,9 @@
     return true;
   }
 
-  async function presentDocumentOpsAgentResult(data) {
-    renderDocumentOpsResult(data);
+  async function presentDocumentOpsAgentResult(data, provenance) {
+    if (!provenance) return false;
+    renderDocumentOpsResult(data, provenance);
     await loadDocumentOpsTrajectories({ resetPage: true, resetFilters: true });
     let successMessage = 'DocumentOps 결과를 생성했습니다.';
     if (data.trajectory_saved) {
@@ -8359,6 +9083,7 @@
       successMessage = '저장된 DocumentOps 결과를 안전하게 복구했습니다.';
     }
     showNotification(successMessage, 'success');
+    return true;
   }
 
   async function performDocumentOpsAgentRecovery() {
@@ -8396,12 +9121,17 @@
     try {
       const data = await sendDocumentOpsAgentRequest(pending.payload, pending.tenantId);
       if (_documentOpsPendingRunRecovery !== pending || pending.tenantId !== _currentTenantId) return;
+      const provenance = documentOpsExecutionProvenance(data, pending.payload);
+      if (!provenance || !await documentOpsComparisonContextMatchesInput(pending.payload, provenance)) {
+        renderDocumentOpsProvenanceVerificationError($id('document-ops-result'));
+        return;
+      }
       if (data.operation_id !== operationId || data.operation_replayed !== true) {
         renderDocumentOpsRunRecovery(operationId, status);
         showNotification('저장된 Agent 결과의 operation identity를 확인하지 못했습니다.', 'error');
         return;
       }
-      await presentDocumentOpsAgentResult(data);
+      await presentDocumentOpsAgentResult(data, provenance);
       clearDocumentOpsPendingRunMarker(operationId);
       _documentOpsPendingRunRecovery = null;
     } catch (_) {
@@ -8442,6 +9172,26 @@
       showNotification('DocumentOps 제목을 입력해주세요.', 'warn');
       return;
     }
+    const comparisonMode = taskType === 'document_comparison_review';
+    const baselineDocumentText = String($id('docops-baseline-document')?.value || '');
+    const candidateDocumentText = String($id('docops-candidate-document')?.value || '');
+    if (comparisonMode && !baselineDocumentText.trim()) {
+      showNotification('Baseline document를 입력해주세요.', 'warn');
+      $id('docops-baseline-document')?.focus();
+      return;
+    }
+    if (comparisonMode && !candidateDocumentText.trim()) {
+      showNotification('Candidate document를 입력해주세요.', 'warn');
+      $id('docops-candidate-document')?.focus();
+      return;
+    }
+    if (comparisonMode) {
+      for (const slot of ['baseline', 'candidate']) {
+        if (!await documentOpsComparisonProvenanceMatchesText(slot)) {
+          invalidateDocumentOpsComparisonFileProvenance(slot, { reason: '추출 텍스트 변경' });
+        }
+      }
+    }
     const skillName = ($id('docops-skill-name')?.value || '').trim();
     const resultEl = $id('document-ops-result');
     const runVersion = ++_documentOpsAgentRunVersion;
@@ -8460,12 +9210,22 @@
         current_draft: taskType === 'develop_quality_improvement' ? goal : '',
         draft: taskType === 'develop_quality_improvement' ? goal : '',
         improvement_goal: taskType === 'develop_quality_improvement' ? '문서 품질 개선' : '',
+        ...(comparisonMode ? {
+          baseline_document_text: baselineDocumentText,
+          candidate_document_text: candidateDocumentText,
+          comparison_criteria: documentOpsComparisonCriteria(),
+        } : {}),
       },
       source_summaries: documentOpsLines($id('docops-source-summaries')?.value || ''),
       source_references: documentOpsSourceRefs($id('docops-source-refs')?.value || ''),
       skill_name: skillName || null,
       capture_trajectory: !!$id('docops-capture-trajectory')?.checked,
     };
+    if (comparisonMode) {
+      const verifiedChangeSet = await verifyDocumentOpsComparisonChangeSet(payload, tenantId);
+      if (!verifiedChangeSet || !runIsCurrent()) return;
+      if (resultEl) resultEl.innerHTML = '<div style="color:var(--muted);font-size:.86rem;">Verified change set을 사용해 Agent 실행 중...</div>';
+    }
     if (payload.capture_trajectory) {
       payload.operation_id = createDocumentOpsOperationId('agent-run');
       const blockingMarker = await claimDocumentOpsPendingRunMarker(
@@ -8520,6 +9280,15 @@
         }
         recoveredResult = true;
       }
+      const provenance = documentOpsExecutionProvenance(data, payload);
+      if (!provenance || !await documentOpsComparisonContextMatchesInput(payload, provenance)) {
+        if (runIsCurrent()) {
+          renderDocumentOpsProvenanceVerificationError(resultEl);
+        } else {
+          showNotification('DocumentOps 응답의 실행 provenance를 검증하지 못했습니다.', 'error');
+        }
+        return;
+      }
       if (!runIsCurrent()) {
         if (data.trajectory_saved === true && tenantId === _currentTenantId) {
           await loadDocumentOpsTrajectories();
@@ -8540,7 +9309,7 @@
       }
       if (payload.operation_id) clearDocumentOpsPendingRunMarker(payload.operation_id);
       _documentOpsPendingRunRecovery = null;
-      await presentDocumentOpsAgentResult(data);
+      await presentDocumentOpsAgentResult(data, provenance);
     } catch (err) {
       if (!runIsCurrent()) {
         showNotification('이전 DocumentOps 실행이 실패했습니다. 현재 결과 화면은 더 최근 실행을 유지합니다.', 'warn');
@@ -8551,9 +9320,36 @@
     }
   }
 
-  function renderDocumentOpsResult(data) {
+  function renderDocumentOpsExecutionProvenance(provenance) {
+    return `<section class="docops-execution-provenance" aria-labelledby="document-ops-provenance-heading">
+      <h4 id="document-ops-provenance-heading">실행 provenance</h4>
+      <dl>
+        <div><dt>Skill</dt><dd>${escapeHtml(provenance.skillName)} · ${escapeHtml(provenance.skillVersion)}</dd></div>
+        <div><dt>Risk</dt><dd>${escapeHtml(provenance.riskLevel)}</dd></div>
+        <div><dt>Content SHA-256</dt><dd><code>${escapeHtml(provenance.contentSha256)}</code></dd></div>
+        <div><dt>Catalog fingerprint</dt><dd><code>${escapeHtml(provenance.catalogFingerprint)}</code></dd></div>
+        <div><dt>Replay state</dt><dd>${escapeHtml(provenance.replayState)}</dd></div>
+        <div><dt>Authority</dt><dd>code execution: not authorized · external runtime: not authorized</dd></div>
+      </dl>
+    </section>`;
+  }
+
+  function renderDocumentOpsComparisonContext(context) {
+    if (!context) return '';
+    return `<section class="docops-comparison-context" aria-labelledby="document-ops-comparison-context-heading" style="margin:.65rem 0 .8rem;overflow-wrap:anywhere;">
+      <h4 id="document-ops-comparison-context-heading" style="margin:0 0 .35rem;font-size:.8rem;">비교 context</h4>
+      <dl style="display:grid;grid-template-columns:minmax(0,1fr);gap:.28rem;margin:0;font-size:.72rem;color:var(--muted);">
+        <div><dt style="font-weight:800;color:var(--text);">Baseline SHA-256</dt><dd style="margin:.1rem 0 0;"><code>${escapeHtml(context.baselineSha256)}</code></dd></div>
+        <div><dt style="font-weight:800;color:var(--text);">Candidate SHA-256</dt><dd style="margin:.1rem 0 0;"><code>${escapeHtml(context.candidateSha256)}</code></dd></div>
+        <div><dt style="font-weight:800;color:var(--text);">Equality</dt><dd style="margin:.1rem 0 0;">${escapeHtml(String(context.documentsIdentical))}</dd></div>
+        <div><dt style="font-weight:800;color:var(--text);">Criteria</dt><dd style="margin:.1rem 0 0;">${context.comparisonCriteria.map(item => escapeHtml(item)).join(' · ')}</dd></div>
+      </dl>
+    </section>`;
+  }
+
+  function renderDocumentOpsResult(data, provenance) {
     const el = $id('document-ops-result');
-    if (!el) return;
+    if (!el || !provenance) return;
     const qa = data?.qa || {};
     const issues = Array.isArray(qa.gate_issues) ? qa.gate_issues : [];
     const warnings = Array.isArray(data?.quality_warnings) ? data.quality_warnings : [];
@@ -8562,11 +9358,13 @@
     el.innerHTML = `
       <div style="display:flex;justify-content:space-between;gap:.75rem;align-items:start;flex-wrap:wrap;margin-bottom:.8rem;">
         <div>
-          <h3 style="margin:0;font-size:1.05rem;font-weight:900;">${escapeHtml(data?.skill_name || 'DocumentOps')}</h3>
+          <h3 style="margin:0;font-size:1.05rem;font-weight:900;">${escapeHtml(provenance.skillName)}</h3>
           <div style="font-size:.78rem;color:var(--muted);margin-top:.2rem;">task=${escapeHtml(data?.task_type || '')} · provider=${escapeHtml(data?.provider_name || '')}</div>
         </div>
         <span style="display:inline-flex;border-radius:999px;padding:.18rem .55rem;font-size:.72rem;font-weight:850;background:${hardPass ? '#dcfce7' : '#fee2e2'};color:${hardPass ? '#15803d' : '#b91c1c'};">${hardPass ? 'QA PASS' : 'QA BLOCKED'}</span>
       </div>
+      ${renderDocumentOpsExecutionProvenance(provenance)}
+      ${renderDocumentOpsComparisonContext(provenance.comparisonContext)}
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:.45rem;margin-bottom:.75rem;">
         ${Object.entries(scores).map(([key, value]) => `<div style="border:1px solid var(--border);border-radius:10px;padding:.5rem;background:rgba(255,255,255,.5);">
           <div style="font-size:.68rem;color:var(--muted);font-weight:800;">${escapeHtml(key)}</div>
@@ -10548,7 +11346,30 @@
 
   $id('docops-task-type')?.addEventListener('change', () => {
     markDocumentOpsExportEvidenceStale('DocumentOps task 조건이 변경되었습니다.');
+    syncDocumentOpsComparisonControls();
   });
+  ['baseline', 'candidate'].forEach(slot => {
+    documentOpsComparisonFileInput(slot)?.addEventListener('change', () => {
+      void extractDocumentOpsComparisonFile(slot);
+    });
+    documentOpsComparisonTextInput(slot)?.addEventListener('input', () => {
+      invalidateDocumentOpsComparisonChangeSet('직접 편집: change set 증거 무효화');
+      if (_documentOpsComparisonFileProvenance[slot]) {
+        invalidateDocumentOpsComparisonFileProvenance(slot, { reason: '직접 편집' });
+        const fileInput = documentOpsComparisonFileInput(slot);
+        if (fileInput) fileInput.value = '';
+      } else {
+        setDocumentOpsComparisonFileStatus(slot, '직접 입력 · file provenance 없음');
+      }
+    });
+  });
+  $id('docops-comparison-criteria')?.addEventListener('input', () => {
+    invalidateDocumentOpsComparisonChangeSet('Comparison criteria 변경: change set 증거 무효화');
+  });
+  $id('document-ops-comparison-change-set-download')?.addEventListener('click', () => {
+    downloadVerifiedDocumentOpsComparisonChangeSet();
+  });
+  syncDocumentOpsComparisonControls();
 
   $id('docops-training-provider')?.addEventListener('change', () => {
     markDocumentOpsGovernanceStale('Planning provider 조건이 변경되었습니다.');
@@ -13966,6 +14787,9 @@
   }
 
   const EXPORT_DOWNLOAD_URL_TTL_MS = 5 * 60 * 1000;
+  const GENERATION_EXPORT_REVIEW_FORMATS = 'docx,pdf,pptx,hwp,excel';
+  const GENERATION_EXPORT_RESULT_DOWNLOAD_SCOPE = 'generation-export-result-review';
+  const GENERATION_EXPORT_PROJECT_DOWNLOAD_SCOPE = 'generation-export-project-review';
   const PROCUREMENT_REVIEW_DOWNLOAD_SCOPE = 'procurement-review';
   let _exportDownloadUrls = [];
 
@@ -14376,7 +15200,14 @@
     el.className = cls;
     el.style.display = msg ? 'block' : 'none';
     const liveEl = document.getElementById('sr-live-region');
-    if (liveEl && msg) { liveEl.textContent = ''; requestAnimationFrame(() => { liveEl.textContent = msg; }); }
+    if (liveEl) {
+      liveEl.textContent = '';
+      if (msg) {
+        requestAnimationFrame(() => {
+          if (el.textContent === msg) liveEl.textContent = msg;
+        });
+      }
+    }
   }
 
   /* ── Tenant helpers ────────────────────────────────────────────── */
@@ -14438,6 +15269,9 @@
 
   function storeTenantContext(tenantId) {
     try {
+      if (_currentTenantId !== tenantId) {
+        invalidateDocumentOpsComparisonIntake({ clearFileText: true, reason: 'tenant context 변경' });
+      }
       localStorage.setItem('dd_tenant_id', tenantId);
       _currentTenantId = tenantId;
       window.invalidateAuthSessionRetentionHandoff?.();
@@ -14487,6 +15321,7 @@
         throw new Error('tenant context storage failed');
       }
       _authSessionRevision += 1;
+      invalidateDocumentOpsComparisonIntake({ clearFileText: true, reason: 'auth context 변경' });
       invalidateProcurementReviewViews();
       return claims;
     } catch (_) {
@@ -14585,6 +15420,7 @@
       clearDocumentOpsPendingRunMarker('', previousTenantId);
       _documentOpsPendingRunRecovery = null;
       _documentOpsRunRecoveryPromise = null;
+      invalidateDocumentOpsComparisonIntake({ clearFileText: true, reason: 'tenant context 변경' });
       _currentTenantId = tenantId;
       invalidateProcurementReviewViews();
       window.location.reload();
@@ -15159,6 +15995,8 @@
       const res  = await fetch('/bundles', { headers: getAuthHeaders()});
       const data = await res.json();
       renderBundleGrid(data);
+      const countBadge = $id('bundle-count-badge');
+      if (countBadge) countBadge.textContent = `🗂️ ${data.length}가지 번들`;
     } catch {
       $id('bundle-grid').innerHTML =
         '<div style="color:var(--color-error,#dc2626);font-size:.9rem">번들 목록을 불러오지 못했습니다. 서버를 확인하세요.</div>';
@@ -19225,6 +20063,7 @@
     }
     if (event.key !== null && !AUTH_SESSION_STORAGE_KEYS.has(event.key)) return;
     _authSessionRevision += 1;
+    invalidateDocumentOpsComparisonIntake({ clearFileText: true, reason: 'auth context 변경' });
     invalidateProcurementReviewViews();
     reconcileCrossTabAuthContext();
   }
@@ -19458,6 +20297,7 @@
     localStorage.removeItem('dd_access_token');
     localStorage.removeItem('dd_refresh_token');
     _authSessionRevision += 1;
+    invalidateDocumentOpsComparisonIntake({ clearFileText: true, reason: 'auth context 변경' });
     invalidateProcurementReviewViews();
     window.invalidateAuthSessionRetentionHandoff?.();
     _documentOpsReviewDrafts.clear();
@@ -20137,6 +20977,109 @@
   let _sse = null;
   let _sseReconnectTimer = null;
 
+  function createAuthenticatedEventStream(url, headers) {
+    const controller = new AbortController();
+    const listeners = new Map();
+    let reader = null;
+    let closed = false;
+    let lineBuffer = '';
+    let eventName = '';
+    let dataLines = [];
+
+    const source = {
+      readyState: 0,
+      onopen: null,
+      onerror: null,
+      addEventListener(name, listener) {
+        if (!listeners.has(name)) listeners.set(name, new Set());
+        listeners.get(name).add(listener);
+      },
+      close() {
+        if (closed) return;
+        closed = true;
+        source.readyState = 2;
+        controller.abort();
+        if (reader) void reader.cancel().catch(() => {});
+      },
+    };
+
+    function emit(name, data) {
+      const event = { data };
+      listeners.get(name)?.forEach(listener => listener(event));
+    }
+
+    function consumeLine(line) {
+      if (line === '') {
+        if (dataLines.length) emit(eventName || 'message', dataLines.join('\n'));
+        eventName = '';
+        dataLines = [];
+        return;
+      }
+      if (line.startsWith(':')) return;
+
+      const separator = line.indexOf(':');
+      const field = separator === -1 ? line : line.slice(0, separator);
+      let value = separator === -1 ? '' : line.slice(separator + 1);
+      if (value.startsWith(' ')) value = value.slice(1);
+      if (field === 'event') eventName = value;
+      if (field === 'data') dataLines.push(value);
+    }
+
+    function consumeText(text) {
+      lineBuffer += text;
+      let newline = lineBuffer.indexOf('\n');
+      while (newline !== -1) {
+        let line = lineBuffer.slice(0, newline);
+        lineBuffer = lineBuffer.slice(newline + 1);
+        if (line.endsWith('\r')) line = line.slice(0, -1);
+        consumeLine(line);
+        newline = lineBuffer.indexOf('\n');
+      }
+    }
+
+    async function connect() {
+      try {
+        const response = await fetch(url, {
+          headers: { ...headers, 'Accept': 'text/event-stream' },
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+        if (!response.ok || !response.body) {
+          throw new Error('Realtime event stream is unavailable.');
+        }
+        if (closed) {
+          await response.body.cancel();
+          return;
+        }
+
+        reader = response.body.getReader();
+        source.readyState = 1;
+        source.onopen?.();
+        const decoder = new TextDecoder();
+        while (!closed) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          consumeText(decoder.decode(value, { stream: true }));
+        }
+        if (!closed) {
+          consumeText(decoder.decode());
+          if (lineBuffer) consumeLine(lineBuffer);
+          consumeLine('');
+          source.onerror?.();
+        }
+      } catch (error) {
+        if (!closed && error?.name !== 'AbortError') source.onerror?.(error);
+      } finally {
+        reader = null;
+      }
+    }
+
+    void connect();
+    return source;
+  }
+
+  let _eventStreamFactory = createAuthenticatedEventStream;
+
   function scheduleSSEReconnect() {
     if (_sseReconnectTimer) return;
     _sseReconnectTimer = setTimeout(() => {
@@ -20183,7 +21126,7 @@
     if (!token) return;
 
     try {
-      const source = new EventSource(`/events?token=${encodeURIComponent(token)}`);
+      const source = _eventStreamFactory('/events', getAuthHeaders());
       _sse = source;
 
       source.addEventListener('notification', () => {
@@ -20240,7 +21183,7 @@
         if (_notifPollTimer) { clearInterval(_notifPollTimer); _notifPollTimer = null; }
       };
     } catch(err) {
-      // Browser doesn't support EventSource, fall back to polling
+      // Streaming setup is unavailable; notification polling remains usable.
       startNotifPolling();
     }
   }
@@ -20390,11 +21333,11 @@
       {
         title: '👋 DecisionDoc AI에 오신 것을 환영합니다!',
         content: `
-          <p>AI가 전문 문서를 30초 만에 생성해드립니다.</p>
+          <p>입력한 목적에 맞는 전문 문서 생성 흐름을 시작합니다.</p>
           <div class="onboard-features">
             <div class="onboard-feature">
               <span class="onboard-icon">📄</span>
-              <span>16종 문서 번들</span>
+              <span>용도별 문서 번들</span>
             </div>
             <div class="onboard-feature">
               <span class="onboard-icon">🏛️</span>
@@ -20457,7 +21400,7 @@
             <ol>
               <li>번들 선택 (예: AI 사업 제안서)</li>
               <li>제목과 목표 입력</li>
-              <li>생성하기 클릭 → 30초 완성!</li>
+              <li>생성하기 클릭 → 결과 검토</li>
             </ol>
           </div>
           <p style="color:var(--muted);font-size:0.8rem">
@@ -20584,12 +21527,77 @@
     pdf: { format: 'pdf', buttonId: 'result-pdf-btn', icon: '🖨️', extension: 'pdf', label: 'PDF' },
     excel: { format: 'excel', buttonId: 'result-excel-btn', icon: '📊', extension: 'xlsx', label: 'Excel' },
   };
+  let _generationExportResultGeneration = 0;
+  const _generationExportReviewFlights = new Set();
+
+  function _currentSignedUserId() {
+    return String(_currentUser?.sub || _currentUser?.user_id || '').trim();
+  }
+
+  function captureGenerationExportReviewContext({
+    source = 'result',
+    requestId = '',
+    projectId = '',
+    documentId = '',
+  } = {}) {
+    return {
+      source,
+      requestId: String(requestId || '').trim(),
+      authRevision: _authSessionRevision,
+      tenantId: _currentTenantId,
+      signedUserId: _currentSignedUserId(),
+      resultGeneration: _generationExportResultGeneration,
+      projectDetailLoadId: source === 'project' ? _projectDetailLoadId : null,
+      projectId: source === 'project' ? String(projectId || '').trim() : '',
+      documentId: source === 'project' ? String(documentId || '').trim() : '',
+    };
+  }
+
+  function isGenerationExportReviewContextCurrent(context) {
+    if (
+      !context?.requestId
+      || context.authRevision !== _authSessionRevision
+      || context.tenantId !== _currentTenantId
+      || context.signedUserId !== _currentSignedUserId()
+    ) return false;
+    if (context.source !== 'project') {
+      return context.resultGeneration === _generationExportResultGeneration;
+    }
+    const project = _currentProjectDetail?.project;
+    const document = _currentProjectDetail?.docsById?.[context.documentId];
+    return (
+      context.projectDetailLoadId === _projectDetailLoadId
+      && project?.project_id === context.projectId
+      && String(document?.request_id || '') === context.requestId
+    );
+  }
+
+  async function _generationExportResponseCode(res) {
+    try {
+      const payload = await res.json();
+      return String(payload?.code || '');
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function _generationExportReviewFailureMessage(error) {
+    if (error?.code === 'EXPORT_SOURCE_NOT_FOUND') {
+      return '생성 원본이 만료되었거나 없습니다. 문서를 다시 생성한 뒤 검토 ZIP을 요청하세요.';
+    }
+    return '검증된 검토 ZIP을 준비하지 못했습니다. 잠시 후 다시 시도하세요.';
+  }
 
   function renderDownloadButtons(requestId, title) {
     const container = $id('download-buttons');
     if (!container) return;
+    _generationExportResultGeneration += 1;
     const safeTitle = escapeHtml(title || lastMeta?.title || '문서');
-    const safeId = escapeHtml(requestId);
+    const normalizedRequestId = String(requestId || '').trim();
+    const safeId = escapeHtml(normalizedRequestId);
+    const reviewZipButton = normalizedRequestId
+      ? `<button type="button" data-result-export-zip data-request-id="${safeId}" class="dl-btn dl-btn-primary">📦 검증된 검토 ZIP</button>`
+      : '<button type="button" class="dl-btn dl-btn-primary" disabled>📦 검증된 검토 ZIP</button>';
     container.style.display = 'block';
     container.innerHTML = `
       <div class="download-section">
@@ -20605,7 +21613,7 @@
         <div class="download-bulk">
           <span style="font-size:0.8rem;color:var(--muted)">일괄 다운로드</span>
           <div class="download-btn-row">
-            <button type="button" data-result-export-zip data-request-id="${safeId}" class="dl-btn dl-btn-primary">📦 전체 ZIP</button>
+            ${reviewZipButton}
             <button type="button" data-result-share data-request-id="${safeId}" data-title="${safeTitle}" class="dl-btn">🔗 공유</button>
           </div>
         </div>
@@ -20624,7 +21632,7 @@
       });
     });
     container.querySelector('[data-result-export-zip]')?.addEventListener('click', event => {
-      exportZip(event.currentTarget.dataset.requestId || '');
+      exportZip(event.currentTarget.dataset.requestId || '', { button: event.currentTarget });
     });
     container.querySelector('[data-result-share]')?.addEventListener('click', event => {
       const target = event.currentTarget;
@@ -20632,19 +21640,73 @@
     });
   }
 
-  async function exportZip(requestId) {
-    showNotification('ZIP 파일을 생성 중입니다...', 'info');
+  async function exportZip(requestId, options = {}) {
+    const context = captureGenerationExportReviewContext({
+      source: options.source === 'project' ? 'project' : 'result',
+      requestId,
+      projectId: options.projectId,
+      documentId: options.documentId,
+    });
+    const button = options.button || null;
+    const flightKey = context.requestId;
+    if (!isGenerationExportReviewContextCurrent(context) || _generationExportReviewFlights.has(flightKey)) return;
+    _generationExportReviewFlights.add(flightKey);
+    if (button) button.disabled = true;
+    showNotification('검증된 검토 ZIP을 준비하는 중입니다...', 'info');
     try {
       const res = await fetch(
-        `/generate/export-zip?request_id=${encodeURIComponent(requestId)}&formats=docx,hwp,pdf`,
+        `/generate/export-zip?request_id=${encodeURIComponent(context.requestId)}&formats=${GENERATION_EXPORT_REVIEW_FORMATS}`,
         { headers: getAuthHeaders() }
       );
-      if (!res.ok) throw new Error(await res.text());
-      const blob = await res.blob();
-      _triggerBrowserDownload(blob, '문서_전체.zip', 'ZIP');
-      showNotification('ZIP 다운로드를 요청했습니다.', 'success');
-    } catch (e) {
-      showNotification('ZIP 생성 실패: ' + e.message, 'error');
+      if (!isGenerationExportReviewContextCurrent(context)) return;
+      if (!res.ok) {
+        throw Object.assign(new Error('generation export request failed'), {
+          code: res.status === 404 ? await _generationExportResponseCode(res) : '',
+        });
+      }
+      const contentType = String(res.headers.get('content-type') || '')
+        .split(';', 1)[0]
+        .trim()
+        .toLowerCase();
+      const packetSha256 = res.headers.get('X-DecisionDoc-Export-Packet-SHA256') || '';
+      const manifestSha256 = res.headers.get('X-DecisionDoc-Export-Manifest-SHA256') || '';
+      const packetVerified = res.headers.get('X-DecisionDoc-Export-Verified');
+      const operationalApproval = res.headers.get('X-DecisionDoc-Operational-Approval');
+      if (
+        contentType !== 'application/zip' ||
+        !/^[0-9a-f]{64}$/.test(packetSha256) ||
+        !/^[0-9a-f]{64}$/.test(manifestSha256) ||
+        packetVerified !== 'true' ||
+        operationalApproval !== 'false'
+      ) {
+        throw new Error('generation export verification headers are invalid');
+      }
+      const packetBytes = await res.arrayBuffer();
+      if (!isGenerationExportReviewContextCurrent(context)) return;
+      const digest = await crypto.subtle.digest('SHA-256', packetBytes);
+      const actualPacketSha256 = Array.from(
+        new Uint8Array(digest),
+        value => value.toString(16).padStart(2, '0')
+      ).join('');
+      if (actualPacketSha256 !== packetSha256) {
+        throw new Error('generation export packet hash mismatch');
+      }
+      if (!isGenerationExportReviewContextCurrent(context)) return;
+      const blob = new Blob([packetBytes], { type: 'application/zip' });
+      _triggerBrowserDownload(blob, `decisiondoc-export-${packetSha256}.zip`, '검증된 검토 ZIP', {
+        fallbackContainerId: options.fallbackContainerId || 'export-download-fallback',
+        scope: options.source === 'project'
+          ? GENERATION_EXPORT_PROJECT_DOWNLOAD_SCOPE
+          : GENERATION_EXPORT_RESULT_DOWNLOAD_SCOPE,
+      });
+      if (!isGenerationExportReviewContextCurrent(context)) return;
+      showNotification('검증된 검토 ZIP 다운로드를 요청했습니다.', 'success');
+    } catch (error) {
+      if (!isGenerationExportReviewContextCurrent(context)) return;
+      showNotification(_generationExportReviewFailureMessage(error), 'error');
+    } finally {
+      _generationExportReviewFlights.delete(flightKey);
+      if (button && isGenerationExportReviewContextCurrent(context)) button.disabled = false;
     }
   }
 
@@ -24867,6 +25929,15 @@
   const GUIDED_DECISION_REVIEW_DISPOSITION_SHA256_HEADER = (
     'X-DecisionDoc-Guided-Review-Disposition-Receipt-SHA256'
   );
+  const GUIDED_DECISION_REVIEW_DISPOSITION_ISSUANCE_SHA256_HEADER = (
+    'X-DecisionDoc-Guided-Review-Disposition-Issuance-Record-SHA256'
+  );
+  const GUIDED_DECISION_REVIEW_REGISTRY_RECORD_SHA256_HEADER = (
+    'X-DecisionDoc-Guided-Review-Disposition-Record-SHA256'
+  );
+  const GUIDED_DECISION_REVIEW_REGISTRY_LIST_SHA256_HEADER = (
+    'X-DecisionDoc-Guided-Review-Disposition-Registry-SHA256'
+  );
 
   const GUIDED_DECISION_REVIEW_HANDOFF_FIELDS = [
     'contract_version',
@@ -24949,6 +26020,97 @@
     unchanged: ['acknowledged_unchanged', 'review_deferred'],
     changed: ['new_handoff_required', 'review_deferred'],
   };
+  const GUIDED_DECISION_REVIEW_REGISTRY_RECORD_FIELDS = [
+    'contract_version',
+    'operation_id',
+    'request_binding_sha256',
+    'record_binding_sha256',
+    'tenant_id',
+    'project_id',
+    'bundle_type',
+    'reviewer_user_id',
+    'reviewer_username',
+    'reviewer_role',
+    'recorded_at',
+    'source_disposition_receipt',
+    'source_disposition_receipt_sha256',
+    'source_recheck_receipt_sha256',
+    'current_handoff_sha256',
+    'current_review_state_fingerprint_sha256',
+    'review_state_status',
+    'review_disposition',
+    'disposition_binding_sha256',
+    'record_status',
+    'review_state_only',
+    'review_only',
+    'read_only',
+    'reviewer_identity_bound',
+    'registry_record_persisted',
+    'snapshot_atomic',
+    'requires_recheck_before_reliance',
+    'authority',
+  ];
+  const GUIDED_DECISION_REVIEW_REGISTRY_SUMMARY_FIELDS = [
+    'contract_version',
+    'operation_id',
+    'tenant_id',
+    'project_id',
+    'bundle_type',
+    'reviewer_username',
+    'reviewer_role',
+    'recorded_at',
+    'record_sha256',
+    'source_disposition_receipt_sha256',
+    'source_recheck_receipt_sha256',
+    'current_handoff_sha256',
+    'current_review_state_fingerprint_sha256',
+    'review_state_status',
+    'review_disposition',
+    'disposition_binding_sha256',
+    'record_status',
+    'review_state_only',
+    'review_only',
+    'read_only',
+    'reviewer_identity_bound',
+    'registry_record_persisted',
+    'snapshot_atomic',
+    'requires_recheck_before_reliance',
+    'authority',
+  ];
+  const GUIDED_DECISION_REVIEW_ISSUANCE_FIELDS = [
+    'contract_version',
+    'tenant_id',
+    'project_id',
+    'bundle_type',
+    'disposition_receipt_sha256',
+    'issued_at',
+    'issuance_binding_sha256',
+    'issuance_record_binding_sha256',
+    'issuance_status',
+    'evidence_only',
+    'review_state_only',
+    'review_only',
+    'read_only',
+    'reviewer_identity_bound',
+    'snapshot_atomic',
+    'requires_recheck_before_reliance',
+    'disposition_receipt_persisted',
+    'authority',
+  ];
+  const GUIDED_DECISION_REVIEW_REGISTRY_RECORD_V2_FIELDS = [
+    ...GUIDED_DECISION_REVIEW_REGISTRY_RECORD_FIELDS,
+    'source_issuance_metadata',
+    'source_issuance_metadata_sha256',
+    'issuance_provenance',
+  ];
+  const GUIDED_DECISION_REVIEW_REGISTRY_SUMMARY_LEGACY_FIELDS = [
+    ...GUIDED_DECISION_REVIEW_REGISTRY_SUMMARY_FIELDS,
+    'issuance_provenance',
+  ];
+  const GUIDED_DECISION_REVIEW_REGISTRY_SUMMARY_V2_FIELDS = [
+    ...GUIDED_DECISION_REVIEW_REGISTRY_SUMMARY_LEGACY_FIELDS,
+    'source_issuance_metadata_sha256',
+  ];
 
   const GUIDED_DECISION_REVIEW_FALSE_EXPORT_FIELD = [
     'actual',
@@ -25693,6 +26855,307 @@
     return receipt;
   }
 
+  async function normalizeIndependentGuidedDecisionReviewDispositionReceipt(
+    receipt,
+    projectId,
+    bundleType,
+  ) {
+    if (!receipt || receipt.bundle_type !== bundleType) {
+      throw new Error('Guided review disposition receipt verification failed.');
+    }
+    const recheck = receipt.source_recheck_receipt;
+    const verifiedHandoff = {
+      handoff: recheck?.source_handoff,
+      bodySha256: String(recheck?.source_handoff_sha256 || '').toLowerCase(),
+    };
+    const normalizedRecheck = await normalizeGuidedDecisionReviewRecheckReceipt(
+      recheck,
+      verifiedHandoff,
+      projectId,
+    );
+    const verifiedRecheck = {
+      receipt: recheck,
+      bodySha256: String(receipt.source_recheck_receipt_sha256 || '').toLowerCase(),
+      reviewStateStatus: normalizedRecheck.reviewStateStatus,
+      projectId,
+    };
+    return normalizeGuidedDecisionReviewDispositionReceipt(
+      receipt,
+      verifiedRecheck,
+      projectId,
+      receipt.review_disposition,
+    );
+  }
+
+  function isGuidedDecisionReviewRegistryUuid(value) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(
+      String(value || ''),
+    );
+  }
+
+  function isGuidedDecisionReviewRegistryTimestamp(value) {
+    return (
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?\+00:00$/.test(
+        String(value || ''),
+      )
+      && Number.isFinite(Date.parse(value))
+    );
+  }
+
+  async function normalizeGuidedDecisionReviewIssuanceMetadata(
+    metadata,
+    { projectId, bundleType, dispositionReceiptSha256 } = {},
+  ) {
+    if (
+      !hasGuidedDecisionReviewFields(
+        metadata,
+        GUIDED_DECISION_REVIEW_ISSUANCE_FIELDS,
+      )
+      || metadata.contract_version
+        !== 'guided-decision-review-disposition-issuance.v1'
+      || metadata.tenant_id !== _currentTenantId
+      || metadata.project_id !== projectId
+      || metadata.bundle_type !== bundleType
+      || metadata.disposition_receipt_sha256 !== dispositionReceiptSha256
+      || ![
+        metadata.disposition_receipt_sha256,
+        metadata.issuance_binding_sha256,
+        metadata.issuance_record_binding_sha256,
+      ].every(isGuidedDecisionReviewSha256)
+      || !isGuidedDecisionReviewRegistryTimestamp(metadata.issued_at)
+      || metadata.issuance_status !== 'issued'
+      || metadata.evidence_only !== true
+      || metadata.review_state_only !== true
+      || metadata.review_only !== true
+      || metadata.read_only !== true
+      || metadata.reviewer_identity_bound !== false
+      || metadata.snapshot_atomic !== false
+      || metadata.requires_recheck_before_reliance !== true
+      || metadata.disposition_receipt_persisted !== false
+      || !isGuidedDecisionReviewAuthority(metadata.authority)
+    ) {
+      throw new Error('Guided review issuance proof verification failed.');
+    }
+    const issuanceBinding = {
+      contract_version: 'guided-decision-review-disposition-issuance.v1',
+      tenant_id: metadata.tenant_id,
+      project_id: metadata.project_id,
+      bundle_type: metadata.bundle_type,
+      disposition_receipt_sha256: metadata.disposition_receipt_sha256,
+    };
+    const issuanceBindingBytes = new TextEncoder().encode(
+      `${canonicalGuidedDecisionReviewJson(issuanceBinding)}\n`,
+    );
+    const recordBinding = { ...metadata };
+    delete recordBinding.issuance_record_binding_sha256;
+    const recordBindingBytes = new TextEncoder().encode(
+      `${canonicalGuidedDecisionReviewJson(recordBinding)}\n`,
+    );
+    if (
+      metadata.issuance_binding_sha256 !== await sha256Hex(issuanceBindingBytes)
+      || metadata.issuance_record_binding_sha256
+        !== await sha256Hex(recordBindingBytes)
+    ) {
+      throw new Error('Guided review issuance proof binding verification failed.');
+    }
+    return metadata;
+  }
+
+  async function normalizeGuidedDecisionReviewRegistryRecord(
+    record,
+    { projectId, bundleType, verifiedDisposition = null } = {},
+  ) {
+    const isV1 = (
+      record?.contract_version === 'guided-decision-review-disposition-record.v1'
+      && hasGuidedDecisionReviewFields(
+        record,
+        GUIDED_DECISION_REVIEW_REGISTRY_RECORD_FIELDS,
+      )
+    );
+    const isV2 = (
+      record?.contract_version === 'guided-decision-review-disposition-record.v2'
+      && hasGuidedDecisionReviewFields(
+        record,
+        GUIDED_DECISION_REVIEW_REGISTRY_RECORD_V2_FIELDS,
+      )
+    );
+    if (
+      !(isV1 || isV2)
+      || !isGuidedDecisionReviewRegistryUuid(record.operation_id)
+      || ![
+        record.request_binding_sha256,
+        record.record_binding_sha256,
+        record.source_disposition_receipt_sha256,
+        record.source_recheck_receipt_sha256,
+        record.current_handoff_sha256,
+        record.current_review_state_fingerprint_sha256,
+        record.disposition_binding_sha256,
+      ].every(isGuidedDecisionReviewSha256)
+      || record.tenant_id !== _currentTenantId
+      || record.project_id !== projectId
+      || record.bundle_type !== bundleType
+      || !isGuidedDecisionReviewText(record.reviewer_user_id)
+      || !isGuidedDecisionReviewText(record.reviewer_username)
+      || !['admin', 'member'].includes(record.reviewer_role)
+      || !isGuidedDecisionReviewRegistryTimestamp(record.recorded_at)
+      || record.record_status !== 'recorded'
+      || record.review_state_only !== true
+      || record.review_only !== true
+      || record.read_only !== true
+      || record.reviewer_identity_bound !== true
+      || record.registry_record_persisted !== true
+      || record.snapshot_atomic !== false
+      || record.requires_recheck_before_reliance !== true
+      || !isGuidedDecisionReviewAuthority(record.authority)
+    ) {
+      throw new Error('Guided review disposition record verification failed.');
+    }
+    const currentUserId = String(_currentUser?.sub || _currentUser?.user_id || '');
+    if (_currentUser?.role === 'member' && record.reviewer_user_id !== currentUserId) {
+      throw new Error('Guided review disposition record visibility verification failed.');
+    }
+    const source = await normalizeIndependentGuidedDecisionReviewDispositionReceipt(
+      record.source_disposition_receipt,
+      projectId,
+      bundleType,
+    );
+    const sourceBytes = new TextEncoder().encode(
+      `${canonicalGuidedDecisionReviewJson(source)}\n`,
+    );
+    if (
+      record.source_disposition_receipt_sha256 !== await sha256Hex(sourceBytes)
+      || (
+        verifiedDisposition
+        && (
+          record.source_disposition_receipt_sha256
+            !== verifiedDisposition.bodySha256
+          || canonicalGuidedDecisionReviewJson(source)
+            !== canonicalGuidedDecisionReviewJson(verifiedDisposition.receipt)
+        )
+      )
+      || record.source_recheck_receipt_sha256
+        !== source.source_recheck_receipt_sha256
+      || record.current_handoff_sha256 !== source.current_handoff_sha256
+      || record.current_review_state_fingerprint_sha256
+        !== source.current_review_state_fingerprint_sha256
+      || record.review_state_status !== source.review_state_status
+      || record.review_disposition !== source.review_disposition
+      || record.disposition_binding_sha256 !== source.disposition_binding_sha256
+    ) {
+      throw new Error('Guided review disposition record source verification failed.');
+    }
+    if (isV2) {
+      const issuance = await normalizeGuidedDecisionReviewIssuanceMetadata(
+        record.source_issuance_metadata,
+        {
+          projectId,
+          bundleType,
+          dispositionReceiptSha256: record.source_disposition_receipt_sha256,
+        },
+      );
+      const issuanceBytes = new TextEncoder().encode(
+        `${canonicalGuidedDecisionReviewJson(issuance)}\n`,
+      );
+      if (
+        record.issuance_provenance !== 'server_issued'
+        || record.source_issuance_metadata_sha256 !== await sha256Hex(issuanceBytes)
+        || (
+          verifiedDisposition
+          && record.source_issuance_metadata_sha256
+            !== verifiedDisposition.issuanceRecordSha256
+        )
+      ) {
+        throw new Error('Guided review disposition issuance proof verification failed.');
+      }
+    }
+    const requestBinding = {
+      tenant_id: record.tenant_id,
+      project_id: record.project_id,
+      bundle_type: record.bundle_type,
+      operation_id: record.operation_id,
+      reviewer_user_id: record.reviewer_user_id,
+      source_disposition_receipt_sha256: record.source_disposition_receipt_sha256,
+    };
+    if (isV2) {
+      requestBinding.source_issuance_metadata_sha256 = (
+        record.source_issuance_metadata_sha256
+      );
+    }
+    const requestBindingBytes = new TextEncoder().encode(
+      `${canonicalGuidedDecisionReviewJson(requestBinding)}\n`,
+    );
+    const recordBinding = { ...record };
+    delete recordBinding.record_binding_sha256;
+    const recordBindingBytes = new TextEncoder().encode(
+      `${canonicalGuidedDecisionReviewJson(recordBinding)}\n`,
+    );
+    if (
+      record.request_binding_sha256 !== await sha256Hex(requestBindingBytes)
+      || record.record_binding_sha256 !== await sha256Hex(recordBindingBytes)
+    ) {
+      throw new Error('Guided review disposition record binding verification failed.');
+    }
+    return record;
+  }
+
+  function normalizeGuidedDecisionReviewRegistrySummary(
+    summary,
+    projectId,
+    bundleType,
+  ) {
+    const isLegacy = (
+      summary?.contract_version === 'guided-decision-review-disposition-record.v1'
+      && hasGuidedDecisionReviewFields(
+        summary,
+        GUIDED_DECISION_REVIEW_REGISTRY_SUMMARY_LEGACY_FIELDS,
+      )
+      && summary.issuance_provenance === 'legacy_issuance_unrecorded'
+    );
+    const isV2 = (
+      summary?.contract_version === 'guided-decision-review-disposition-record.v2'
+      && hasGuidedDecisionReviewFields(
+        summary,
+        GUIDED_DECISION_REVIEW_REGISTRY_SUMMARY_V2_FIELDS,
+      )
+      && summary.issuance_provenance === 'server_issued'
+      && isGuidedDecisionReviewSha256(summary.source_issuance_metadata_sha256)
+    );
+    if (
+      !(isLegacy || isV2)
+      || !isGuidedDecisionReviewRegistryUuid(summary.operation_id)
+      || summary.tenant_id !== _currentTenantId
+      || summary.project_id !== projectId
+      || summary.bundle_type !== bundleType
+      || !isGuidedDecisionReviewText(summary.reviewer_username)
+      || !['admin', 'member'].includes(summary.reviewer_role)
+      || !isGuidedDecisionReviewRegistryTimestamp(summary.recorded_at)
+      || ![
+        summary.record_sha256,
+        summary.source_disposition_receipt_sha256,
+        summary.source_recheck_receipt_sha256,
+        summary.current_handoff_sha256,
+        summary.current_review_state_fingerprint_sha256,
+        summary.disposition_binding_sha256,
+      ].every(isGuidedDecisionReviewSha256)
+      || !['unchanged', 'changed'].includes(summary.review_state_status)
+      || !(GUIDED_DECISION_REVIEW_DISPOSITIONS[
+        summary.review_state_status
+      ] || []).includes(summary.review_disposition)
+      || summary.record_status !== 'recorded'
+      || summary.review_state_only !== true
+      || summary.review_only !== true
+      || summary.read_only !== true
+      || summary.reviewer_identity_bound !== true
+      || summary.registry_record_persisted !== true
+      || summary.snapshot_atomic !== false
+      || summary.requires_recheck_before_reliance !== true
+      || !isGuidedDecisionReviewAuthority(summary.authority)
+    ) {
+      throw new Error('Guided review disposition summary verification failed.');
+    }
+    return summary;
+  }
+
   function renderGuidedDecisionReview(project, decision, reviews, councilSession, docs, map) {
     if (!isGuidedDecisionReviewMap(map, project?.project_id)) return '';
     const review = deriveGuidedDecisionReview(decision, reviews, councilSession, docs, map);
@@ -25724,6 +27187,8 @@
                 </select>
               </label>
               <button type="button" class="guided-decision-review-disposition-download" data-guided-decision-review-disposition-download aria-label="Download guided decision review disposition receipt JSON" disabled>↓ Disposition receipt</button>
+              <button type="button" data-guided-decision-review-registry-create aria-label="Record the verified guided decision review disposition" disabled>Record disposition</button>
+              <button type="button" data-guided-decision-review-registry-refresh aria-label="Refresh guided decision review disposition records">Refresh records</button>
             </div>
           </div>
         </div>
@@ -25735,6 +27200,7 @@
         <ol class="guided-decision-review-steps" aria-label="Guided decision review stages">
           ${stages}
         </ol>
+        <div data-guided-decision-review-registry-list aria-live="polite"></div>
         <div id="guided-decision-review-announcement" class="guided-decision-review-announcement" aria-live="polite"></div>
       </section>`;
   }
@@ -25779,10 +27245,21 @@
   function clearGuidedDecisionReviewVerifiedRecheck() {
     _guidedDecisionReviewDispositionRequestId += 1;
     _guidedDecisionReviewVerifiedRecheck = null;
+    clearGuidedDecisionReviewDispositionRegistrySource();
     _clearScopedExportDownloadUrls(
       GUIDED_DECISION_REVIEW_DISPOSITION_DOWNLOAD_SCOPE,
     );
     syncGuidedDecisionReviewDispositionControls();
+  }
+
+  function clearGuidedDecisionReviewDispositionRegistrySource() {
+    _guidedDecisionReviewRegistryRequestId += 1;
+    _guidedDecisionReviewRegistryListRequestId += 1;
+    _guidedDecisionReviewRegistryDownloadRequestId += 1;
+    _guidedDecisionReviewVerifiedDisposition = null;
+    _guidedDecisionReviewRegistryOperation = null;
+    _guidedDecisionReviewRegistryPending = null;
+    syncGuidedDecisionReviewRegistryControls();
   }
 
   function isGuidedDecisionReviewVerifiedSourceCurrent(source) {
@@ -25875,6 +27352,41 @@
       )
       && context.reviewDisposition === select?.value
     );
+  }
+
+  function isGuidedDecisionReviewVerifiedDispositionCurrent(source) {
+    const map = _currentProjectDetail?.decisionEvidenceMap;
+    return Boolean(
+      source
+      && source.projectLoadId === _projectDetailLoadId
+      && source.authRevision === _authSessionRevision
+      && source.tenantId === _currentTenantId
+      && source.userId === String(_currentUser?.sub || _currentUser?.user_id || '')
+      && source.projectId === _currentProjectDetail?.project?.project_id
+      && source.bundleType === map?.bundle_type
+      && source.sourceRecheckReceiptSha256
+        === (_guidedDecisionReviewVerifiedRecheck?.bodySha256 || '')
+      && source.receipt?.project_id === source.projectId
+      && source.receipt?.bundle_type === source.bundleType
+    );
+  }
+
+  function syncGuidedDecisionReviewRegistryControls() {
+    const createButton = document.querySelector(
+      '[data-guided-decision-review-registry-create]',
+    );
+    const refreshButton = document.querySelector(
+      '[data-guided-decision-review-registry-refresh]',
+    );
+    const current = isGuidedDecisionReviewVerifiedDispositionCurrent(
+      _guidedDecisionReviewVerifiedDisposition,
+    );
+    if (createButton) {
+      createButton.disabled = !current || Boolean(_guidedDecisionReviewRegistryPending);
+    }
+    if (refreshButton) {
+      refreshButton.disabled = Boolean(_guidedDecisionReviewRegistryPending);
+    }
   }
 
   async function downloadGuidedDecisionReviewHandoff(button) {
@@ -26126,6 +27638,7 @@
       showNotification('허용되지 않은 review disposition입니다.', 'error');
       return;
     }
+    clearGuidedDecisionReviewDispositionRegistrySource();
     const context = {
       requestId: ++_guidedDecisionReviewDispositionRequestId,
       projectLoadId: _projectDetailLoadId,
@@ -26172,6 +27685,11 @@
           GUIDED_DECISION_REVIEW_DISPOSITION_SHA256_HEADER,
         ) || '',
       ).trim().toLowerCase();
+      const issuanceRecordSha256 = String(
+        response.headers.get(
+          GUIDED_DECISION_REVIEW_DISPOSITION_ISSUANCE_SHA256_HEADER,
+        ) || '',
+      ).trim().toLowerCase();
       const contentType = String(
         response.headers.get('Content-Type') || '',
       ).toLowerCase();
@@ -26191,6 +27709,7 @@
         || response.headers.get('X-Content-Type-Options') !== 'nosniff'
         || response.headers.get('X-DecisionDoc-Operational-Approval') !== 'false'
         || !isGuidedDecisionReviewSha256(bodySha256)
+        || !isGuidedDecisionReviewSha256(issuanceRecordSha256)
         || bodySha256 !== await sha256Hex(bodyBytes)
       ) {
         throw new Error(
@@ -26215,6 +27734,20 @@
           'Guided review disposition receipt verification failed.',
         );
       }
+      _guidedDecisionReviewVerifiedDisposition = {
+        receipt,
+        bodyBytes: new Uint8Array(bodyBytes),
+        bodySha256,
+        issuanceRecordSha256,
+        projectLoadId: context.projectLoadId,
+        authRevision: context.authRevision,
+        tenantId: context.tenantId,
+        userId: context.userId,
+        projectId: context.projectId,
+        bundleType: receipt.bundle_type,
+        sourceRecheckReceiptSha256: context.sourceRecheckReceiptSha256,
+      };
+      syncGuidedDecisionReviewRegistryControls();
       const filename = _filenameFromContentDisposition(
         contentDisposition,
         `guided-decision-review-disposition-receipt-${projectionFingerprint.slice(0, 12)}.json`,
@@ -26236,7 +27769,361 @@
     } finally {
       if (requestIsCurrent()) {
         syncGuidedDecisionReviewDispositionControls();
+        syncGuidedDecisionReviewRegistryControls();
       }
+    }
+  }
+
+  function guidedDecisionReviewRegistryContext() {
+    const map = _currentProjectDetail?.decisionEvidenceMap;
+    return {
+      projectLoadId: _projectDetailLoadId,
+      authRevision: _authSessionRevision,
+      tenantId: _currentTenantId,
+      userId: String(_currentUser?.sub || _currentUser?.user_id || ''),
+      projectId: String(_currentProjectDetail?.project?.project_id || ''),
+      bundleType: String(map?.bundle_type || ''),
+    };
+  }
+
+  function isGuidedDecisionReviewRegistryContextCurrent(context) {
+    const current = guidedDecisionReviewRegistryContext();
+    return (
+      context.projectLoadId === current.projectLoadId
+      && context.authRevision === current.authRevision
+      && context.tenantId === current.tenantId
+      && context.userId === current.userId
+      && context.projectId === current.projectId
+      && context.bundleType === current.bundleType
+    );
+  }
+
+  function guidedDecisionReviewRegistryOperation(source, context) {
+    const scopeKey = [
+      context.tenantId,
+      context.userId,
+      context.projectId,
+      context.bundleType,
+      source.bodySha256,
+    ].join('|');
+    if (_guidedDecisionReviewRegistryOperation?.scopeKey === scopeKey) {
+      return _guidedDecisionReviewRegistryOperation;
+    }
+    const operation = {
+      scopeKey,
+      operationId: crypto.randomUUID().toLowerCase(),
+    };
+    if (!isGuidedDecisionReviewRegistryUuid(operation.operationId)) {
+      throw new Error('Guided review disposition operation identity failed.');
+    }
+    _guidedDecisionReviewRegistryOperation = operation;
+    return operation;
+  }
+
+  function renderGuidedDecisionReviewRegistry(records) {
+    const target = document.querySelector(
+      '[data-guided-decision-review-registry-list]',
+    );
+    if (!target) return;
+    if (!records.length) {
+      target.innerHTML = '<p class="guided-decision-review-meta">No recorded dispositions visible.</p>';
+      return;
+    }
+    target.innerHTML = `<ul>${records.map(record => `
+      <li>
+        <span>${escapeHtml(record.recorded_at)} · ${escapeHtml(record.reviewer_username)} (${escapeHtml(record.reviewer_role)}) · ${escapeHtml(record.review_disposition)} · ${record.issuance_provenance === 'server_issued' ? 'Server-issued source' : 'Legacy issuance unrecorded'}</span>
+        <button type="button" data-guided-decision-review-registry-download="${escapeHtml(record.operation_id)}">Download record</button>
+      </li>
+    `).join('')}</ul>`;
+    target.querySelectorAll(
+      '[data-guided-decision-review-registry-download]',
+    ).forEach(button => {
+      button.addEventListener('click', () => (
+        downloadGuidedDecisionReviewRegistryRecord(
+          button.dataset.guidedDecisionReviewRegistryDownload || '',
+        )
+      ));
+    });
+  }
+
+  async function loadGuidedDecisionReviewRegistry() {
+    const context = {
+      ...guidedDecisionReviewRegistryContext(),
+      requestId: ++_guidedDecisionReviewRegistryListRequestId,
+    };
+    const requestIsCurrent = () => (
+      context.requestId === _guidedDecisionReviewRegistryListRequestId
+      && isGuidedDecisionReviewRegistryContextCurrent(context)
+    );
+    if (!context.projectId || !context.bundleType) return;
+    try {
+      const response = await fetch(
+        `/projects/${encodeURIComponent(context.projectId)}/guided-decision-review-dispositions?bundle_type=${encodeURIComponent(context.bundleType)}`,
+        { headers: getAuthHeaders() },
+      );
+      if (!requestIsCurrent()) return;
+      if (!response.ok) {
+        const error = await resolveApiErrorResponse(response);
+        if (!requestIsCurrent()) return;
+        throw new Error(error.message);
+      }
+      const bodyBytes = new Uint8Array(await response.arrayBuffer());
+      if (!requestIsCurrent()) return;
+      const bodySha256 = String(
+        response.headers.get(
+          GUIDED_DECISION_REVIEW_REGISTRY_LIST_SHA256_HEADER,
+        ) || '',
+      ).trim().toLowerCase();
+      const bodyText = new TextDecoder().decode(bodyBytes);
+      const payload = JSON.parse(bodyText);
+      if (
+        String(response.headers.get('Content-Type') || '').toLowerCase()
+          .startsWith('application/json') !== true
+        || response.headers.get('Cache-Control') !== 'no-store'
+        || response.headers.get('X-Content-Type-Options') !== 'nosniff'
+        || response.headers.get('X-DecisionDoc-Operational-Approval') !== 'false'
+        || !isGuidedDecisionReviewSha256(bodySha256)
+        || bodySha256 !== await sha256Hex(bodyBytes)
+        || !hasGuidedDecisionReviewFields(payload, ['records'])
+        || !Array.isArray(payload.records)
+        || bodyText !== `${canonicalGuidedDecisionReviewJson(payload)}\n`
+      ) {
+        throw new Error('Guided review disposition registry response verification failed.');
+      }
+      const records = payload.records.map(record => (
+        normalizeGuidedDecisionReviewRegistrySummary(
+          record,
+          context.projectId,
+          context.bundleType,
+        )
+      ));
+      for (let index = 1; index < records.length; index += 1) {
+        const previous = records[index - 1];
+        const current = records[index];
+        if (
+          previous.recorded_at < current.recorded_at
+          || (
+            previous.recorded_at === current.recorded_at
+            && previous.operation_id < current.operation_id
+          )
+        ) {
+          throw new Error('Guided review disposition registry sort verification failed.');
+        }
+      }
+      if (!requestIsCurrent()) return;
+      renderGuidedDecisionReviewRegistry(records);
+    } catch (error) {
+      if (!requestIsCurrent()) return;
+      renderGuidedDecisionReviewRegistry([]);
+      showNotification(error.message || String(error), 'error');
+    }
+  }
+
+  async function createGuidedDecisionReviewRegistryRecord() {
+    if (_guidedDecisionReviewRegistryPending) return;
+    const source = _guidedDecisionReviewVerifiedDisposition;
+    if (!isGuidedDecisionReviewVerifiedDispositionCurrent(source)) {
+      clearGuidedDecisionReviewDispositionRegistrySource();
+      showNotification('검증된 현재 disposition receipt가 필요합니다.', 'error');
+      return;
+    }
+    const baseContext = guidedDecisionReviewRegistryContext();
+    const operation = guidedDecisionReviewRegistryOperation(source, baseContext);
+    const token = {
+      ...baseContext,
+      requestId: ++_guidedDecisionReviewRegistryRequestId,
+      sourceDispositionReceiptSha256: source.bodySha256,
+      operationId: operation.operationId,
+    };
+    _guidedDecisionReviewRegistryPending = token;
+    const requestIsCurrent = () => (
+      _guidedDecisionReviewRegistryPending === token
+      && token.requestId === _guidedDecisionReviewRegistryRequestId
+      && isGuidedDecisionReviewRegistryContextCurrent(token)
+      && isGuidedDecisionReviewVerifiedDispositionCurrent(source)
+      && token.sourceDispositionReceiptSha256
+        === _guidedDecisionReviewVerifiedDisposition?.bodySha256
+    );
+    let recordObserved = false;
+    syncGuidedDecisionReviewRegistryControls();
+    try {
+      const response = await fetch(
+        `/projects/${encodeURIComponent(token.projectId)}/guided-decision-review-dispositions?bundle_type=${encodeURIComponent(token.bundleType)}`,
+        {
+          method: 'POST',
+          headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contract_version: 'guided-decision-review-disposition-record-request.v2',
+            operation_id: token.operationId,
+            source_disposition_receipt: source.receipt,
+            source_disposition_receipt_sha256: source.bodySha256,
+          }),
+        },
+      );
+      if (!requestIsCurrent()) return;
+      if (![200, 201].includes(response.status)) {
+        const error = await resolveApiErrorResponse(response);
+        if (!requestIsCurrent()) return;
+        throw new Error(error.message);
+      }
+      const bodyBytes = new Uint8Array(await response.arrayBuffer());
+      if (!requestIsCurrent()) return;
+      const bodySha256 = String(
+        response.headers.get(
+          GUIDED_DECISION_REVIEW_REGISTRY_RECORD_SHA256_HEADER,
+        ) || '',
+      ).trim().toLowerCase();
+      const issuanceProvenance = String(
+        response.headers.get(
+          'X-DecisionDoc-Guided-Review-Disposition-Issuance-Provenance',
+        ) || '',
+      ).trim();
+      const issuanceRecordSha256 = String(
+        response.headers.get(
+          GUIDED_DECISION_REVIEW_DISPOSITION_ISSUANCE_SHA256_HEADER,
+        ) || '',
+      ).trim().toLowerCase();
+      const bodyText = new TextDecoder().decode(bodyBytes);
+      const record = await normalizeGuidedDecisionReviewRegistryRecord(
+        JSON.parse(bodyText),
+        {
+          projectId: token.projectId,
+          bundleType: token.bundleType,
+          verifiedDisposition: source,
+        },
+      );
+      if (
+        !requestIsCurrent()
+        || String(response.headers.get('Content-Type') || '').toLowerCase()
+          .startsWith('application/json') !== true
+        || response.headers.get('Cache-Control') !== 'no-store'
+        || response.headers.get('X-Content-Type-Options') !== 'nosniff'
+        || response.headers.get('X-DecisionDoc-Operational-Approval') !== 'false'
+        || !isGuidedDecisionReviewSha256(bodySha256)
+        || bodySha256 !== await sha256Hex(bodyBytes)
+        || bodyText !== `${canonicalGuidedDecisionReviewJson(record)}\n`
+        || record.operation_id !== token.operationId
+        || (
+          record.contract_version === 'guided-decision-review-disposition-record.v1'
+          && issuanceProvenance !== 'legacy-unrecorded'
+        )
+        || (
+          record.contract_version === 'guided-decision-review-disposition-record.v2'
+          && (
+            issuanceProvenance !== 'server-issued'
+            || issuanceRecordSha256 !== record.source_issuance_metadata_sha256
+          )
+        )
+      ) {
+        throw new Error('Guided review disposition create verification failed.');
+      }
+      recordObserved = true;
+      showNotification(
+        response.status === 201
+          ? 'Guided review disposition recorded.'
+          : 'Existing guided review disposition replayed.',
+        'success',
+      );
+    } catch (error) {
+      if (!requestIsCurrent()) return;
+      showNotification(error.message || String(error), 'error');
+    } finally {
+      if (_guidedDecisionReviewRegistryPending === token) {
+        _guidedDecisionReviewRegistryPending = null;
+        syncGuidedDecisionReviewRegistryControls();
+      }
+    }
+    if (recordObserved && isGuidedDecisionReviewRegistryContextCurrent(token)) {
+      await loadGuidedDecisionReviewRegistry();
+    }
+  }
+
+  async function downloadGuidedDecisionReviewRegistryRecord(operationId) {
+    if (!isGuidedDecisionReviewRegistryUuid(operationId)) return;
+    const context = {
+      ...guidedDecisionReviewRegistryContext(),
+      requestId: ++_guidedDecisionReviewRegistryDownloadRequestId,
+      operationId,
+    };
+    const requestIsCurrent = () => (
+      context.requestId === _guidedDecisionReviewRegistryDownloadRequestId
+      && isGuidedDecisionReviewRegistryContextCurrent(context)
+    );
+    try {
+      const response = await fetch(
+        `/projects/${encodeURIComponent(context.projectId)}/guided-decision-review-dispositions/${encodeURIComponent(operationId)}/download?bundle_type=${encodeURIComponent(context.bundleType)}`,
+        { headers: getAuthHeaders() },
+      );
+      if (!requestIsCurrent()) return;
+      if (!response.ok) {
+        const error = await resolveApiErrorResponse(response);
+        if (!requestIsCurrent()) return;
+        throw new Error(error.message);
+      }
+      const bodyBytes = new Uint8Array(await response.arrayBuffer());
+      if (!requestIsCurrent()) return;
+      const bodySha256 = String(
+        response.headers.get(
+          GUIDED_DECISION_REVIEW_REGISTRY_RECORD_SHA256_HEADER,
+        ) || '',
+      ).trim().toLowerCase();
+      const contentDisposition = String(
+        response.headers.get('Content-Disposition') || '',
+      );
+      const issuanceProvenance = String(
+        response.headers.get(
+          'X-DecisionDoc-Guided-Review-Disposition-Issuance-Provenance',
+        ) || '',
+      ).trim();
+      const issuanceRecordSha256 = String(
+        response.headers.get(
+          GUIDED_DECISION_REVIEW_DISPOSITION_ISSUANCE_SHA256_HEADER,
+        ) || '',
+      ).trim().toLowerCase();
+      const bodyText = new TextDecoder().decode(bodyBytes);
+      const record = await normalizeGuidedDecisionReviewRegistryRecord(
+        JSON.parse(bodyText),
+        { projectId: context.projectId, bundleType: context.bundleType },
+      );
+      if (
+        !requestIsCurrent()
+        || String(response.headers.get('Content-Type') || '').toLowerCase()
+          .startsWith('application/json') !== true
+        || response.headers.get('Cache-Control') !== 'no-store'
+        || response.headers.get('X-Content-Type-Options') !== 'nosniff'
+        || response.headers.get('X-DecisionDoc-Operational-Approval') !== 'false'
+        || !/^attachment;\s*filename="guided-decision-review-disposition-record-[0-9a-f-]+\.json"$/.test(
+          contentDisposition,
+        )
+        || !isGuidedDecisionReviewSha256(bodySha256)
+        || bodySha256 !== await sha256Hex(bodyBytes)
+        || bodyText !== `${canonicalGuidedDecisionReviewJson(record)}\n`
+        || record.operation_id !== operationId
+        || (
+          record.contract_version === 'guided-decision-review-disposition-record.v1'
+          && issuanceProvenance !== 'legacy-unrecorded'
+        )
+        || (
+          record.contract_version === 'guided-decision-review-disposition-record.v2'
+          && (
+            issuanceProvenance !== 'server-issued'
+            || issuanceRecordSha256 !== record.source_issuance_metadata_sha256
+          )
+        )
+      ) {
+        throw new Error('Guided review disposition download verification failed.');
+      }
+      _triggerBrowserDownload(
+        new Blob([bodyBytes], { type: 'application/json' }),
+        _filenameFromContentDisposition(
+          contentDisposition,
+          `guided-decision-review-disposition-record-${operationId}.json`,
+        ),
+        'Guided Decision Review disposition record JSON',
+      );
+    } catch (error) {
+      if (!requestIsCurrent()) return;
+      showNotification(error.message || String(error), 'error');
     }
   }
 
@@ -26265,12 +28152,21 @@
       '[data-guided-decision-review-disposition]',
     )?.addEventListener('change', () => {
       _guidedDecisionReviewDispositionRequestId += 1;
+      clearGuidedDecisionReviewDispositionRegistrySource();
       _clearScopedExportDownloadUrls(
         GUIDED_DECISION_REVIEW_DISPOSITION_DOWNLOAD_SCOPE,
       );
       syncGuidedDecisionReviewDispositionControls();
     });
+    root.querySelector(
+      '[data-guided-decision-review-registry-create]',
+    )?.addEventListener('click', createGuidedDecisionReviewRegistryRecord);
+    root.querySelector(
+      '[data-guided-decision-review-registry-refresh]',
+    )?.addEventListener('click', loadGuidedDecisionReviewRegistry);
     syncGuidedDecisionReviewDispositionControls();
+    syncGuidedDecisionReviewRegistryControls();
+    loadGuidedDecisionReviewRegistry();
   }
 
   const DECISION_EVIDENCE_NODE_LABELS = {
@@ -27033,6 +28929,7 @@
 
   async function loadProjectDetail(projectId) {
     const loadId = ++_projectDetailLoadId;
+    _clearScopedExportDownloadUrls(GENERATION_EXPORT_PROJECT_DOWNLOAD_SCOPE);
     const authRevision = _authSessionRevision;
     const tenantId = _currentTenantId;
     const userId = String(_currentUser?.sub || _currentUser?.user_id || '');
@@ -27125,6 +29022,7 @@
   }
 
   window.hideProjectDetail = function hideProjectDetail() {
+    _projectDetailLoadId += 1;
     clearGuidedDecisionReviewHandoffSource();
     const projectId = _currentProjectDetail?.project?.project_id || '';
     clearProjectProcurementDetailUrlState(projectId);
@@ -27132,6 +29030,7 @@
     dismissProjectProcurementRemediationContext(projectId);
     clearProjectProcurementSummaryReturnContext(projectId);
     _clearScopedExportDownloadUrls(PROCUREMENT_REVIEW_DOWNLOAD_SCOPE);
+    _clearScopedExportDownloadUrls(GENERATION_EXPORT_PROJECT_DOWNLOAD_SCOPE);
     const detailEl = document.getElementById('project-detail');
     const listEl = document.getElementById('project-list');
     if (detailEl) detailEl.style.display = 'none';
@@ -27147,6 +29046,7 @@
     const previousProjectId = _currentProjectDetail?.project?.project_id;
     if (previousProjectId && previousProjectId !== p.project_id) {
       _clearScopedExportDownloadUrls(PROCUREMENT_REVIEW_DOWNLOAD_SCOPE);
+      _clearScopedExportDownloadUrls(GENERATION_EXPORT_PROJECT_DOWNLOAD_SCOPE);
     }
     const procurementEnabled = Boolean(options.procurementEnabled);
     const procurementReviews = Array.isArray(options.procurementReviews) ? options.procurementReviews : [];
@@ -27378,6 +29278,7 @@
 	                <button type="button" data-project-detail-action="doc-share" data-project-id="${escapeHtml(p.project_id)}" data-doc-id="${escapeHtml(d.doc_id)}">공유</button>
 	              </div>` : ''}
 	              <div class="doc-download-btns">
+	                ${String(d.request_id || '').trim() ? `<button type="button" data-project-detail-action="doc-verified-review-export" data-project-id="${escapeHtml(p.project_id)}" data-doc-id="${escapeHtml(d.doc_id)}" data-request-id="${escapeHtml(String(d.request_id || '').trim())}" style="padding:4px 8px;font-size:0.78rem;border-radius:4px;border:1px solid var(--border,#e5e7eb);background:transparent;cursor:pointer;">검증된 검토 ZIP</button>` : ''}
 	                <button type="button" data-project-detail-action="doc-download" data-project-id="${escapeHtml(p.project_id)}" data-doc-id="${escapeHtml(d.doc_id)}" data-format="pdf" style="padding:4px 8px;font-size:0.78rem;border-radius:4px;border:1px solid var(--border,#e5e7eb);background:transparent;cursor:pointer;">PDF</button>
 	                <button type="button" data-project-detail-action="doc-download" data-project-id="${escapeHtml(p.project_id)}" data-doc-id="${escapeHtml(d.doc_id)}" data-format="docx" style="padding:4px 8px;font-size:0.78rem;border-radius:4px;border:1px solid var(--border,#e5e7eb);background:transparent;cursor:pointer;">Word</button>
 	                <button type="button" data-project-detail-action="doc-download" data-project-id="${escapeHtml(p.project_id)}" data-doc-id="${escapeHtml(d.doc_id)}" data-format="hwpx" style="padding:4px 8px;font-size:0.78rem;border-radius:4px;border:1px solid var(--border,#e5e7eb);background:transparent;cursor:pointer;">HWP</button>
@@ -27386,6 +29287,10 @@
           </div>`;
         }).join('')}
 	      </div>`}`;
+	    container.insertAdjacentHTML(
+	      'beforeend',
+	      '<div id="project-generation-export-download-fallback" style="display:none;"></div>',
+	    );
 	    wireProjectDetailActions(container, p.project_id);
 	    wireMeetingRecordingActions(container, p.project_id);
 	    wireProcurementRoleActions(container);
@@ -27506,6 +29411,16 @@
 	    }
 	    if (action === 'doc-download') {
 	      downloadProjectDoc(projectId, docId, btn.dataset.format || '');
+	      return;
+	    }
+	    if (action === 'doc-verified-review-export') {
+	      exportZip(btn.dataset.requestId || '', {
+	        source: 'project',
+	        projectId,
+	        documentId: docId,
+	        button: btn,
+	        fallbackContainerId: 'project-generation-export-download-fallback',
+	      });
 	    }
 	  }
 

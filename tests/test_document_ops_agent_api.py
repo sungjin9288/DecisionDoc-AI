@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
 
+import pytest
 from fastapi.testclient import TestClient
 
 
@@ -47,6 +49,315 @@ def test_document_ops_run_requires_api_key(tmp_path, monkeypatch) -> None:
     assert response.status_code == 401
 
 
+def test_document_ops_comparison_document_extract_is_deterministic_and_redacted(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    client = _create_client(tmp_path, monkeypatch)
+    raw = "비교 기준 원문\n승인 전 검토".encode("utf-8")
+    expected_text = raw.decode("utf-8")
+    provider = client.app.state.document_ops_service._agent.provider
+
+    def provider_must_not_run(*args, **kwargs):
+        raise AssertionError("comparison document intake must not call a provider")
+
+    provider.generate_raw = provider_must_not_run
+    client.app.state.document_ops_service._agent._provider = provider
+
+    assert client.post(
+        "/api/agent/document-ops/comparison-documents/extract",
+        files={"file": ("baseline.txt", raw, "text/plain")},
+    ).status_code == 401
+
+    response = client.post(
+        "/api/agent/document-ops/comparison-documents/extract",
+        headers=_api_headers(),
+        files={"file": ("../private/baseline.txt", raw, "text/plain")},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.json() == {
+        "schema_version": "document_ops_comparison_document_v1",
+        "filename": "baseline.txt",
+        "source_size_bytes": len(raw),
+        "source_sha256": hashlib.sha256(raw).hexdigest(),
+        "extracted_text": expected_text,
+        "extracted_text_sha256": hashlib.sha256(expected_text.encode("utf-8")).hexdigest(),
+        "extracted_char_count": len(expected_text),
+        "content_may_be_truncated": False,
+        "extraction_mode": "deterministic_local_existing_parser",
+        "provider_called": False,
+        "persisted": False,
+    }
+
+    from app.storage.audit_store import AuditStore
+
+    audits = AuditStore("system").query(
+        filters={"action": "document_ops.comparison_document_extract"},
+    )
+    assert len(audits) == 1
+    serialized_audit = json.dumps(audits[0], ensure_ascii=False)
+    assert expected_text not in serialized_audit
+    assert "../private/baseline.txt" not in serialized_audit
+    assert hashlib.sha256(raw).hexdigest() not in serialized_audit
+    assert hashlib.sha256(expected_text.encode("utf-8")).hexdigest() not in serialized_audit
+    assert not list((tmp_path / "tenants" / "system" / "document_ops_agent_operations").glob("*.json"))
+
+
+def test_document_ops_comparison_document_extract_rejects_unsafe_or_unreadable_input(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    client = _create_client(tmp_path, monkeypatch)
+    endpoint = "/api/agent/document-ops/comparison-documents/extract"
+
+    from app.services.document_ops_comparison_intake import (
+        ComparisonDocumentIntakeError,
+        extract_comparison_document,
+    )
+
+    for missing_or_unsafe_name in (None, "", "..", f"{'x' * 252}.txt"):
+        with pytest.raises(ComparisonDocumentIntakeError):
+            extract_comparison_document(filename=missing_or_unsafe_name, raw=b"content")
+
+    for filename, raw in (
+        ("empty.txt", b""),
+        ("blank.txt", b" \n\t "),
+        ("legacy.hwp", b"legacy binary data"),
+        ("unsupported.exe", b"not a document"),
+        ("broken.pdf", b"not a PDF"),
+    ):
+        response = client.post(
+            endpoint,
+            headers=_api_headers(),
+            files={"file": (filename, raw, "application/octet-stream")},
+        )
+        assert response.status_code == 422
+        assert isinstance(response.json()["detail"], str)
+        assert len(response.json()["detail"]) <= 160
+        assert filename not in response.json()["detail"]
+
+    from app.services.attachment_service import MAX_FILE_SIZE_BYTES
+
+    oversized = client.post(
+        endpoint,
+        headers=_api_headers(),
+        files={"file": ("large.txt", b"x" * (MAX_FILE_SIZE_BYTES + 1), "text/plain")},
+    )
+    assert oversized.status_code == 422
+    assert "20 MB" in oversized.json()["detail"]
+
+    multiple = client.post(
+        endpoint,
+        headers=_api_headers(),
+        files=[
+            ("file", ("first.txt", b"first", "text/plain")),
+            ("file", ("second.txt", b"second", "text/plain")),
+        ],
+    )
+    assert multiple.status_code == 422
+    assert multiple.json()["detail"] == "exactly one comparison document file is required"
+
+
+def test_document_ops_comparison_document_extract_respects_maintenance_boundary(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    client = _create_client(tmp_path, monkeypatch)
+    monkeypatch.setenv("DECISIONDOC_MAINTENANCE", "1")
+
+    response = client.post(
+        "/api/agent/document-ops/comparison-documents/extract",
+        headers=_api_headers(),
+        files={"file": ("baseline.txt", b"baseline", "text/plain")},
+    )
+
+    assert response.status_code == 503
+
+
+def test_document_ops_comparison_change_set_is_canonical_ephemeral_and_provider_free(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    client = _create_client(tmp_path, monkeypatch)
+    endpoint = "/api/agent/document-ops/comparison-documents/change-set"
+    baseline = "same\nA1\nA2\nA3\nanchor\nB1\ntail"
+    candidate = "same\nX1\nanchor\nY1\nY2\nY3\ntail"
+    payload = {
+        "schema_version": "document_ops_comparison_change_set_request_v1",
+        "baseline_document_text": baseline,
+        "candidate_document_text": candidate,
+        "comparison_criteria": [" line changes "],
+    }
+    provider = client.app.state.document_ops_service._agent.provider
+
+    def provider_must_not_run(*args, **kwargs):
+        raise AssertionError("comparison change set must not call a provider")
+
+    provider.generate_raw = provider_must_not_run
+    client.app.state.document_ops_service._agent._provider = provider
+
+    assert client.post(endpoint, json=payload).status_code == 401
+    response = client.post(endpoint, headers=_api_headers(), json=payload)
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/json"
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["content-disposition"] == (
+        'attachment; filename="document-ops-comparison-change-set.json"'
+    )
+    assert response.headers["x-decisiondoc-document-comparison-sha256"] == hashlib.sha256(
+        response.content
+    ).hexdigest()
+    body = response.json()
+    assert response.content == (
+        json.dumps(
+            body,
+            ensure_ascii=False,
+            sort_keys=True,
+            allow_nan=False,
+            separators=(",", ":"),
+        )
+        + "\n"
+    ).encode("utf-8")
+    assert body["schema_version"] == "document_ops_comparison_change_set_v1"
+    assert body["baseline_sha256"] == hashlib.sha256(baseline.encode("utf-8")).hexdigest()
+    assert body["candidate_sha256"] == hashlib.sha256(candidate.encode("utf-8")).hexdigest()
+    assert body["baseline_line_count"] == body["candidate_line_count"] == 7
+    assert body["equal_line_count"] == 3
+    assert body["baseline_replaced_line_count"] == 4
+    assert body["candidate_replaced_line_count"] == 4
+    assert body["replaced_line_count"] == 4
+    assert body["authority"] == {
+        "approval": False,
+        "code_execution": False,
+        "external_effect": False,
+        "external_runtime": False,
+        "persistence": False,
+        "provider_call": False,
+        "semantic": False,
+    }
+    assert body["total_hunk_count"] == len(body["hunks"])
+    assert body["hunks_truncated"] is False
+    assert [(hunk["baseline_start"], hunk["baseline_end"]) for hunk in body["hunks"]][0][0] == 0
+    assert body["hunks"][-1]["baseline_end"] == body["baseline_line_count"]
+    assert body["hunks"][-1]["candidate_end"] == body["candidate_line_count"]
+
+    from app.storage.audit_store import AuditStore
+
+    audits = AuditStore("system").query(filters={"action": "document_ops.comparison_change_set"})
+    assert len(audits) == 1
+    serialized_audit = json.dumps(audits[0], ensure_ascii=False)
+    for sensitive in (
+        baseline,
+        candidate,
+        body["baseline_sha256"],
+        body["candidate_sha256"],
+        response.content.decode("utf-8"),
+    ):
+        assert sensitive not in serialized_audit
+    assert not list((tmp_path / "tenants" / "system" / "document_ops_agent_operations").glob("*.json"))
+
+
+def test_document_ops_comparison_change_set_rejects_invalid_input_before_effects(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    client = _create_client(tmp_path, monkeypatch)
+    endpoint = "/api/agent/document-ops/comparison-documents/change-set"
+    provider = client.app.state.document_ops_service._agent.provider
+    provider_calls = 0
+
+    def counted_provider(*args, **kwargs):
+        nonlocal provider_calls
+        provider_calls += 1
+        raise AssertionError("invalid comparison input reached provider")
+
+    provider.generate_raw = counted_provider
+    client.app.state.document_ops_service._agent._provider = provider
+    invalid_payloads = (
+        {
+            "baseline_document_text": "baseline",
+            "candidate_document_text": "candidate",
+            "comparison_criteria": ["same", " same "],
+        },
+        {
+            "baseline_document_text": "baseline",
+            "candidate_document_text": "candidate",
+            "unknown": True,
+        },
+        {
+            "baseline_document_text": " ",
+            "candidate_document_text": "candidate",
+        },
+    )
+    for payload in invalid_payloads:
+        response = client.post(endpoint, headers=_api_headers(), json=payload)
+        assert response.status_code == 422
+
+    invalid_utf8 = client.post(
+        endpoint,
+        headers={**_api_headers(), "Content-Type": "application/json"},
+        content=b'{"baseline_document_text":"\xff","candidate_document_text":"candidate"}',
+    )
+    assert invalid_utf8.status_code >= 400
+    assert provider_calls == 0
+    assert not list((tmp_path / "tenants" / "system" / "document_ops_agent_operations").glob("*.json"))
+
+    monkeypatch.setenv("DECISIONDOC_MAINTENANCE", "1")
+    maintenance = client.post(
+        endpoint,
+        headers=_api_headers(),
+        json={
+            "baseline_document_text": "baseline",
+            "candidate_document_text": "candidate",
+        },
+    )
+    assert maintenance.status_code == 503
+
+
+def test_document_ops_skill_catalog_requires_api_key_and_does_not_call_provider(tmp_path, monkeypatch) -> None:
+    client = _create_client(tmp_path, monkeypatch)
+    provider = client.app.state.document_ops_service._agent.provider
+    calls = 0
+    original_generate_raw = provider.generate_raw
+
+    def counted_generate_raw(prompt: str, *, request_id: str, max_output_tokens=None) -> str:
+        nonlocal calls
+        calls += 1
+        return original_generate_raw(prompt, request_id=request_id, max_output_tokens=max_output_tokens)
+
+    provider.generate_raw = counted_generate_raw
+    assert client.get("/api/agent/document-ops/skills").status_code == 401
+    response = client.get("/api/agent/document-ops/skills", headers=_api_headers())
+    assert response.status_code == 200
+    body = response.json()
+    assert body["schema_version"] == "document_ops_skill_catalog_v1"
+    assert body["catalog_fingerprint"]
+    assert any(item["name"] == "source-grounded-document" for item in body["skills"])
+    assert all("body" not in item and "source_path" not in item for item in body["skills"])
+    assert calls == 0
+
+
+def test_document_ops_skill_catalog_preserves_local_persistence_bytes(tmp_path, monkeypatch) -> None:
+    client = _create_client(tmp_path, monkeypatch)
+    before = {
+        path.relative_to(tmp_path).as_posix(): path.read_bytes()
+        for path in tmp_path.rglob("*")
+        if path.is_file()
+    }
+    response = client.get("/api/agent/document-ops/skills", headers=_api_headers())
+    after = {
+        path.relative_to(tmp_path).as_posix(): path.read_bytes()
+        for path in tmp_path.rglob("*")
+        if path.is_file()
+    }
+    assert response.status_code == 200
+    assert after == before
+
+
 def test_document_ops_run_can_capture_and_list_trajectory(tmp_path, monkeypatch) -> None:
     client = _create_client(tmp_path, monkeypatch)
 
@@ -68,6 +379,13 @@ def test_document_ops_run_can_capture_and_list_trajectory(tmp_path, monkeypatch)
     assert response.status_code == 200
     body = response.json()
     assert body["skill_name"] == "policy-planning"
+    assert body["skill_version"] == body["skill_binding"]["skill_version"]
+    assert body["skill_name"] == body["skill_binding"]["skill_name"]
+    assert body["skill_binding"]["code_execution_authorized"] is False
+    assert body["skill_binding"]["external_runtime_authorized"] is False
+    assert "body" not in body["skill_binding"]
+    assert "source_path" not in body["skill_binding"]
+    assert "comparison_context" not in body
     assert body["trajectory_saved"] is True
     assert body["trajectory_id"].startswith("trj_")
     assert body["qa"]["hard_gate_pass"] is True
@@ -79,6 +397,7 @@ def test_document_ops_run_can_capture_and_list_trajectory(tmp_path, monkeypatch)
     trajectories = listed_body["trajectories"]
     assert len(trajectories) == 1
     assert trajectories[0]["trajectory_id"] == body["trajectory_id"]
+    assert trajectories[0]["skill_binding"] == body["skill_binding"]
     assert trajectories[0]["input"]["requirements"]["raw_attachment"] == "[redacted]"
 
     summary = client.get(
@@ -91,6 +410,7 @@ def test_document_ops_run_can_capture_and_list_trajectory(tmp_path, monkeypatch)
     assert summary_body["include_detail"] is False
     summary_item = summary_body["trajectories"][0]
     assert summary_item["trajectory_id"] == body["trajectory_id"]
+    assert summary_item["skill_binding"] == body["skill_binding"]
     assert summary_item["title"] == "보행자 안전 정책 기획 사업"
     assert summary_item["draft_preview"]
     assert summary_item["human_feedback"] == {"accepted": False}
@@ -179,6 +499,7 @@ def test_document_ops_run_operation_replays_without_provider_or_usage_duplicatio
     assert replay.json()["operation_id"] == payload["operation_id"]
     assert first.json()["operation_replayed"] is False
     assert replay.json()["operation_replayed"] is True
+    assert first.json()["skill_binding"] == replay.json()["skill_binding"]
     assert {
         key: value
         for key, value in first.json().items()
@@ -200,6 +521,69 @@ def test_document_ops_run_operation_replays_without_provider_or_usage_duplicatio
         "/api/agent/document-ops/trajectories/stats",
         headers=_api_headers(),
     ).json()["total_records"] == 1
+
+    from app.storage.audit_store import AuditStore
+
+    run_audits = AuditStore("system").query(
+        filters={"action": "document_ops.agent_run"},
+    )
+    successful_run_audits = [
+        entry for entry in run_audits if entry["result"] == "success"
+    ]
+    assert len(successful_run_audits) == 2
+    binding_sha256 = hashlib.sha256(
+        json.dumps(
+            first.json()["skill_binding"],
+            ensure_ascii=False,
+            sort_keys=True,
+            allow_nan=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    assert {
+        entry["detail"]["operation_replayed"] for entry in successful_run_audits
+    } == {False, True}
+    for entry in successful_run_audits:
+        assert entry["resource_type"] == "document_ops_agent_run"
+        assert entry["resource_id"] == binding_sha256
+        assert {
+            key: entry["detail"][key]
+            for key in (
+                "task_type",
+                "skill_binding_sha256",
+                "operation_replayed",
+                "code_execution_authorized",
+                "external_runtime_authorized",
+            )
+        } == {
+            "task_type": "decision_brief",
+            "skill_binding_sha256": binding_sha256,
+            "operation_replayed": entry["detail"]["operation_replayed"],
+            "code_execution_authorized": False,
+            "external_runtime_authorized": False,
+        }
+        assert set(entry["detail"]) == {
+            "method",
+            "path",
+            "status_code",
+            "duration_ms",
+            "task_type",
+            "skill_binding_sha256",
+            "operation_replayed",
+            "code_execution_authorized",
+            "external_runtime_authorized",
+        }
+        serialized_audit = json.dumps(entry, ensure_ascii=False)
+        for forbidden in (
+            "Agent retry identity",
+            "skill instructions",
+            "source_path",
+            "request_sha256",
+            "provider_name",
+            "draft",
+            "credential",
+        ):
+            assert forbidden not in serialized_audit
 
     status_path = f"/api/agent/document-ops/run-operations/{payload['operation_id']}"
     unauthorized = client.get(status_path)
@@ -225,8 +609,6 @@ def test_document_ops_run_operation_replays_without_provider_or_usage_duplicatio
     }
     assert missing.status_code == 404
 
-    from app.storage.audit_store import AuditStore
-
     status_audits = AuditStore("system").query(
         filters={"action": "document_ops.agent_run_operation_view"},
     )
@@ -245,6 +627,204 @@ def test_document_ops_run_operation_replays_without_provider_or_usage_duplicatio
         "result",
         "result_sha256",
     } & success_audit["detail"].keys()
+
+
+def test_document_ops_comparison_validates_before_provider_and_replays_trusted_redacted_context(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    client = _create_client(tmp_path, monkeypatch)
+    provider = client.app.state.document_ops_service._agent.provider
+    calls = 0
+
+    def counted_generate_raw(prompt: str, *, request_id: str, max_output_tokens=None) -> str:
+        nonlocal calls
+        calls += 1
+        return json.dumps(
+            {
+                "plan": [baseline.splitlines()[0], "baseline and candidate"],
+                "critique": [candidate.splitlines()[-1]],
+                "revision_tasks": [],
+                "draft": "baseline and candidate",
+                "evidence_status": {
+                    "confirmed": [baseline.splitlines()[-1]],
+                    "assumptions": [],
+                    "gaps": [candidate.splitlines()[0]],
+                    "source_references": [],
+                },
+                "qa": {"hard_gate_pass": True, "warnings": []},
+            },
+            ensure_ascii=False,
+        )
+
+    provider.generate_raw = counted_generate_raw
+    client.app.state.document_ops_service._agent._provider = provider
+    invalid = client.post(
+        "/api/agent/document-ops/run",
+        headers=_api_headers(),
+        json={
+            "task_type": "document_comparison_review",
+            "requirements": {
+                "baseline_document_text": "baseline private text",
+                "candidate_document_text": "candidate private text",
+                "comparison_criteria": ["duplicate", " duplicate "],
+            },
+            "capture_trajectory": True,
+            "operation_id": "agent-run:comparison-invalid",
+        },
+    )
+    assert invalid.status_code == 400
+    assert calls == 0
+    assert not list((tmp_path / "tenants" / "system" / "document_ops_agent_operations").glob("*.json"))
+
+    baseline = "범위: 기존 운영\n검토: PM"
+    candidate = "범위: 기존 운영과 보안 검토\n검토: PM\n검토: 보안 담당"
+    payload = {
+        "task_type": "document_comparison_review",
+        "requirements": {
+            "title": "운영 변경 비교",
+            "baseline_document_text": baseline,
+            "candidate_document_text": candidate,
+            "comparison_criteria": [" 관찰된 변경 ", "결정 영향"],
+        },
+        "capture_trajectory": True,
+        "operation_id": "agent-run:comparison-replay",
+    }
+    first = client.post("/api/agent/document-ops/run", headers=_api_headers(), json=payload)
+    replay = client.post("/api/agent/document-ops/run", headers=_api_headers(), json=payload)
+
+    assert first.status_code == 200
+    assert replay.status_code == 200
+    first_body = first.json()
+    replay_body = replay.json()
+    expected_context = {
+        "schema_version": "document_ops_comparison_context_v1",
+        "baseline_sha256": hashlib.sha256(baseline.encode("utf-8")).hexdigest(),
+        "candidate_sha256": hashlib.sha256(candidate.encode("utf-8")).hexdigest(),
+        "documents_identical": False,
+        "comparison_criteria": ["관찰된 변경", "결정 영향"],
+        "raw_content_included": False,
+    }
+    assert first_body["skill_name"] == "document-comparison-review"
+    assert first_body["comparison_context"] == expected_context
+    assert replay_body["comparison_context"] == expected_context
+    assert replay_body["operation_replayed"] is True
+    assert calls == 1
+
+    detail = client.get(
+        f"/api/agent/document-ops/trajectories/{first_body['trajectory_id']}",
+        headers=_api_headers(),
+    )
+    assert detail.status_code == 200
+    trajectory = detail.json()["trajectory"]
+    assert trajectory["comparison_context"] == expected_context
+    assert trajectory["input"]["requirements"]["baseline_document_text"] == "[redacted]"
+    assert trajectory["input"]["requirements"]["candidate_document_text"] == "[redacted]"
+    serialized_trajectory = json.dumps(trajectory, ensure_ascii=False)
+    assert baseline not in serialized_trajectory
+    assert candidate not in serialized_trajectory
+    assert all(
+        fragment not in serialized_trajectory
+        for fragment in (*baseline.splitlines(), *candidate.splitlines())
+    )
+
+    persisted = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in tmp_path.rglob("*")
+        if path.is_file()
+    )
+    assert baseline not in persisted
+    assert candidate not in persisted
+    assert all(
+        fragment not in persisted
+        for fragment in (*baseline.splitlines(), *candidate.splitlines())
+    )
+
+
+def test_document_ops_run_operation_conflicts_on_skill_or_catalog_drift_before_provider(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    client = _create_client(tmp_path, monkeypatch)
+    agent = client.app.state.document_ops_service._agent
+    provider = agent.provider
+    original_generate_raw = provider.generate_raw
+    calls = 0
+
+    def counted_generate_raw(prompt: str, *, request_id: str, max_output_tokens=None) -> str:
+        nonlocal calls
+        calls += 1
+        return original_generate_raw(
+            prompt,
+            request_id=request_id,
+            max_output_tokens=max_output_tokens,
+        )
+
+    provider.generate_raw = counted_generate_raw
+    agent._provider = provider
+    base_payload = {
+        "task_type": "decision_brief",
+        "requirements": {"title": "Binding drift gate"},
+        "capture_trajectory": True,
+    }
+
+    selected_payload = {
+        **base_payload,
+        "skill_name": "decision-brief-builder",
+        "operation_id": "agent-run:selected-skill-drift",
+    }
+    assert client.post(
+        "/api/agent/document-ops/run",
+        headers=_api_headers(),
+        json=selected_payload,
+    ).status_code == 200
+    selected_skill = agent._skill_registry.get("decision-brief-builder")
+    selected_skill.version = "0.1.1"
+    selected_conflict = client.post(
+        "/api/agent/document-ops/run",
+        headers=_api_headers(),
+        json=selected_payload,
+    )
+    assert selected_conflict.status_code == 409
+
+    selected_skill.version = "0.1.0"
+    catalog_payload = {
+        **base_payload,
+        "operation_id": "agent-run:catalog-drift",
+    }
+    assert client.post(
+        "/api/agent/document-ops/run",
+        headers=_api_headers(),
+        json=catalog_payload,
+    ).status_code == 200
+    agent._skill_registry.get("policy-planning").version = "0.1.1"
+    catalog_conflict = client.post(
+        "/api/agent/document-ops/run",
+        headers=_api_headers(),
+        json=catalog_payload,
+    )
+    assert catalog_conflict.status_code == 409
+
+    agent._skill_registry.get("policy-planning").version = "0.1.0"
+    original_resolve_skill_binding = agent.resolve_skill_binding
+
+    def resolve_then_drift(request):
+        binding = original_resolve_skill_binding(request)
+        agent._skill_registry.get("decision-brief-builder").version = "0.1.2"
+        return binding
+
+    agent.resolve_skill_binding = resolve_then_drift
+    pre_provider_drift = client.post(
+        "/api/agent/document-ops/run",
+        headers=_api_headers(),
+        json={
+            **base_payload,
+            "operation_id": "agent-run:pre-provider-drift",
+        },
+    )
+    assert pre_provider_drift.status_code == 400
+    assert "skill binding changed" in pre_provider_drift.json()["detail"]
+    assert calls == 2
 
 
 def test_document_ops_run_operation_requires_trajectory_capture(

@@ -3,7 +3,30 @@
 ## Current milestone
 Milestone 6 completed
 
-## Post-milestone Decision Evidence Map and H124-H128 guided review completion
+## 2026-08-11 current-main live G2B fallback and log redaction
+
+- Latest-main `deploy-smoke [dev]` run `31452991725` used `provider=mock`
+  with procurement smoke enabled. GitHub resolved the configured stage
+  secrets, but AWS OIDC rejected `sts:AssumeRoleWithWebIdentity`. The run
+  stopped before stack inspection, SAM build/deploy, Lambda/API Gateway
+  invocation, and post-deploy smoke, so it is infrastructure-auth failure
+  evidence rather than current AWS runtime proof.
+- The no-AWS fallback then started the real FastAPI app with mock provider,
+  temporary local storage, and the configured live G2B key. It auto-discovered
+  bid `R26BK01664082`, imported and evaluated it, produced a `NO_GO` decision,
+  exercised Decision Council and downstream override gates, and completed the
+  full local smoke. No LLM provider or AWS runtime was called.
+- That live run exposed a credential-hygiene defect: the `httpx` INFO message
+  included the G2B `serviceKey` query value. `JsonLineFormatter` now redacts
+  sensitive query parameters and nested structured fields immediately before
+  serialization. A repeated live G2B smoke completed with the raw key absent
+  and `serviceKey=[REDACTED]` present. The previously logged G2B key should be
+  rotated before the next shared or deployed run.
+- Focused observability/G2B/local-smoke verification passed `88` tests. The
+  current-main AWS deploy/runtime and stage procurement smoke remain unproven
+  until the dev OIDC role trust is repaired and `deploy-smoke` is rerun.
+
+## Post-milestone Decision Evidence Map and H124-H129 guided review completion
 
 - `decision_evidence_map.v1` is now a deterministic, bounded, read-only project
   projection across procurement decisions, Decision Council, project documents,
@@ -63,6 +86,18 @@ Milestone 6 completed
   rejects body, header, scope, matrix, or authority drift. The result is
   review-only, non-atomic, recheck-required, non-persisted, does not bind
   reviewer identity, and creates no approval or execution authority.
+- H129 adds an immutable, reviewer-attributed registry around one exact H128
+  receipt. The selected local/S3 `StateBackend` uses conditional create under
+  tenant/project/bundle scope with a SHA-256 operation filename; exact replay is
+  bound to the stable reviewer user ID and source SHA-256 while preserving the
+  first username, role, timestamp, and canonical bytes. Admins can inspect the
+  project registry, assigned members see only their own records, and direct
+  non-owner access remains the same non-disclosing `404`. Every create, list,
+  read, and download reparses H128/H127/H126 hashes, fingerprints, disposition
+  matrix, full-record binding, route scope, and false authority fields before
+  returning canonical bytes. Only the wrapper sets reviewer identity and
+  registry persistence true; approval, workflow mutation, export execution,
+  provider, bid, legal, and contractual authority remain false.
 - Generation and final report workflow promotion preserve validated canonical
   `requirement:` references on project documents. Only an exact persisted
   reference can produce `explicit` reference coverage; fuzzy or legacy text
@@ -126,6 +161,17 @@ Milestone 6 completed
   receipt, prove prior server issuance of the submitted H127 source, make
   sequential reads atomic, or execute provider, AWS, G2B, upload, training,
   promotion, deployment, service resume, bid, legal, or contractual actions.
+- Historical H129 registry verification on 2026-08-18: the two same-basename H129
+  modules collected together and their storage/API/auth/audit gate passed
+  `16 passed`; adjacent H126-H128 handoff/static checks passed `28 passed`, and
+  the focused Chromium registry race check passed `1 passed, 13 deselected`.
+  The final full non-E2E non-live suite passed `4596 passed, 4 deselected`, and
+  the full non-live E2E suite passed `121 passed, 1 skipped`. Ruff E/F/W,
+  `py_compile`, Bandit medium/high, secret hygiene, README metrics, portfolio
+  sync/check/package/ZIP verification, and diff checks also passed. This is
+  local/mock evidence: it does not close later H129.1 server-issued provenance,
+  M1, M2, M6, human UAT, deployment, or external-approval gaps and executed
+  none of the forbidden external effects.
 - H126-H128 local demo evidence on 2026-07-29: the repeatable local
   `capture_guided_decision_review_demo_evidence.py` flow uses an ephemeral
   mock/local FastAPI server and the real browser shell to create a project,
@@ -12188,3 +12234,15 @@ Internal only. Public Procurement Go/No-Go Copilot is now fully integrated into 
   - full Chromium passed: 88 tests, 1 skipped; full non-live regression passed: 4,448 tests, 2 skipped, 4 deselected
   - Ruff E/F/W, py_compile, Bandit medium/high, secret hygiene, README metrics, portfolio pack sync/check/package/verify, and `git diff --check` passed
   - paid providers, G2B live API, AWS runtime, Stripe, Statuspage, deployment, service resume, dataset upload, training execution, model promotion, bid submission, legal approval, and contractual commitment were not executed
+
+- 2026-08-17 project-linked generated review ZIP boundary
+  - project document UI now reuses the existing tenant-bound generated export route only when the loaded document has a non-empty `request_id`; it does not alter procurement review packet, approval, share, tenant authorization, audit, provider, or storage behavior
+  - the shared result/project action requests `docx,pdf,pptx,hwp,excel`, verifies ZIP/header/byte evidence before Blob download, and keeps `review_only`, `packet_persisted=false`, human review false, and operational approval false; this local integrity evidence is not a procurement, bid, legal, contractual, deployment, or external approval
+  - stale project context and unavailable source failures fail closed without a project snapshot fallback or download; external provider, G2B, AWS, bid submission, legal/contractual commitment, deployment, service resume, dataset upload, training execution, and model promotion were not executed
+
+- 2026-08-18 H129.1 current server-issued provenance (H129 historical registry evidence is distinct; current completion/readiness is owned by [Development Plan — Current Completion/Readiness Snapshot](../../development-plan.md#0-current-completionreadiness-snapshot))
+  - successful H128 responses keep byte-compatible canonical receipt bodies but first conditionally create and exact-read-back one strict hash-only issuance metadata object in the selected tenant/project/bundle/backend scope; generic `503` prevents body delivery when provenance cannot be proven
+  - issuance metadata/audit retain only allowlisted contract, scope, hashes, bindings, timestamp, and false boundaries; no receipt body, reviewer/session/network/token/rationale/secret/approval/execution data is retained
+  - H129.1 v2 independently validates the exact H128 body plus authoritative same-backend issuance metadata, embeds only that metadata and its hash, while v1 records remain immutable and are surfaced as Legacy issuance unrecorded
+  - new H129 operations create v2 only; a public v1 request can only exact-replay a matching stored v1 record and a missing v1 operation returns non-disclosing `422` without writing, while H128 unavailable, corrupt, or disappearing post-write issuance read-back returns generic `503` without a successful receipt body
+  - this is same-backend existential issuance, not a signature, actor attestation, currentness, atomic snapshot, approval, or external authenticity; it does not close M1 partial/blocked, M2 local-live-complete but durable-stage-blocked, M6 deployment/runtime-blocked, human UAT, or external approval gaps; provider, AWS, G2B, upload, training, promotion, deploy, service resume, bid, legal, and contractual effects were not executed

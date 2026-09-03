@@ -48,7 +48,7 @@ LLM이 만든 결과를 단발성 텍스트가 아니라 **업무 산출물**로
 | 품질 실험·요청 패턴 상태 무결성 | A/B prompt experiment와 freeform·sketch request pattern을 tenant별 local/S3 state에 결속하고 손상·중복 identity를 빈 상태로 축소하지 않는다. Variant·hint·experiment identity를 한 CAS assignment로 결속하고 result도 같은 incarnation에만 기록하며, resumable winner claim과 snapshot-bound clear로 worker 경쟁을 조정 |
 | 공개 공유 상태 무결성 | 외부 공개 링크의 생성·조회·접근 횟수·취소 lifecycle을 tenant별 local/S3 state에 결속하고 손상·identity drift를 원본 보존 상태로 fail closed 처리 |
 | 공공조달 Go/No-Go | G2B 기반 판단부터 tenant별 검토 패킷, 검토함, assignee/admin의 검증된 원본 packet 재다운로드, 1회 완료 receipt, reviewed-package 이력과 review-bound downstream provenance까지 연결 (`G2B_API_KEY`, 스모크 옵션 제공) |
-| Decision Evidence Map | project별 procurement·Decision Council·문서·검토·승인·report workflow 관계를 deterministic read-only projection으로 표시. Evidence Neighborhood Explorer는 canonical accessible table, one-hop relation/provenance 탐색과 filter를 제공하고, Guided Decision Review는 Decision → Evidence → Review → Documents의 다음 확인 위치로 local scroll/focus만 수행. 명시적 handoff download는 현재 four-stage observation을 exact-hash canonical JSON으로 전달하고, page-memory recheck는 source와 fresh observation의 semantic fingerprint를 비교함. Verified recheck에는 status별 allowlisted disposition을 exact-hash receipt로 결속함. 세 경로 모두 non-atomic·non-persisted·recheck-required이며 reviewer identity, approval, export, provider 또는 입찰 실행 권한을 만들지 않음 |
+| Decision Evidence Map | project별 procurement·Decision Council·문서·검토·승인·report workflow 관계를 deterministic read-only projection으로 표시. Evidence Neighborhood Explorer는 canonical accessible table, one-hop relation/provenance 탐색과 filter를 제공하고, Guided Decision Review는 Decision → Evidence → Review → Documents의 다음 확인 위치로 local scroll/focus만 수행. H126 handoff와 H127 recheck는 exact-hash canonical receipt를 만들고, H128은 status별 allowlisted disposition을 결속한 뒤 same-backend hash-only issuance metadata를 exact read-back으로 증명함. 새 H129 operation은 이 issuance proof와 검증된 page-memory H128만 current session reviewer의 stable user ID와 immutable local/S3 v2 record로 결속하며, 기존 v1은 legacy issuance unrecorded로 원본 bytes를 보존하고 exact operation replay만 지원함. issuance proof는 signature, actor attestation, currentness, atomic snapshot, approval 또는 external authenticity가 아니며 모든 wrapper는 non-atomic·recheck-required이고 approval, export, provider, mutation, 입찰 또는 계약 권한을 만들지 않음 |
 | 로컬 procurement decision package evidence | mock/local fixture 기반 12개 artifact, one-screen 검토, deterministic review ZIP, packet-bound browser review draft와 reviewer receipt, review-completed audit envelope, handoff, sign-off, export boundary, CLI contract 검증 경로 |
 | 완성 문서 review packet | completed human review receipt 기반 deterministic ZIP, embedded SHA256 index, tamper/path boundary 검증 |
 | 품질 교정 파일럿 | Ready artifact 3~5개의 순서·readiness·JSONL SHA-256·외부 학습 비승인 경계를 먼저 검토하고, server-side export package와 local human-review handoff를 각각 exact-membership ZIP으로 고정해 독립 재검증 |
@@ -58,6 +58,9 @@ LLM이 만든 결과를 단발성 텍스트가 아니라 **업무 산출물**로
 | Auth authority·browser 전환 일관성 | Protected request와 `/events` query-token 구독은 signed JWT의 장기 role claim만 신뢰하지 않고 tenant `UserStore`의 현재 role·`is_active`·`credential_version`을 다시 확인한다. 열린 SSE도 최대 15초 간격으로 같은 authority와 token expiry를 재검증해 invalid credential에는 고정 `auth_revoked` control event만 보낸 뒤 닫고, state를 신뢰할 수 없으면 application event를 더 보내지 않은 채 `auth_unavailable`로 닫는다. Browser는 revoked 연결에서 refresh를 한 번 시도하고 refresh credential이 거절된 경우에만 session과 page-memory evidence를 정리한다. 일시 장애는 기존 credential과 작업을 보존하고 polling과 SSE reconnect로 복구한다. 비밀번호 변경은 persisted credential version을 같은 CAS mutation에서 증가시켜 이전 access/refresh token을 모두 거부하고 현재 browser에는 새 token pair를 반환한다. Login·register·refresh·LDAP session은 access/refresh token과 signed tenant를 하나의 browser commit으로 저장하며 실패하면 이전 session과 미저장 evidence를 복원한다. 동시에 발생한 401은 한 refresh에 합류하고 generic mutating request는 자동 replay하지 않는다. 다른 tab의 signed user·tenant·role·credential version이 현재 page와 달라지면 앱을 한 번 reload해 page-memory evidence를 새 authorization context에서 다시 구성하며, 네 값이 같은 token rotation은 현재 작업을 유지한다 |
 | 로그인 세션별 서버 폐기·본인 세션 관리 | Register·login·invite·LDAP·SAML·GCloud·password-change가 발급하는 access/refresh pair는 같은 random session ID와 tenant-scoped `auth-session.v2` state에 결속되고 refresh도 그 ID를 유지한다. 기존 v1 record는 strict read-compatible하며 label 저장 시 v2로 승격한다. `POST /auth/logout`은 현재 token의 session만 CAS로 폐기한다. `GET /auth/sessions`와 `PATCH /auth/sessions/label`은 현재 credential version의 본인 활성 세션을 조회하고 최대 40자의 user-supplied 기기 이름을 설정·삭제한다. Label은 API와 storage가 공유하는 validator에서 trim하며 Unicode control·line separator·bidirectional/invisible format 문자를 거부하고 ZWNJ/ZWJ만 허용한다. `POST /auth/sessions/revoke`는 다른 로그인 하나를, `POST /auth/sessions/revoke-others`는 current를 제외한 나머지를 종료한다. `POST /auth/sessions/revoke-all`은 strict confirmation 뒤 current를 마지막에 써서 snapshot 전체를 종료한다. Admin JWT 또는 Ops key가 호출하는 `GET /admin/auth-sessions/retention-preview`는 tenant prefix 전체를 strict 검증하고 오래된 expired/revoked state를 식별자 없는 aggregate로만 계산한다. 응답은 `read_only=true`, `deletion_authorized=false`, `no-store`를 고정하며 파일이나 S3 object를 변경하지 않는다. Ops 화면은 30/90/180/365일 기준의 aggregate만 표시하고 credential이 있을 때만 조회하며, strict contract·tenant/request generation을 모두 통과한 최신 응답만 렌더링한다. 새로고침 외 mutation control과 삭제 action은 두지 않는다. Profile UI는 session ID를 DOM에 넣지 않으며 label/revoke action이 같은 single-flight와 stale-response guard를 공유한다. 손상·unavailable state는 원본 보존 `503`으로 닫고 audit은 token·session ID·label을 복사하지 않는다. Legacy sessionless token은 exact session API를 사용할 수 없다. 일괄 종료는 multi-object transaction이 아니므로 중간 실패 뒤 일부 다른 session이 이미 종료됐을 수 있고, 요청 뒤 생긴 session은 다음 요청 대상이다. Session state/inventory에 User-Agent/IP를 자동 결합하는 기능, admin mass revoke, 실제 만료 state 삭제·scheduler와 즉시 push는 제공하지 않는다 |
 | DocumentOps 검토 작업대 | tenant-scoped trajectory JSONL을 선택된 local/S3 `StateBackend`의 단일 conditional create/CAS authority로 관리한다. Append와 사람 review는 충돌 시 최신 record 집합에 최대 32회 재적용하고, private append/incarnation identity와 최근 64개 review receipt로 commit 응답 유실 뒤 successor mutation을 조정한다. Expected review version은 최신 CAS state에서 비교해 오래 열린 화면의 덮어쓰기를 `409`로 차단하며 private metadata는 목록·상세·SFT source에 노출하지 않는다. 검색·필터·정렬, summary-first 상세 조회, 사용자·tenant·trajectory별 page-memory 초안, signed tenant context, 민감 본문을 제외한 audit 추적도 유지한다. Freeze·dry-run approval·execution request·audit export는 optional `operation_id`와 private payload hash를 metadata CAS에 결속해 동일 payload replay를 원래 verified artifact로 수렴시키고 다른 payload 재사용을 `409`로 차단한다. Trajectory capture를 선택한 Agent run도 provider 호출 전에 private shared-backend claim을 선점해 exact replay는 저장된 결과를 반환하고, 실행 중·불확실한 이전 시도는 자동 재호출하지 않는다. Browser는 각 write에 UUID를 보내고 pending 동안 initiating control을 single-flight로 잠근다. Captured run의 응답을 잃으면 operation/schema/state가 결속된 redacted status만 `no-store`로 읽고, terminal success가 확인된 경우에만 같은 operation ID와 payload를 replay한다. Mismatched·unavailable·running 상태는 payload를 page memory에 보존해 Agent 버튼과 상태 재확인 버튼이 새 실행 대신 같은 operation을 다시 확인하며, 두 control은 recovery promise 하나를 공유한다. Captured POST 직전에는 payload를 제외한 schema·tenant·operation ID marker만 tenant-scoped same-origin browser storage에 기록한다. Shared storage가 가능하면 tenant-scoped Web Lock 안에서 marker claim을 직렬화해 동시 tab 중 하나만 POST를 시작하고, 나머지 tab과 tab-close 뒤 다시 연 화면은 같은 status만 확인한다. 서로 다른 tenant marker는 같은 origin에서도 독립적으로 유지하며 tenant 전환은 이전 tenant marker만 정리한다. Shared storage가 막히면 기존 tab-scoped fallback을 유지한다. Operator가 backend 실행은 취소되지 않는다는 경고를 확인해 상태 추적을 명시적으로 종료해야 새 operation을 시작할 수 있다. |
+| DocumentOps source-grounded·문서 비교 검토 | first-party Markdown skill registry가 task별 skill을 strict binding으로 고정한다. `document_comparison_review`는 두 원문의 exact UTF-8 SHA-256, 동일 여부와 선택 비교 기준만 담은 `document_ops_comparison_context_v1`을 반환·trajectory·exact replay에 연결하고 원문은 trajectory input에서 redaction한다. 결과는 관찰된 텍스트 변화와 조건부 해석, 근거/가정·결정/트레이드오프·거버넌스 경계·권고·사람 재확인 질문을 분리하며 approval, provider·training·publication authority를 만들지 않는다. |
+| DocumentOps comparison file intake | `document_comparison_review`에서 기존 local attachment parser로 한 파일씩 server memory에서만 텍스트를 추출한다. Browser는 selected-file bytes와 returned text의 SHA-256, filename basename, size/count, strict response key set 및 `provider_called=false`/`persisted=false`를 확인한 뒤에만 textarea를 채우며, 파일 변경·직접 편집·task/tenant/auth context 변경은 page-memory provenance를 무효화한다. |
+| DocumentOps verified line change set | 인증·maintenance gate 뒤 하나의 `SequenceMatcher(autojunk=False)`가 전체 aggregate와 zero-based half-open hunk를 계산한다. 응답 전체에서 양쪽 exposed line 합계를 200으로 제한하고 contiguous zero-prefix만 내보내며 첫 초과 hunk만 clip한다. Browser는 canonical UTF-8 bytes와 `X-DecisionDoc-Document-Comparison-SHA256`, strict schema, source hash/line/range/count, all-false authority와 current task·tenant·auth·criteria를 검증한 뒤에만 Agent POST와 exact-byte download를 허용한다. Provider call과 persistence는 없다. |
 
 ---
 
@@ -89,11 +92,11 @@ FastAPI (app/main.py — create_app(), 모듈 레벨 side-effect 없음)
   │     / rate_limit / audit / auth / tenant / billing / metrics
   │     / document_ops_audit / auth_session_retention_audit
   │     billing은 tenant/auth context가 확정된 뒤 metered request를 검사
-  ├─ Routers (23 top-level files, 라우트 289): generate / approvals / projects / knowledge
+  ├─ Routers (23 top-level files, 라우트 296): generate / approvals / projects / knowledge
   │     / report_workflows / auth / sso / admin / audit / billing / dashboard
   │     / history / eval / finetune / local_llm / g2b / templates / health ...
   ▼
-Services (47) — 도메인 오케스트레이션
+Services (50) — 도메인 오케스트레이션
   ├─ generation_service ─ 핵심 파이프라인:
   │     요청 → 캐시 → Provider.generate_bundle() → 스키마 검증
   │        → Stabilizer → Storage 저장 → Jinja2 렌더 → Lint → 반환
@@ -104,7 +107,7 @@ Services (47) — 도메인 오케스트레이션
   │
   ├────────────────┬─────────────────────┐
   ▼                ▼                     ▼
-Providers (5)    Storage (50 modules)   Ops
+Providers (5)    Storage (51 modules)   Ops
   factory +        factory +             CloudWatch 조사
   fallback chain   Local / S3            Statuspage 연동
   mock/openai/     (atomic write 공통)   eval / eval_live
@@ -116,9 +119,9 @@ Providers (5)    Storage (50 modules)   Ops
 ```bash
 python3 scripts/count_readme_metrics.py --field middleware_files  # → 12
 python3 scripts/count_readme_metrics.py --field router_files      # → 23
-python3 scripts/count_readme_metrics.py --field service_files     # → 47
-python3 scripts/count_readme_metrics.py --field storage_files     # → 50
-python3 scripts/count_readme_metrics.py --field route_decorators  # → 289
+python3 scripts/count_readme_metrics.py --field service_files     # → 50
+python3 scripts/count_readme_metrics.py --field storage_files     # → 53
+python3 scripts/count_readme_metrics.py --field route_decorators  # → 296
 ```
 
 **설계 불변식**: Provider·Storage는 ABC + factory(환경변수로만 교체) · 모든 파일 쓰기는 atomic write(tmp + fsync + os.replace) · 라우트 핸들러는 `request.app.state.*`로 의존성 접근 · Request 모델은 `strict=True, extra="forbid"` · mock provider는 결정론적(CI 기준 경로).
@@ -133,6 +136,8 @@ python3 scripts/count_readme_metrics.py --field route_decorators  # → 289
 - **LLM provider abstraction** — 특정 모델 종속은 비용·정책 변화에 취약. Mock/OpenAI/Gemini/Claude/Local을 factory + fallback chain으로 추상화해 교체 가능하게 함. `mock`은 테스트·개발에서 결정론적으로 동작하도록 유지.
 - **schema / template / validation 결합** — 문서 유형별 품질 편차를 사람 숙련도가 아니라 구조로 줄이기 위해 BundleSpec/DocumentSpec + Jinja2 + lint 단계를 결합.
 - **storage abstraction (local/S3)** — 로컬 개발과 클라우드 운영을 같은 코드 경로로 지원.
+- **DocumentOps skill registry** — first-party Markdown skill을 strict YAML metadata, content SHA-256, deterministic catalog로 검증하고, 인증된 read-only API에는 instruction body와 source path를 노출하지 않음.
+- **DocumentOps skill binding** — Agent 실행 전에 `document_ops_skill_binding_v1`을 resolve해 skill name/version, risk, source-byte SHA-256, catalog fingerprint와 `code_execution_authorized=false`, `external_runtime_authorized=false`를 고정한다. Binding은 instruction body와 source path를 포함하지 않으며 response·trajectory·captured operation identity에 동일하게 사용한다.
 - **학습 준비 증적은 실행 권한과 분리** — reviewed export부터 freeze, dry-run approval, execution request, audit까지 ID와 SHA-256을 대조한다. stale 또는 변조 artifact는 로컬 governance ready 상태를 차단하며, 이 흐름은 provider API 호출이나 dataset upload를 허용하지 않는다.
 
 ---
@@ -145,27 +150,54 @@ pip install -r requirements.txt
 cp .env.example .env
 bash scripts/install_git_hooks.sh        # commit 전 secret hygiene 검사 hook
 
-# 2. 실행 (로컬)
-python -m uvicorn app.main:app --reload   # http://localhost:8000
+# 2. 무료 실행 (mock provider + local storage)
+python3 scripts/run_free_local.py --provider mock --reload
+# http://localhost:8000
 
-# 3. 실행 (Docker)
+# 3. 무료 실행 (Docker, 기본값이 mock + local storage)
 docker compose up -d
-curl http://localhost:8000/health
+curl http://localhost:3300/health
 ```
 
 > `install_git_hooks.sh`는 `scripts/check_secret_hygiene.py`를 pre-commit으로 걸어, AWS 자격증명이 커밋에 들어가는 것을 차단합니다.
 
-### Environment (주요 그룹)
+`DECISIONDOC_FREE_MODE=1`에서는 OpenAI/Gemini/Claude, S3 storage와 remote
+OpenAI-compatible endpoint를 startup/factory와 `LocalProvider` constructor에서
+HTTP client 생성 전에 거부합니다. 허용 host는 `localhost`, `127.0.0.1`, `::1`,
+`ollama`, `host.docker.internal`이며 URL userinfo, query, fragment는 허용하지
+않습니다. 실제 local LLM으로 생성하려면 Ollama를 먼저 실행한 뒤 같은 runner의
+provider만 바꿉니다.
+`run_free_local.py`는 여기에 더해 inherited AWS credential source, ops key,
+web search, G2B live collection, SMTP/Slack, Stripe, Statuspage, Voice Brief
+remote 설정을 child environment에서 비활성화합니다.
 
-`.env.example`에 **94개** 키가 정의돼 있습니다. 대표 그룹만 정리합니다.
+`GET /local-llm/health`와 `GET /local-llm/models`는 generation provider route에
+`local`이 없으면 provider나 HTTP client를 만들지 않고 동일한
+`status=not_configured` 응답을 반환합니다. Local generation provider가 있으면 두
+endpoint 모두 `LocalProvider.health_check()`를 사용하며, 거부된 free-mode URL은
+network fallback 없이 `503 configuration_error`로 종료됩니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field env_keys  # → 94
+ollama pull llama3.1:8b
+python3 scripts/run_free_local.py --provider local --reload
+```
+
+Local provider는 generation을 담당하고, 지원하지 않는 attachment OCR/vision과
+visual asset generation은 runner가 mock으로 고정합니다. 추후 AWS/cloud provider를
+사용할 때는 production 환경에서 `DECISIONDOC_FREE_MODE=0`을 명시하고 기존
+`docker-compose.prod.yml` 또는 SAM 배포 절차를 사용합니다.
+
+### Environment (주요 그룹)
+
+`.env.example`에 **95개** 키가 정의돼 있습니다. 대표 그룹만 정리합니다.
+
+```bash
+python3 scripts/count_readme_metrics.py --field env_keys  # → 95
 ```
 
 | 그룹 | 대표 키 |
 |------|---------|
-| Runtime/Provider | `DECISIONDOC_PROVIDER`, `DECISIONDOC_ENV`, `DECISIONDOC_TEMPLATE_VERSION` |
+| Runtime/Provider | `DECISIONDOC_FREE_MODE`, `DECISIONDOC_PROVIDER`, `DECISIONDOC_ENV`, `DECISIONDOC_TEMPLATE_VERSION` |
 | Provider Keys | `OPENAI_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `LOCAL_LLM_*` |
 | Auth/Security | `DECISIONDOC_API_KEY(S)`, `DECISIONDOC_OPS_KEY`, `JWT_SECRET_KEY`, `DECISIONDOC_CORS_*` |
 | Storage | `DECISIONDOC_STORAGE`, `DATA_DIR`, `EXPORT_DIR`, `DECISIONDOC_S3_BUCKET`, `AWS_REGION` |
@@ -178,10 +210,10 @@ python3 scripts/count_readme_metrics.py --field env_keys  # → 94
 
 ## API / Usage
 
-FastAPI 라우트는 **289개**입니다.
+FastAPI 라우트는 **296개**입니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field route_decorators  # → 289
+python3 scripts/count_readme_metrics.py --field route_decorators  # → 296
 ```
 
 대표 도메인:
@@ -196,6 +228,7 @@ python3 scripts/count_readme_metrics.py --field route_decorators  # → 289
 | Dashboard | `/overview`, `/bundle-performance`, `/score-history/{bundle_id}` |
 | Billing | `/billing/status`, `/billing/usage`, `/billing/checkout` |
 | Report quality | `/report-workflows/learning/correction-artifacts`, `/report-workflows/learning/correction-artifacts/{artifact_id}`, `/report-workflows/learning/correction-artifacts/pilot-export/preview`, `/report-workflows/learning/correction-artifacts/pilot-export`, `/report-workflows/learning/correction-artifacts/pilot-export/package`, `/report-workflows/learning/correction-artifacts/pilot-package/verify`, `/report-workflows/learning/correction-artifacts/export` |
+| DocumentOps | `GET /api/agent/document-ops/skills`, `POST /api/agent/document-ops/run`, `POST /api/agent/document-ops/comparison-documents/change-set` |
 | Public procurement | `GET /procurement/reviews`, `/projects/{id}/procurement/evaluate`, `/projects/{id}/procurement/review-packet`, `/projects/{id}/procurement/reviews/{sha}/packet`, `/projects/{id}/procurement/reviews/{sha}/complete`, `/projects/{id}/procurement/reviews/{sha}/reviewed-package`, `/projects/{id}/decision-council/run` |
 | Decision evidence | `GET /projects/{id}/decision-evidence-map?bundle_type=proposal_kr`, `GET /projects/{id}/guided-decision-review-handoff?bundle_type=proposal_kr`, `POST /projects/{id}/guided-decision-review-handoff/recheck`, `POST /projects/{id}/guided-decision-review-handoff/review-disposition` |
 | DocumentOps | `/api/agent/document-ops/trajectories`, `/api/agent/document-ops/trajectories/governance/overview`, `/api/agent/document-ops/trajectories/governance-artifacts/inventory` |
@@ -284,11 +317,11 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **3,719개**, **270개 파일**입니다 (AST source definition 기준 카운트). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **3,857개**, **278개 파일**입니다 (Python AST `test_` definition 기준 카운트이며 pass 수가 아닙니다). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 3719
-python3 scripts/count_readme_metrics.py --field test_files      # → 270
+python3 scripts/count_readme_metrics.py --field test_functions  # → 3857
+python3 scripts/count_readme_metrics.py --field test_files      # → 278
 ```
 
 > 위 수치는 Python AST로 확인한 `test_` 함수 정의 개수입니다. 각 테스트의 현재 pass 여부는 환경 구성 후 `pytest`로 재확인하세요. 검증되지 않은 커버리지·통과율 수치는 표기하지 않습니다.
@@ -307,17 +340,35 @@ ZIP은 로컬 전달용으로 생성되어 git에 포함되지 않습니다. Tra
 CI advisory와 동일한 code quality / security scan:
 
 ```bash
-ruff check app/ --select=E,F,W --ignore=E501
+ruff check app/ tests/ --select=E,F,W --ignore=E501
 bandit -r app/ -x app/providers/mock_provider.py -ll
 ```
 
-2026-07-14 로컬 기준 `ruff`는 `All checks passed!`, `bandit -ll`은 `No issues identified`입니다. Bandit `-ll`은 medium/high severity 기준이며, low severity 항목 전체 해소를 의미하지 않습니다.
+2026-08-17 로컬 기준 위 `ruff` 명령은 `All checks passed!`, `bandit -ll`은 `No issues identified`입니다. Bandit `-ll`은 medium/high severity 기준이며, low severity 항목 전체 해소를 의미하지 않습니다.
 
 ---
 
 ## Development Plan — 완성까지 남은 것
 
-현재 전체 no-cost baseline은 `pytest tests/ -m "not live" -q` 기준 `4,512 passed, 1 skipped, 4 deselected`입니다(2026-07-29 실측). 이 수치는 H126-H128 local demo evidence tests를 포함한 mock/local 및 non-live 범위이며 실제 LLM Provider, AWS runtime, G2B 실데이터 검증을 포함하지 않습니다. "완성"을 막는 외부 실증 갭과 마일스톤은 [docs/development-plan.md](./docs/development-plan.md)에 정의돼 있습니다.
+현재 mock/local final-tree backend·E2E 결과와 M1/M2/M6 readiness의 유일한
+snapshot은 [Development Plan의 Current Completion/Readiness Snapshot](./docs/development-plan.md#0-current-completionreadiness-snapshot)에 둡니다. README는 volatile
+pytest pass 수를 별도로 주장하지 않습니다. G2B 실데이터는 2026-08-11 local
+FastAPI + mock provider smoke의 historical evidence이며, durable proof receipt와
+AWS stage runtime proof는 남아 있습니다.
+
+DocumentOps strict skill binding 변경의 focused no-cost 검증은 2026-08-12에 registry·Agent·API·operation store·audit 대상 `143 passed`였습니다. 이 수치는 아래 focused command의 local mock/backend 결과이며 전체 non-live baseline을 다시 측정한 값은 아닙니다.
+
+```bash
+python3 -m pytest -q tests/agents/test_skill_registry.py tests/agents/test_document_ops_agent.py tests/test_document_ops_agent_api.py tests/storage/test_document_ops_run_operation_store.py tests/test_audit.py --tb=short
+```
+
+문서 비교 검토의 로컬 측정 경로는 아래 command입니다. mock provider·temporary local storage·loopback Chromium만 사용하며, GitHub-derived skill 설계 참고는 [external repository analysis](./docs/specs/external_repo_integration/ANALYSIS_20260812.md)의 clean-room design input으로만 사용합니다.
+
+```bash
+python3 -m pytest -q tests/agents/test_skill_registry.py tests/agents/test_document_ops_agent.py tests/evals/test_document_ops_gates.py tests/test_document_ops_agent_api.py --tb=short
+python3 -m pytest -q tests/test_infrastructure.py -k document_ops --tb=short
+python3 -m pytest -q tests/e2e/test_main_flow.py -k document_ops --tb=short
+```
 
 ```bash
 python3 scripts/check_completion_readiness.py --print-env-template
@@ -329,16 +380,16 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
 python3 scripts/check_completion_proof_receipt.py --print-template M1
 ```
 
-위 명령은 남은 M1/M2/M6 실행 준비 조건을 로컬에서 점검하고, 저장된 JSON receipt가 현재 계약과 맞는지 확인합니다. `--print-env-template`은 `.env.prod`에 옮겨 적을 입력값만 출력하고, `--print-proof-plan`은 readiness와 no-secret proof receipt 생성·검증 명령을 별도로 출력합니다. M2/M6 smoke runner는 명시한 `--proof-receipt` 경로에 preflight의 미실행 상태와 실제 smoke의 성공·실패를 atomic JSON으로 기록하며 secret 값과 URL query를 보존하지 않습니다. `.env.prod`와 `reports/`는 gitignore된 runtime 경로라서 secret과 receipt를 커밋하지 않습니다. provider API, G2B live API, AWS runtime, dataset upload, training, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않습니다. 실제 proof 이후에는 `scripts/check_completion_proof_receipt.py`로 receipt를 검증하고, 자세한 증적 실행 순서는 [docs/completion-readiness-runbook.md](./docs/completion-readiness-runbook.md)를 따릅니다.
+위 명령은 남은 M1/M2/M6 실행 준비 조건을 로컬에서 점검하고, 저장된 JSON receipt가 현재 계약과 맞는지 확인합니다. `--print-env-template`은 `.env.prod`에 옮겨 적을 입력값만 출력하고, `--print-proof-plan`은 readiness와 no-secret proof receipt 생성·검증 명령을 별도로 출력합니다. M2/M6 smoke runner는 명시한 `--proof-receipt` 경로에 preflight의 미실행 상태와 실제 smoke의 성공·실패를 atomic JSON으로 기록하며 secret 값과 URL query를 보존하지 않습니다. `.env.prod`와 `reports/`는 gitignore된 runtime 경로라서 secret과 receipt를 커밋하지 않습니다. 2026-08-11에는 G2B live API를 local mock-provider smoke로 실행했지만 provider API, AWS runtime, dataset upload, training, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않았습니다. 실제 stage proof 이후에는 `scripts/check_completion_proof_receipt.py`로 receipt를 검증하고, 자세한 증적 실행 순서는 [docs/completion-readiness-runbook.md](./docs/completion-readiness-runbook.md)를 따릅니다.
 
-| 마일스톤 | 내용 | 외부 의존 | 상태 (2026-07-20) |
+| 마일스톤 | 내용 | 외부 의존 | 상태 (2026-08-11) |
 |----------|------|-----------|--------------------|
 | **M1** | Live provider 실증 — openai/gemini/claude 실호출 `-m live` 통과 + 증적 | Gemini quota/billing, Anthropic credits | 보류 — 2026-07-13 OpenAI 1회 통과; 잔여 paid proof는 사용자 요청으로 연기 |
-| **M2** | G2B 실데이터 end-to-end 1건 — 수집→정규화→decision package | `G2B_API_KEY` | 미착수 |
+| **M2** | G2B 실데이터 end-to-end 1건 — 수집→정규화→decision package | `G2B_API_KEY` | local 1건 통과; receipt/stage proof 잔여 |
 | **M3** | excel export를 타 4종 포맷과 동등 수준으로 보강 | 없음 | ✅ 완료 |
 | **M4** | CSP nonce 적용 — served HTML `script-src 'unsafe-inline'` 제거 | 없음 | ✅ 완료 — inline handler 0개, HTML nonce 기본 on, local diagnostic opt-out 유지 |
 | **M5** | 800줄 초과 모듈 분할 (procurement 패키지 분할 패턴 재사용) | 없음 | ✅ 완료 — 2026-07-14 상수 모듈 drift 재분할 및 800줄 guard 추가, 초과 0개 |
-| **M6** | 배포 재검증 + post-deploy smoke 증적 + 데모 URL 접근성 | 배포 환경 | 미착수 |
+| **M6** | 배포 재검증 + post-deploy smoke 증적 + 데모 URL 접근성 | 배포 환경 | dev 시도; AWS OIDC trust 차단, runtime proof 잔여 |
 
 M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidence 정합성 개선을 계속합니다. 외부 실증을 재개할 때는 각 마일스톤의 완료 정의(DoD)와 readiness receipt를 먼저 확인합니다.
 
@@ -347,11 +398,15 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 ## Scope & Limitations
 
 - 완전한 문서관리 시스템이 아니라 **AI-assisted documentation MVP/PoC**입니다.
+- 무료 기본 실행의 mock provider는 결정론적 기능 검증용이며 실제 LLM 품질을 제공하지 않습니다. Ollama local provider는 generation만 지원하고 attachment OCR/vision과 direct visual asset generation은 mock fallback 범위입니다.
 - 운영 URL(예: `admin.decisiondoc.kr`) **접근성은 추가 검증이 필요**하며, 현재 README에서 동작 보장을 하지 않습니다.
 - 실제 사용자 성과 수치·운영 안정성은 검증되지 않았습니다. 검증 범위 밖의 운영 보장은 표기하지 않습니다.
+- `/generate/export-zip`의 rendered source는 선택된 local/S3 `StateBackend`에 tenant별로 최대 1시간 보존됩니다. immutable content-addressed object와 CAS index가 restart·독립 worker 재다운로드를 지원하지만, 최대 500개 reference, source당 8 MiB, tenant당 64 MiB를 넘으면 oldest-first로 reference만 축출합니다. 이 보존은 packet archive·human review·approval을 저장하거나 증명하지 않으며 `packet_persisted=false`는 그대로입니다.
 - 다수 기능이 단독 구현/실험 단계이며, **본인 직접 기여 범위는 포트폴리오·면접 설명 시 별도 정리**가 필요합니다.
 - 공공조달(G2B) 연동은 외부 API 키·실데이터에 의존하므로, 키 없이는 해당 흐름이 동작하지 않습니다.
 - Live provider proof는 2026-07-13 OpenAI 1회만 통과했습니다. Gemini는 API quota, Claude는 account credits로 blocked이며 성공 fallback proof도 남아 있습니다.
+- DocumentOps 문서 비교는 제공된 두 입력의 exact UTF-8 byte와 line-level text difference만 관찰합니다. Verified change set은 전체 aggregate count를 유지하지만 response의 exposed line은 양쪽 합계 200인 contiguous zero-prefix로 제한하고, `hunks_truncated=true`이면 뒤쪽 hunk는 내려받은 evidence에 포함되지 않습니다. All-false authority는 approval, code execution, external effect/runtime, persistence, provider call 또는 semantic 판단을 허용하지 않습니다. 의미·정책·법적 효력·운영 영향은 입력만으로 확정하지 않으며 사람이 재확인해야 합니다. 현재 증거는 mock/local backend와 local Chromium 범위이고 live provider, AWS runtime, 외부 publication 또는 approval 완료를 증명하지 않습니다.
+- 비교 파일 intake는 기존 지원 parser와 20 MB upload/12,000-character extraction cap을 재사용합니다. legacy binary `.hwp`, 빈·읽을 수 없는 문서와 지원하지 않는 형식은 `422`로 닫고, remote OCR, provider fallback, local/S3 storage write, training, deployment 또는 approval authority는 제공하지 않습니다. 이 application cap은 public deployment의 multipart edge limit와 rate limit을 대신하지 않습니다.
 - H119 retention registry는 deterministic H118 receipt를 변경하지 않습니다. Current session-bound admin JWT만 exact H118 source를 immutable canonical record로 저장할 수 있고, Ops Key와 legacy sessionless admin은 접근할 수 없습니다. Wrapper record만 reviewer identity/persistence를 true로 하며 approval, execution, policy, deletion, scheduler, mass-revoke authority는 모두 false입니다.
 - 로그인 token pair는 persisted session ID에 결속되고 `/auth/logout`은 현재 session만 폐기합니다. 본인 profile에서 각 active session에 최대 40자의 직접 지정 기기 이름을 저장·삭제하고, 다른 로그인 하나, 현재 browser를 제외한 active snapshot, 또는 current를 포함한 snapshot 전체를 종료할 수 있습니다. 이름은 audit에 복사하지 않고 session state/inventory에도 User-Agent·IP 필드를 자동 결합하지 않습니다. Admin/Ops retention 화면은 한 번의 strict inspection에서 30/90/180/365일 aggregate를 비교하고 새로고침 외 mutation control을 두지 않습니다. Browser가 `auth-session-retention-comparison.v1`, `read_only=true`, `deletion_authorized=false`, `snapshot_atomic=false`, `requires_recheck_before_mutation=true`, 정책 순서·count·timestamp consistency를 검증하지 못하면 결과를 표시하지 않습니다. `auth-session-retention-review-handoff.v2`는 tenant에 결속되며, 검증한 handoff만 page memory에 보관해 `auth-session-retention-recheck-receipt.v1`으로 fresh aggregate를 재확인할 수 있습니다. `auth-session-retention-review-disposition-receipt.v1`은 그 verified recheck receipt에 `acknowledged_unchanged`, `new_handoff_required`, `review_deferred` 중 하나를 deterministic하게 연결하지만 reviewer identity, approval, execution, policy, deletion, scheduler, mass revoke authority를 만들지 않으며 server-side에 저장하지 않습니다. `unchanged`는 aggregate equivalence일 뿐 session set identity나 mutation safety를 의미하지 않으며, changed 결과도 새 handoff가 필요하다는 read-only 검증 결과입니다. 실제 delete, scheduler, retention policy apply는 이 흐름에 포함되지 않습니다. Prefix 전체는 bulk mutation 전에 검증하지만 일괄 종료는 여러 session object를 순서대로 CAS하는 non-atomic 작업입니다. 전체 종료는 current를 마지막에 쓰므로 다른 session write가 실패하면 현재 browser를 보존하지만 일부 다른 session은 이미 종료됐을 수 있습니다. Current revoke 응답을 잃은 경우에도 server session은 종료됐을 수 있으며 browser는 다음 request에서 재로그인이 필요합니다. 요청 시작 뒤 생긴 session은 다음 조회·종료 대상입니다. 같은 session을 복사한 다른 browser/device는 다음 protected request·refresh 또는 열린 SSE의 최대 15초 recheck에서 거부됩니다. Legacy sessionless token의 exact logout·목록·label·선택/일괄 종료, admin mass revoke, 만료 state 자동 GC, 즉시 cross-device push와 15초보다 짧은 termination SLA는 제공하지 않습니다.
 - 로컬 procurement decision package evidence 경로는 fixture 검증이며, 실제 입찰 제출·법적 승인·계약상 확약을 의미하지 않습니다.
@@ -364,6 +419,8 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 - 프로젝트 지식 `index.json`은 local conditional file write 또는 S3 conditional create/ETag CAS로 갱신합니다. 충돌마다 최신 ownership·schema·document identity 위에 add/style/metadata/delete를 최대 32회 재적용하고 최근 64개 private mutation receipt로 commit 응답 유실 뒤 successor mutation을 조정합니다. 신규 본문·style은 private incarnation 아래 immutable conditional create로 먼저 발행하고 size·SHA-256과 object path를 index에 결속합니다. Index에 없는 versioned object는 generation·procurement·report promotion authority가 아니며 정상 실패에서는 정리하지만 process crash나 cleanup failure 뒤 inert object가 남을 수 있습니다. Legacy root object는 계속 orphan을 fail closed로 탐지합니다. 이 보장은 단일 index object의 CAS와 참조된 artifact 검증 범위이며 index와 여러 artifact를 한 번에 묶는 distributed transaction, 64개를 넘는 successor reconciliation, retry backoff·fairness와 실제 AWS runtime은 검증 범위가 아닙니다.
 - DocumentOps trajectory/review와 pre-training governance evidence는 같은 tenant-scoped local/S3 `StateBackend`에 결속합니다. `trajectories.jsonl`은 append/review authority이고 `trajectory_metadata.json`은 SFT export, freeze, dry-run approval, execution request, pre-execution audit를 가리키는 별도 mutable CAS index입니다. 각 artifact는 immutable conditional create로 먼저 발행한 뒤 size·SHA-256과 identity를 metadata에 최대 32회 CAS로 추가하며, commit 응답이 유실된 뒤 successor append가 있어도 exact metadata entry read-back으로 성공을 조정합니다. Blank·malformed·duplicate key·identity, count mismatch와 foreign ownership은 원본을 덮어쓰지 않고 fail closed 처리합니다. Export와 audit download는 metadata binding이 일치하는 selected-backend bytes만 반환하고 reviewer sign-off summary도 같은 backend prefix의 read-only handoff를 읽습니다. Ops-key 전용 governance inventory는 다섯 managed directory를 metadata authority와 대조해 verified·missing·tampered·invalid reference·unreferenced 상태와 exact count를 반환하고, 응답은 이슈를 우선해 collection별 최대 500개 artifact detail만 노출합니다. DocumentOps의 Review 상태 화면은 service가 training governance, artifact inventory, reviewer sign-off를 독립적으로 읽어 `boundary → artifact integrity → governance blocker → human sign-off → ready` 순서로 검토 상태와 다음 행동을 정리한 뒤 세 원본 report를 함께 표시합니다. 각 source report의 top-level `generated_at`만 제외한 canonical SHA-256과 세 hash를 묶은 review-state fingerprint를 응답에 포함합니다. Browser는 이를 현재 인증 세션의 메모리에서만 직전 동일 tenant 관측과 비교해 최초·동일·변경을 표시하고 logout 또는 invalid session에서 기준을 지웁니다. Export·freeze·dry-run approval·execution request·pre-execution audit 저장과 planning provider/model 변경은 진행 중 overview 조회를 무효화하고 이미 열린 상태를 이전 관측으로 표시합니다. 성공한 재조회만 fresh 상태를 복구하며 기존 fingerprint 기준은 유지해 실제 source 변화 여부를 다시 비교합니다. 이 비교는 저장된 receipt가 아니며 합성 결과를 atomic snapshot으로 바꾸지 않습니다. Tenant 전환이나 연속 재확인 뒤 늦게 도착한 overview 응답은 화면과 비교 기준 모두 갱신하지 않습니다. Trajectory Stats, task-filtered Reviewed SFT export/freeze 목록, Training Readiness, Training Execution Request Records도 각각 같은 tenant의 최신 success/error만 반영하므로 이전 응답이 count, artifact 목록, freeze 승인 대상, two-person guard 기록을 되돌리지 않습니다. Execution request 저장 뒤 시작되는 새 목록 조회는 저장 전 진행 중 read를 무효화합니다. Training Audit Checklist는 request version, tenant, provider/model query를 함께 확인하고 planning 조건이 바뀌면 열린 checklist를 `RECHECK REQUIRED`로 낮추며 `Audit 저장` action을 제거합니다. 성공한 audit 저장은 진행 중 이전 checklist read를 무효화해 새 evidence가 가려지지 않게 합니다. Adapter Contract과 Rehearsal은 각자 request version·tenant·provider/model query가 현재 값과 맞을 때만 결과를 표시합니다. Planning 조건이 바뀌면 진행 중 응답을 무효화하고 기존 config 안전 표시와 rehearsal artifact reference를 `RECHECK REQUIRED`로 대체합니다. SFT Export Preview와 Reviewed SFT artifact 목록은 요청 시점의 task를, Training Plan Preview는 provider/model query를 현재 입력과 다시 대조하며, 입력 변경 시 열린 evidence와 진행 중 응답을 함께 무효화합니다. H74 이전 hash-only local record는 checksum 검증으로 읽되 `size_binding_verified=false`로 구분하며 새 artifact만 size binding을 주장합니다. Private trajectory metadata는 public record와 SFT source에서 제거하며 training, upload, provider API, model promotion guard는 계속 false입니다. 이 보장은 trajectory와 metadata 각 단일 mutable object의 CAS 및 참조 artifact 검증 범위이며 두 mutable object와 여러 artifact를 한 transaction으로 묶지 않습니다. Inventory는 atomic metadata snapshot 하나를 기준으로 여러 object를 순차 관측하므로 concurrent write와 함께 실행되면 재확인이 필요합니다. Metadata 확정 전에 process가 중단되면 비권위 orphan artifact가 남을 수 있고 API와 화면 모두 자동 삭제를 허용하지 않으므로 실제 정리 전 재확인이 필요합니다. 자동 GC, 64개를 넘는 trajectory review reconciliation, retry backoff·fairness와 실제 AWS/provider/training runtime은 검증 범위가 아닙니다.
 - Freeze·dry-run approval·execution request·audit export는 caller가 보낸 optional `operation_id`와 canonical request payload SHA-256을 private trajectory metadata에 함께 결속합니다. 같은 tenant·collection에서 동일 operation과 payload를 재생하면 원래 artifact의 size·SHA-256·tenant·identity를 다시 검증해 반환하고, payload가 다르면 `409 Conflict`로 중단합니다. Operation receipt의 부분 필드·잘못된 hash·중복 identity는 원본을 덮어쓰지 않고 fail closed 처리하며 public 목록에는 receipt를 노출하지 않습니다. 다만 artifact를 먼저 immutable publish한 뒤 metadata CAS를 확정하므로 같은 operation이 여러 worker에서 동시에 시작되면 CAS loser의 비권위 orphan이 남을 수 있습니다. 이 보장은 authoritative metadata record 중복 방지 범위이며 distributed transaction과 zero-orphan을 주장하지 않습니다.
+- DocumentOps Agent의 strict skill binding은 service가 private operation claim보다 먼저 resolve하고 canonical request identity에 포함합니다. Agent는 같은 binding을 다시 resolve해 expected binding과 다르면 provider property 접근 전에 중단합니다. 동일 operation ID를 다른 selected skill, skill source bytes 또는 catalog fingerprint에서 재사용하면 `409`이며 exact replay만 original binding/result/trajectory를 반환해 provider·usage call을 반복하지 않습니다. Authenticated run audit의 DocumentOps provenance는 task type, public binding SHA-256, replay 여부와 code-execution/external-runtime false authority만 남기며 instruction, source path, request/source body, credential, provider response를 남기지 않습니다. 실제 live provider와 AWS/S3 runtime에서의 binding retry는 이번 local 검증 범위가 아닙니다.
+- Browser는 Agent 응답의 `document_ops_skill_binding_v1`도 untrusted input으로 취급합니다. 정확한 eight-field public binding, safe skill name/semantic version, lowercase SHA-256 값, 두 literal false authority와 top-level `skill_name`/`skill_version` 일치를 모두 확인하기 전에는 draft·plan·evidence·QA·trajectory refresh·captured-operation marker cleanup·success notification을 실행하지 않습니다. 검증된 응답은 allowlisted skill/version, risk, full content/catalog hash, replay state와 code/external runtime not-authorized 상태만 compact provenance section에 표시하며 instruction, source path, request/source content, credential, provider payload나 authority 확장 field를 browser storage에 추가로 남기지 않습니다.
 - `capture_trajectory=true`인 DocumentOps Agent run은 optional `operation_id`를 사용할 수 있습니다. Backend는 provider 호출 전에 tenant별 private operation receipt를 conditional create하고 request SHA-256에 결속합니다. Exact replay는 저장된 성공 결과를 반환해 provider 호출과 usage event를 반복하지 않으며 changed payload는 `409`, 실행 중이거나 실패로 끝난 동일 operation은 증거 확인 전 자동 재호출하지 않고 `409`, 손상된 receipt는 provider 호출 전에 `503`으로 중단합니다. Conditional write 응답 유실은 exact receipt read-back으로 조정합니다. Tenant-scoped status API는 operation ID·상태·시각·다음 행동만 반환하고 owner, request/result hash와 결과 본문은 숨기며 조회 이력을 redacted audit에 남깁니다. Browser는 status schema, operation ID, state별 timestamp·replay·next-action, read-only와 provider-call 비승인 필드를 모두 확인한 뒤 terminal success에서만 같은 payload를 replay합니다. Mismatched·unavailable·running 상태는 captured tenant와 payload를 page memory에 보존하고 Agent 버튼과 상태 재확인 버튼을 같은 single-flight recovery에 연결해 새 POST를 시작하지 않습니다. Captured POST 직전에는 `{schema_version, tenant_id, operation_id}` 세 필드만 tenant-scoped same-origin `localStorage` key에 기록하고 원본 payload는 저장하지 않습니다. Shared storage가 막히면 같은 tenant의 `sessionStorage` key로 내려갑니다. `navigator.locks`가 있으면 tenant별 claim을 직렬화하므로 거의 동시에 시작한 두 tab도 Agent POST 1건과 기존 operation status 조회 1건으로 수렴합니다. 서로 다른 tenant marker는 같은 origin에서도 공존하고 foreign tenant read/write로 삭제되지 않습니다. 승인된 tenant 전환은 이전 tenant marker만 정리하며 H96 base-key marker는 owning tenant만 호환해 읽고 제거합니다. Shared/tab scoped marker를 모두 확인한 뒤에만 legacy marker를 fallback으로 사용하므로 새 marker가 오래된 base marker보다 우선합니다. Reload, tab close, 다른 same-origin tab은 marker로 status를 `no-store` 조회하고 새 POST를 막지만 payload가 없으므로 exact replay하지 않습니다. Operator가 상태 확인 종료를 선택할 때도 backend 실행은 취소되지 않으며 trajectory와 audit evidence를 확인해야 한다는 confirmation을 거칩니다. Tenant-scoped slot의 marker는 strict schema·tenant·browser UUID와 exact field set을 만족하지 않으면 제거하고, logout·invalid session에서도 현재 인증 맥락의 marker를 폐기합니다. 두 browser storage를 모두 사용할 수 없으면 same-page 실행은 계속되지만 reload·cross-tab guard는 제공되지 않습니다. Web Locks 미지원 환경에서는 먼저 기록된 shared marker를 따르지만 완전히 동시인 claim의 atomicity는 보장하지 않습니다. Capture하지 않는 요청은 이 복구 경로에 들어가지 않습니다. 이 보장은 같은 page exact replay와 same-origin browser의 status-only 중복 차단 범위이며 다른 browser/device, payload 없는 재실행, backend process crash 자동 복구, 서로 다른 operation ID의 의미상 중복 차단, exactly-once 실행, receipt expiry·GC는 제공하지 않습니다.
 - Root tenant registry는 local/S3의 단일 `tenants.json` object에서 conditional create/CAS로 갱신합니다. 충돌할 때마다 최신 target ownership·schema에 operation을 최대 32회 재적용하고 최근 private mutation receipt를 64개로 제한합니다. API key rotation은 한 번 생성한 plaintext와 hash를 같은 mutation에 결속하며, lost response는 현재 record가 유일한 active owned authentication target일 때만 성공으로 조정합니다. 실제 AWS runtime과 여러 state object를 묶는 transaction은 검증 범위가 아닙니다.
 - G2B 즐겨찾기 state는 local/S3 공통 backend에서 tenant/user ownership과 공고 identity를 검증하고 손상 원본을 보존합니다. Add/remove는 단일 bookmark object의 conditional create/CAS로 최신 state에 재적용하고 private bookmark identity와 최근 64개 mutation receipt로 불확실 commit 뒤 successor mutation을 조정합니다. 실제 G2B API 호출과 다른 state object를 함께 묶는 distributed transaction은 검증 범위가 아닙니다.
@@ -380,7 +437,7 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 - 공개 공유 state는 tenant별 `shares.json`에 conditional create/CAS를 적용합니다. 충돌마다 최신 ownership·schema와 lifecycle 위에 create/access/revoke를 재적용하고 최근 mutation receipt를 64개로 제한해 commit 응답 유실 뒤 successor CAS도 조정합니다. 이미 취소된 링크는 최초 취소자와 시각을 보존합니다. 이 보장은 단일 share state object 범위이고 실제 AWS runtime, 다른 state object와의 distributed transaction, 운영 URL의 외부 접근성은 검증 범위가 아닙니다.
 - Procurement review record·원본 packet·reviewed-package는 local/S3 공통 backend의 tenant/project/packet SHA-256 경로에 함께 결속합니다. Blank·malformed·invalid UTF-8·duplicate key/identity, artifact 누락·변조와 backend failure는 빈 검토함, 새 packet 또는 사용자 입력 충돌로 축소하지 않고 `500 INTERNAL_ERROR`로 중단하며 원본 bytes를 보존합니다. Pending receipt와 완료 package의 embedded receipt/manifest까지 semantic하게 다시 대조합니다. Packet은 exact orphan bytes만 재사용하고 reviewed-package는 content-addressed 경로에 immutable하게 쓴 뒤 record를 CAS로 전환합니다. S3는 `If-None-Match`/`If-Match`, local은 conditional file lock과 atomic write를 사용하며 commit 결과가 불확실하면 read-back으로 조정합니다. 여러 artifact를 한 번에 commit하는 distributed transaction과 실제 AWS S3 runtime 검증은 범위 밖입니다.
 - 프로젝트 procurement review는 원본 packet SHA256과 tenant/project 경계에 묶인 검토 증빙입니다. Packet preparation은 활성 tenant admin/member username을 stable user ID에 결속하고, completion은 그 assignee의 current session-bound JWT만 허용합니다. Packet 생성, 검토함, 프로젝트 이력과 reviewed package 다운로드도 session-bound admin/member만 사용할 수 있습니다. Admin은 tenant 전체를 보고 활성 admin/member에게 지정할 수 있으며, member는 자신에게 지정된 v2 record만 보고 자신에게만 지정할 수 있습니다. API key, Ops key, sessionless JWT, viewer와 client-supplied reviewer text는 이 경로의 authority가 아닙니다. v1 package는 admin만 다운로드합니다. HTTP summary는 receipt, rationale, stable user ID, attestation과 session/network metadata를 숨기고 assigned reviewer, current-user assignment, completion username, access scope와 검토 상태만 제공합니다. v2 reviewed package verifier는 tenant/project/stable reviewer scope를 외부에서 받아 attestation을 재검증하고, 동일 assignee의 동일 decision/rationale 재전송만 persisted package exact replay로 복구합니다. Audit은 actor identity와 packet/decision/package hash, access scope와 authorized count를 남기되 target stable ID, rationale, attestation body, session ID, token, IP, User-Agent를 저장하지 않습니다. 현재 source와 일치하는 완료 review는 downstream 생성 문맥과 project document provenance에 이어집니다. 이후 procurement decision이 바뀌면 해당 문서는 stale review로 다시 분류되고, 프로젝트 문서 목록·결재 요청·공유 링크에 경고와 재검토 동선이 표시됩니다. 완료 receipt와 reviewed-package를 포함해 운영 승인, provider 호출, 입찰 제출을 실행하거나 허가하지 않습니다.
-- Decision Evidence Map은 여러 tenant-scoped record를 순차 관측해 합성하는 `read_only=true`, `snapshot_atomic=false` projection입니다. Evidence Neighborhood Explorer의 browser state는 tenant/user/auth revision/project/bundle/fingerprint에 결속하며, one-hop focus, relation provenance, diagnostic navigation과 presentation layout은 같은 bounded response를 읽기 전용으로 표시할 뿐 authority를 추가하지 않습니다. Guided Decision Review도 같은 map의 exact v1 shape와 false authority flags를 검증한 뒤 decision, evidence, review, document section으로 local scroll/focus만 수행합니다. 명시적 H126 handoff download는 canonical JSON body SHA-256과 projection fingerprint를 검증하지만 `handoff_persisted=false`, `requires_recheck_before_reliance=true`이며 source reads를 atomic snapshot으로 바꾸지 않습니다. H127 recheck는 browser가 검증한 source를 page memory에만 두고 fresh handoff와 `source_generated_at`을 제외한 semantic fingerprint를 비교합니다. Exact-hash receipt의 `unchanged`는 비교 시점의 semantic equality일 뿐 future currentness나 atomic snapshot이 아니며, client-supplied source hash는 prior server issuance를 증명하지 않습니다. H128 disposition은 browser가 검증한 H127 receipt를 page memory에만 두고 status별 allowlist를 적용한 exact binding receipt를 만들지만 reviewer identity를 결속하거나 receipt를 server-side에 저장하지 않습니다. `changed` receipt 뒤에는 stale H126 source를 폐기하며 disposition은 `new_handoff_required|review_deferred`로 제한합니다. Map, handoff 또는 receipt가 malformed/authority-drifted이면 panel 또는 download를 차단하고 다른 payload에서 evidence state를 추론하지 않습니다. Accepted review는 current freshness가 아니고, document status도 관측된 canonical 상태가 모두 `current`일 때만 current로 표시합니다. Edge line style과 content SHA-256은 provenance level과 observed field-content binding을 설명할 뿐 proof, approval 또는 external authenticity를 주장하지 않습니다. Exact canonical `requirement:` reference만 explicit reference coverage를 만들며 이것은 요구사항 충족 증명이 아닙니다. Proposal Blueprint의 PPTX node는 기존 export path의 readiness만 나타내고 durable export receipt나 실제 export 실행을 주장하지 않습니다. Map 조회, 두 UI surface, handoff download, read-only recheck와 disposition은 approval, export execution, provider call, bid submission, legal approval, contractual commitment를 허가하거나 실행하지 않습니다.
+- Decision Evidence Map은 여러 tenant-scoped record를 순차 관측해 합성하는 `read_only=true`, `snapshot_atomic=false` projection입니다. Evidence Neighborhood Explorer와 H125–H128은 tenant/user/auth revision/project/bundle/fingerprint와 exact canonical SHA-256을 검증하지만 sequential reads를 atomic snapshot으로 만들지 않습니다. H128 success는 selected local/S3 backend에서 tenant/project/bundle/exact receipt SHA-256 content-addressed issuance metadata를 conditional-create 후 exact read-back한 결과이며 receipt body·reviewer·session/network/token/rationale/secret을 저장하지 않습니다. H129 v2는 그 authoritative issuance metadata와 hash를 record binding에 포함하고, v1 record는 migration/rewrite 없이 `legacy issuance unrecorded`로 취급합니다. Exact replay는 username·role 변경 뒤에도 최초 canonical bytes와 historical identity/time을 반환하고, stable reviewer 또는 source hash 변경은 `409`입니다. Member list는 자신의 stable identity record만 반환하고 summary는 nested receipt, stable ID, request/full-record binding을 숨깁니다. H129 wrapper만 `reviewer_identity_bound=true`, `registry_record_persisted=true`이며 nested H128은 계속 identity-unbound/non-persisted입니다. Corrupt·noncanonical·foreign-scope·unavailable registry는 source bytes를 고치지 않고 fail closed 처리합니다. Same-backend issuance proof는 signature, actor attestation, currentness, atomic snapshot, approval 또는 external authenticity가 아니며 이 기록은 reviewer attribution evidence일 뿐 승인, mutation, export execution, provider call, bid submission, legal approval 또는 contractual commitment가 아닙니다. M1/M2/M6, human UAT, deployment와 external approval gap도 닫지 않습니다.
 - Final review packet은 모든 bundle의 사람 검토가 완료된 receipt에서만 생성됩니다. 현재 tracked sample은 `pending`이라 packet을 제공하지 않습니다.
 
 ---
@@ -394,4 +451,4 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 289 · 테스트 3,719 · env 키 94 등)는 소스 코드에서 직접 카운트했으며, 재현 커맨드를 함께 표기했습니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 296 · 테스트 3,857 · env 키 95 등)는 소스 코드에서 직접 카운트했으며, 테스트 수는 Python AST `test_` 정의 기준이고 pass 수가 아닙니다. 재현은 `python3 scripts/count_readme_metrics.py --field test_functions`를 사용합니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

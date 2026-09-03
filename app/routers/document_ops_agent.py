@@ -1,15 +1,20 @@
 """Internal DocumentOps agent endpoints."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 from datetime import UTC, datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import Response
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+from fastapi.responses import JSONResponse, Response
 
+from app.agents.schemas import (
+    DocumentOpsSkillBinding,
+    document_ops_skill_binding_sha256,
+)
 from app.auth.api_key import require_api_key
 from app.auth.ops_key import require_ops_key
 from app.dependencies import get_tenant_id, get_username
@@ -20,6 +25,9 @@ from app.middleware.document_ops_audit import (
 )
 from app.schemas import (
     DocumentOpsAgentRunRequest,
+    DocumentOpsComparisonChangeSetRequest,
+    DocumentOpsComparisonChangeSetResponse,
+    DocumentOpsComparisonDocumentResponse,
     DocumentOpsDatasetFreezeRequest,
     DocumentOpsTrainingAuditExportRequest,
     DocumentOpsTrajectoryExportPreviewRequest,
@@ -36,6 +44,15 @@ from app.services.document_ops_service import (
     DocumentOpsRunUnavailableError,
 )
 from app.services.generation.context_store import record_direct_provider_usage
+from app.services.document_ops_comparison_intake import (
+    ComparisonDocumentIntakeError,
+    MAX_COMPARISON_DOCUMENT_BYTES,
+    extract_comparison_document,
+)
+from app.services.document_ops_comparison import (
+    build_document_ops_comparison_change_set,
+    canonical_document_ops_comparison_change_set_bytes,
+)
 
 router = APIRouter(prefix="/api/agent/document-ops", tags=["document-ops-agent"])
 
@@ -54,14 +71,86 @@ def _human_feedback(trajectory: dict) -> dict:
     return feedback if isinstance(feedback, dict) else {}
 
 
+def _record_agent_skill_binding(
+    request: Request,
+    binding: DocumentOpsSkillBinding,
+) -> None:
+    request.state.document_ops_agent_skill_binding_sha256 = (
+        document_ops_skill_binding_sha256(binding)
+    )
+
+
+@router.post(
+    "/comparison-documents/change-set",
+    dependencies=[Depends(require_not_maintenance), Depends(require_api_key)],
+    response_model=DocumentOpsComparisonChangeSetResponse,
+)
+def create_document_ops_comparison_change_set(
+    payload: DocumentOpsComparisonChangeSetRequest,
+    request: Request,
+) -> Response:
+    """Return deterministic, ephemeral line evidence without provider or storage effects."""
+    request.state.audit_action = "document_ops.comparison_change_set"
+    result = build_document_ops_comparison_change_set(payload)
+    body = canonical_document_ops_comparison_change_set_bytes(result)
+    body_sha256 = hashlib.sha256(body).hexdigest()
+    return Response(
+        content=body,
+        media_type="application/json",
+        headers={
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Disposition": 'attachment; filename="document-ops-comparison-change-set.json"',
+            "X-DecisionDoc-Document-Comparison-SHA256": body_sha256,
+        },
+    )
+
+
+@router.post(
+    "/comparison-documents/extract",
+    dependencies=[Depends(require_not_maintenance), Depends(require_api_key)],
+    response_model=DocumentOpsComparisonDocumentResponse,
+)
+async def extract_document_ops_comparison_document(
+    request: Request,
+    file: UploadFile = File(...),
+) -> JSONResponse:
+    """Extract a single comparison document without provider or storage effects."""
+    request.state.audit_action = "document_ops.comparison_document_extract"
+    try:
+        if len((await request.form()).getlist("file")) != 1:
+            raise ComparisonDocumentIntakeError(
+                "exactly one comparison document file is required",
+            )
+        raw = await file.read(MAX_COMPARISON_DOCUMENT_BYTES + 1)
+        response = extract_comparison_document(filename=file.filename, raw=raw)
+    except ComparisonDocumentIntakeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    finally:
+        await file.close()
+    return JSONResponse(
+        content=response.model_dump(),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 @router.post("/run", dependencies=[Depends(require_not_maintenance), Depends(require_api_key)])
 def run_document_ops_agent(payload: DocumentOpsAgentRunRequest, request: Request) -> dict:
+    request.state.audit_action = "document_ops.agent_run"
+    request.state.document_ops_agent_task_type = payload.task_type
+    request.state.document_ops_agent_operation_replayed = False
+    request.state.document_ops_agent_code_execution_authorized = False
+    request.state.document_ops_agent_external_runtime_authorized = False
     tenant_id = get_tenant_id(request)
     try:
-        return _service(request).run(
+        result = _service(request).run(
             payload.model_dump(),
             tenant_id=tenant_id,
             request_id=request.state.request_id,
+            record_skill_binding=lambda binding: _record_agent_skill_binding(
+                request,
+                binding,
+            ),
             record_provider_usage=lambda provider: record_direct_provider_usage(
                 request,
                 provider,
@@ -76,6 +165,12 @@ def run_document_ops_agent(payload: DocumentOpsAgentRunRequest, request: Request
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    binding = DocumentOpsSkillBinding.model_validate(result["skill_binding"])
+    _record_agent_skill_binding(request, binding)
+    request.state.document_ops_agent_operation_replayed = result.get(
+        "operation_replayed"
+    ) is True
+    return result
 
 
 @router.get("/run-operations/{operation_id}", dependencies=[Depends(require_api_key)])
@@ -96,6 +191,12 @@ def get_document_ops_run_operation_status(operation_id: str, request: Request) -
     request.state.document_ops_operation_status = status["status"]
     request.state.document_ops_operation_replay_available = status["replay_available"]
     return status
+
+
+@router.get("/skills", dependencies=[Depends(require_api_key)])
+def list_document_ops_skills(request: Request) -> dict:
+    """Expose only safe registry metadata; this route never calls a provider."""
+    return _service(request).skill_catalog()
 
 
 @router.get("/trajectories", dependencies=[Depends(require_api_key)])

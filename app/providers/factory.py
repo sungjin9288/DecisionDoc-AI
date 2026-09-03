@@ -1,6 +1,11 @@
 import os
 
 from app.ai.pipeline import FallbackPipeline
+from app.free_mode import (
+    FreeModeConfigurationError,
+    validate_free_local_llm_url,
+    validate_free_provider_names,
+)
 from app.providers.base import Provider, ProviderError
 from app.providers.claude_provider import ClaudeProvider
 from app.providers.gemini_provider import GeminiProvider
@@ -38,10 +43,18 @@ def _resolve_provider_names(capability: str | None = None) -> list[str]:
             if override.strip():
                 names = _parse_provider_names(override)
                 if names:
+                    try:
+                        validate_free_provider_names(names)
+                    except FreeModeConfigurationError as exc:
+                        raise ProviderError(str(exc)) from exc
                     return names
     names = _parse_provider_names(os.getenv("DECISIONDOC_PROVIDER", "mock"))
     if not names:
         raise ProviderError("Provider configuration error.")
+    try:
+        validate_free_provider_names(names)
+    except FreeModeConfigurationError as exc:
+        raise ProviderError(str(exc)) from exc
     return names
 
 
@@ -93,8 +106,13 @@ def _make_single_provider(name: str, model_override: str | None = None) -> Provi
             get_local_llm_model,
             get_local_llm_timeout,
         )
+        base_url = get_local_llm_base_url()
+        try:
+            validate_free_local_llm_url(base_url)
+        except FreeModeConfigurationError as exc:
+            raise ProviderError(str(exc)) from exc
         return LocalProvider(
-            base_url=get_local_llm_base_url(),
+            base_url=base_url,
             model=model_override or get_local_llm_model(),
             api_key=get_local_llm_api_key(),
             timeout=get_local_llm_timeout(),

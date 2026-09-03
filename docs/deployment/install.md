@@ -24,14 +24,10 @@ cd DecisionDoc-AI
 chmod +x scripts/*.sh
 ./scripts/setup.sh
 
-# 3. API 키 설정
-vi .env
-# OPENAI_API_KEY=sk-... 입력
-
-# 4. 서비스 시작
+# 3. 무료 서비스 시작 (mock provider + local storage)
 docker compose up -d
 
-# 5. 접속 확인
+# 4. 접속 확인
 curl http://localhost:3300/health
 ```
 
@@ -51,6 +47,8 @@ curl http://localhost:3300/health
 | 추천 상황 | 온프레미스/내부망, 빠른 PoC/내부 운영 | SaaS/다중 환경 운영, 배포 규율 필요 |
 
 선택 요약:
+- 비용 없는 local 검증은 `python3 scripts/run_free_local.py --provider mock --reload` 또는 기본 `docker compose up -d`를 사용합니다.
+- 실제 local 생성은 Ollama를 실행한 뒤 `python3 scripts/run_free_local.py --provider local --reload`를 사용합니다.
 - 내부망/간단 운영이면 Docker 경로가 가장 빠릅니다.
 - 배포 권한 분리, 자동 확장, stage/prod 분리 운영이 필요하면 AWS SAM 경로를 사용합니다.
 
@@ -106,14 +104,29 @@ curl -fsSL https://ollama.ai/install.sh | sh
 # 모델 다운로드 (인터넷 연결 시)
 ollama pull llama3.1:8b
 
-# .env 설정
-DECISIONDOC_PROVIDER=local
-LOCAL_LLM_BASE_URL=http://localhost:11434/v1
-LOCAL_LLM_MODEL=llama3.1:8b
-
-# 서비스 시작
-docker compose up -d
+# fail-closed 무료 모드로 서비스 시작
+python3 scripts/run_free_local.py --provider local --reload
 ```
+
+`DECISIONDOC_FREE_MODE=1`은 cloud LLM provider, S3 storage/state와 remote
+OpenAI-compatible endpoint를 거부합니다. Local provider는 generation만 처리하며
+attachment OCR/vision과 direct visual asset generation은 mock으로 유지됩니다.
+Local endpoint host는 `localhost`, `127.0.0.1`, `::1`, `ollama`,
+`host.docker.internal`만 허용되고 URL userinfo, query, fragment는 거부됩니다.
+이 검사는 `LocalProvider` constructor에서 HTTP client 생성 전에 수행됩니다.
+`run_free_local.py`는 inherited AWS credential source, ops key, web search,
+G2B live collection, SMTP/Slack, Stripe, Statuspage, Voice Brief remote 설정도
+child environment에서 비활성화합니다. Remote 또는 credential-bearing
+local-LLM URL은 loopback 기본값으로 교체합니다.
+
+`GET /local-llm/health`와 `GET /local-llm/models`는
+`DECISIONDOC_PROVIDER_GENERATION`을 우선해 local generation provider를 확인합니다.
+Local provider가 없으면 network 요청 없이 동일한 `not_configured` 응답을
+반환하고, 거부된 free-mode URL은 두 endpoint 모두 `503 configuration_error`로
+종료합니다. 구성된 두 endpoint는 같은 `LocalProvider.health_check()` 결과를
+사용하며 models 응답은 `models`와 `current`를 유지합니다.
+AWS 또는 cloud provider로 전환할 때는 production 환경에
+`DECISIONDOC_FREE_MODE=0`을 명시하고 별도 배포 검증을 수행합니다.
 
 ---
 

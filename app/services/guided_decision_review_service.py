@@ -16,6 +16,7 @@ from app.schemas.decision_evidence import (
     GuidedDecisionReviewNextCheck,
     GuidedDecisionReviewRecheckReceipt,
     GuidedDecisionReviewStage,
+    require_complete_guided_decision_review_disposition_receipt,
     require_complete_guided_decision_review_handoff,
     require_complete_guided_decision_review_recheck_receipt,
 )
@@ -420,6 +421,72 @@ class GuidedDecisionReviewService:
         )
         if receipt.review_state_status != expected_status:
             raise ValueError("review state status does not match")
+        return receipt
+
+    def validate_disposition_receipt(
+        self,
+        receipt: GuidedDecisionReviewDispositionReceipt,
+        *,
+        expected_sha256: str,
+        expected_project_id: str,
+        expected_bundle_type: str,
+    ) -> GuidedDecisionReviewDispositionReceipt:
+        """Revalidate one exact H128 receipt before durable identity binding."""
+        require_complete_guided_decision_review_disposition_receipt(receipt)
+        try:
+            receipt = GuidedDecisionReviewDispositionReceipt.model_validate(
+                receipt.model_dump(mode="json"),
+                strict=True,
+            )
+        except ValidationError as exc:
+            raise ValueError("invalid source disposition receipt") from exc
+        if (
+            hashlib.sha256(self.serialize_disposition(receipt)).hexdigest()
+            != expected_sha256
+        ):
+            raise ValueError("source_disposition_receipt_sha256 does not match")
+        if (
+            receipt.project_id != expected_project_id
+            or receipt.bundle_type != expected_bundle_type
+        ):
+            raise ValueError("source disposition receipt scope does not match")
+
+        recheck = self.validate_recheck_receipt(
+            receipt.source_recheck_receipt,
+            expected_sha256=receipt.source_recheck_receipt_sha256,
+            expected_project_id=expected_project_id,
+        )
+        if recheck.current_handoff.bundle_type != expected_bundle_type:
+            raise ValueError("source disposition receipt bundle does not match")
+        if (
+            receipt.current_handoff_sha256 != recheck.current_handoff_sha256
+            or receipt.current_review_state_fingerprint_sha256
+            != recheck.current_review_state_fingerprint_sha256
+            or receipt.review_state_status != recheck.review_state_status
+        ):
+            raise ValueError("source disposition receipt projection does not match")
+
+        allowed = {
+            "unchanged": {"acknowledged_unchanged", "review_deferred"},
+            "changed": {"new_handoff_required", "review_deferred"},
+        }
+        if receipt.review_disposition not in allowed[receipt.review_state_status]:
+            raise ValueError("review disposition does not match review state")
+        binding = {
+            "project_id": expected_project_id,
+            "bundle_type": expected_bundle_type,
+            "source_recheck_receipt_sha256": receipt.source_recheck_receipt_sha256,
+            "current_handoff_sha256": receipt.current_handoff_sha256,
+            "current_review_state_fingerprint_sha256": (
+                receipt.current_review_state_fingerprint_sha256
+            ),
+            "review_state_status": receipt.review_state_status,
+            "review_disposition": receipt.review_disposition,
+        }
+        if receipt.disposition_binding_sha256 != hashlib.sha256(
+            canonical_json(binding).encode("utf-8")
+        ).hexdigest():
+            raise ValueError("disposition binding does not match")
         return receipt
 
     @staticmethod

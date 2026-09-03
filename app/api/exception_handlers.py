@@ -18,6 +18,7 @@ from app.services.generation_service import (
     provider_failure_retry_after_seconds,
 )
 from app.storage.base import StorageFailedError
+from app.storage.generation_export_source_store import GenerationExportSourceStoreError
 from app.storage.usage_store import UsageStoreError
 from app.services.validator import DocumentValidationError
 
@@ -46,6 +47,18 @@ def _error_response(
 
 
 def install_exception_handlers(app: FastAPI) -> None:
+    @app.exception_handler(GenerationExportSourceStoreError)
+    async def generation_export_source_handler(
+        request: Request,
+        exc: GenerationExportSourceStoreError,  # noqa: ARG001
+    ):
+        return _error_response(
+            request,
+            code="EXPORT_SOURCE_UNAVAILABLE",
+            message="Export source could not be persisted.",
+            status_code=503,
+        )
+
     @app.exception_handler(UsageStoreError)
     async def usage_store_handler(request: Request, exc: UsageStoreError):  # noqa: ARG001
         return _error_response(

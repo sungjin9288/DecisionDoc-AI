@@ -6,7 +6,7 @@ Coverage:
   JWT service unit   : create/verify access token, expired token, invalid token,
                        refresh token type
   Auth middleware    : public paths, current role/active state, missing token → 401,
-                       viewer write restrictions, realtime query-token authority
+                       viewer write restrictions, realtime Bearer-token authority
   Login endpoint     : success returns tokens+user, wrong password, inactive user
   Register endpoint  : first user → admin, second call → 403
   Message tests      : post + get_thread, mention parsing, unread count
@@ -292,12 +292,11 @@ def test_auth_login_endpoint_is_public(tmp_path, monkeypatch):
     assert res.status_code == 401  # credential error, not middleware block
 
 
-def test_events_endpoint_is_public_even_when_users_exist(tmp_path, monkeypatch):
-    """/events must stay public because the EventSource client authenticates via query token."""
+def test_events_endpoint_uses_protected_bearer_auth(tmp_path, monkeypatch):
     from app.middleware.auth import PUBLIC_PATHS
 
     client = _make_client(tmp_path, monkeypatch)
-    client.post(
+    registered = client.post(
         "/auth/register",
         json={
             "username": "admin",
@@ -306,23 +305,24 @@ def test_events_endpoint_is_public_even_when_users_exist(tmp_path, monkeypatch):
             "password": "AdminPass1!",
         },
     )
+    token = registered.json()["access_token"]
 
-    assert "/events" in PUBLIC_PATHS
+    assert "/events" not in PUBLIC_PATHS
+    assert client.get(f"/events?token={token}").status_code == 401
 
 
-def test_events_endpoint_rejects_missing_and_invalid_query_tokens(tmp_path, monkeypatch):
+def test_events_endpoint_rejects_missing_and_invalid_bearer_tokens(tmp_path, monkeypatch):
     client = _make_client(tmp_path, monkeypatch)
+    _register_and_login(client)
 
     missing = client.get("/events")
-    invalid = client.get("/events?token=invalid")
+    invalid = client.get("/events", headers={"Authorization": "Bearer invalid"})
 
     assert missing.status_code == 401
     assert invalid.status_code == 401
-    assert missing.headers["www-authenticate"] == "Bearer"
-    assert invalid.headers["www-authenticate"] == "Bearer"
 
 
-def test_events_query_token_requires_access_scope_and_valid_tenant(monkeypatch):
+def test_events_bearer_token_requires_access_scope_and_valid_tenant(monkeypatch):
     from fastapi import HTTPException
 
     from app.routers import events

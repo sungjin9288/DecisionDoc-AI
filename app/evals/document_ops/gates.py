@@ -102,6 +102,17 @@ def evaluate_document_ops_output(
             )
         )
 
+    if task_type == "document_comparison_review" and not _contains_comparison_sections(draft_text):
+        issues.append(
+            DocumentOpsGateIssue(
+                code="missing_comparison_sections",
+                severity="blocker",
+                affected_field="draft",
+                message="문서 비교에 필요한 관찰·근거/가정·결정 영향·거버넌스·권고·사람 재확인 섹션이 부족합니다.",
+                remediation_hint="관찰된 변경, 근거와 가정 변화, 결정 및 트레이드오프 영향, 권한·거버넌스 경계, 권고, 사람 재확인 질문을 각각 명시하세요.",
+            )
+        )
+
     if not draft_text.strip() or len(draft_text.strip()) < 80:
         issues.append(
             DocumentOpsGateIssue(
@@ -234,6 +245,19 @@ def _heading_count(text: str) -> int:
 
 def _contains_any(text: str, patterns: tuple[str, ...]) -> bool:
     return any(pattern in text for pattern in patterns)
+
+
+def _contains_comparison_sections(text: str) -> bool:
+    required_groups = (
+        ("관찰된 변경", "observed changes"),
+        ("근거와 가정 변화", "evidence and assumption delta"),
+        ("결정 및 트레이드오프 영향", "decision and trade-off impact"),
+        ("권한·거버넌스 경계", "authority or governance boundary"),
+        ("권고", "recommendation"),
+        ("사람 재확인 질문", "human recheck questions"),
+    )
+    lowered = text.casefold()
+    return all(any(marker.casefold() in lowered for marker in group) for group in required_groups)
 
 
 def _string_list(value: Any) -> list[str]:

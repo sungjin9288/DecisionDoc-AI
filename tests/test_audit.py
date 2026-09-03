@@ -101,6 +101,36 @@ def test_audit_store_append(tmp_path):
     assert entries[0]["action"] == "doc.generate"
 
 
+def test_generate_export_zip_audits_safe_download(tmp_path, monkeypatch):
+    client = _make_client(tmp_path, monkeypatch)
+    login = _register_and_login(client, username="export_audit_user")
+    from app.routers.generate import _store_zip_docs
+    from app.storage.audit_store import AuditStore
+
+    _store_zip_docs(
+        "export-audit-source",
+        [{"doc_type": "adr", "markdown": "private export body"}],
+        "private export title",
+        source_store=client.app.state.generation_export_source_store,
+    )
+    response = client.get(
+        "/generate/export-zip?request_id=export-audit-source",
+        headers=_auth(login),
+    )
+
+    assert response.status_code == 200
+    entries = AuditStore(
+        "system",
+        data_dir=client.app.state.data_dir,
+        backend=client.app.state.state_backend,
+    ).query()
+    entry = next(item for item in entries if item["action"] == "doc.download")
+    assert entry["resource_type"] == "document"
+    assert entry["detail"]["path"] == "/generate/export-zip"
+    assert entry["detail"]["status_code"] == 200
+    assert "private export" not in json.dumps(entry, ensure_ascii=False)
+
+
 def test_audit_store_append_only_no_delete(tmp_path):
     """AuditStore must not expose any delete or modify methods."""
     os.environ["DATA_DIR"] = str(tmp_path)
@@ -554,6 +584,7 @@ def test_resolve_action_explicit_document_ops_events_preserves_access_failures()
     assert _resolve_action("GET", "/api/agent/document-ops/trajectories/stats", 200) == ""
     assert ACTION_TYPES["document_ops.trajectory_view"] == "DocumentOps 이력 상세 조회"
     assert ACTION_TYPES["document_ops.trajectory_review"] == "DocumentOps 사람 검토"
+    assert ACTION_TYPES["document_ops.agent_run"] == "DocumentOps Agent 실행"
     assert (
         ACTION_TYPES["document_ops.agent_run_operation_view"]
         == "DocumentOps Agent 실행 상태 조회"

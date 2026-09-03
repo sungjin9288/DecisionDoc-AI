@@ -1025,6 +1025,138 @@ def test_index_html_document_ops_agent_run_keeps_the_latest_result():
     assert "_documentOpsLastResult" not in content
 
 
+def test_index_html_document_ops_agent_validates_exact_public_skill_binding():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    start = content.index("function documentOpsValidatedSkillBinding(value)")
+    end = content.index("function documentOpsExecutionProvenance", start)
+    validator = content[start:end]
+    provenance_start = end
+    provenance_end = content.index(
+        "function renderDocumentOpsProvenanceVerificationError",
+        provenance_start,
+    )
+    provenance = content[provenance_start:provenance_end]
+
+    assert (
+        "const DOCUMENT_OPS_SKILL_BINDING_KEYS = "
+        "'catalog_fingerprint,code_execution_authorized,content_sha256,"
+        "external_runtime_authorized,risk_level,schema_version,skill_name,skill_version';"
+    ) in content
+    assert "DOCUMENT_OPS_SKILL_BINDING_KEYS" in validator
+    assert "document_ops_skill_binding_v1" in validator
+    assert "DOCUMENT_OPS_SKILL_NAME_PATTERN" in validator
+    assert "DOCUMENT_OPS_SKILL_VERSION_PATTERN" in validator
+    assert "DOCUMENT_OPS_SHA256_PATTERN" in validator
+    assert "['low', 'medium', 'high']" in validator
+    assert "value.code_execution_authorized !== false" in validator
+    assert "value.external_runtime_authorized !== false" in validator
+    assert "function documentOpsExecutionProvenance(data, payload)" in provenance
+    assert "data.task_type !== payload.task_type" in provenance
+    assert "data.skill_name !== binding.skillName" in provenance
+    assert "data.skill_version !== binding.skillVersion" in provenance
+    assert "data.operation_replayed !== undefined" in provenance
+    assert "typeof data.operation_replayed !== 'boolean'" in provenance
+    assert "replayState: data.operation_replayed === true ? 'exact replay' : 'first run'" in provenance
+
+
+def test_index_html_document_ops_comparison_mode_is_discoverable_and_strict():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    run_start = content.index("async function runDocumentOpsAgent()")
+    run_end = content.index("function renderDocumentOpsExecutionProvenance", run_start)
+    run_block = content[run_start:run_end]
+    comparison_validator_start = content.index("function documentOpsValidatedComparisonContext(value)")
+    comparison_validator_end = content.index("function documentOpsExecutionProvenance", comparison_validator_start)
+    comparison_validator = content[comparison_validator_start:comparison_validator_end]
+
+    for marker in (
+        'value="source_grounded_document"',
+        'value="source-grounded-document"',
+        'value="document_comparison_review"',
+        'value="document-comparison-review"',
+        'id="docops-comparison-inputs"',
+        'id="docops-baseline-document"',
+        'id="docops-candidate-document"',
+        'id="docops-comparison-criteria"',
+        "function syncDocumentOpsComparisonControls()",
+        "documentOpsComparisonContextMatchesInput(payload, provenance)",
+        "function renderDocumentOpsComparisonContext(context)",
+    ):
+        assert marker in content
+
+    assert "documentOpsTaskSkill(taskType)" in content
+    assert "return 'document-comparison-review';" in content
+    assert "document_ops_comparison_context_v1" in comparison_validator
+    assert "DOCUMENT_OPS_COMPARISON_CONTEXT_KEYS" in comparison_validator
+    assert "value.raw_content_included !== false" in comparison_validator
+    assert "documentOpsComparisonCriteriaAreNormalized(value.comparison_criteria)" in comparison_validator
+    assert "comparisonRequest = payload.task_type === 'document_comparison_review'" in content
+    assert "binding.skillName !== 'document-comparison-review'" in content
+    assert "!comparisonRequest && data.comparison_context != null" in content
+    assert "new TextEncoder().encode(value)" in content
+    assert "!await documentOpsComparisonContextMatchesInput(payload, provenance)" in run_block
+    assert run_block.index("if (comparisonMode && !baselineDocumentText.trim())") < run_block.index(
+        "claimDocumentOpsPendingRunMarker"
+    )
+    assert run_block.index("if (comparisonMode && !candidateDocumentText.trim())") < run_block.index(
+        "claimDocumentOpsPendingRunMarker"
+    )
+
+
+def test_index_html_document_ops_agent_rejects_before_success_effects():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    run_start = content.index("async function runDocumentOpsAgent()")
+    run_end = content.index("function renderDocumentOpsExecutionProvenance", run_start)
+    run_block = content[run_start:run_end]
+    recovery_start = content.index("async function performDocumentOpsAgentRecovery()")
+    recovery_end = content.index("async function recoverDocumentOpsAgentRun()", recovery_start)
+    recovery_block = content[recovery_start:recovery_end]
+
+    run_validation = run_block.index(
+        "const provenance = documentOpsExecutionProvenance(data, payload);"
+    )
+    post_validation = run_block[run_validation:]
+    assert "!await documentOpsComparisonContextMatchesInput(payload, provenance)" in post_validation
+    assert post_validation.index("if (!runIsCurrent()) {") < post_validation.index(
+        "if (payload.operation_id) clearDocumentOpsPendingRunMarker"
+    )
+    assert post_validation.index("if (!runIsCurrent()) {") < post_validation.index(
+        "await presentDocumentOpsAgentResult(data, provenance);"
+    )
+    assert "renderDocumentOpsProvenanceVerificationError(resultEl);" in post_validation
+
+    recovery_validation = recovery_block.index(
+        "const provenance = documentOpsExecutionProvenance(data, pending.payload);"
+    )
+    assert "!await documentOpsComparisonContextMatchesInput(pending.payload, provenance)" in recovery_block
+    assert recovery_validation < recovery_block.index("if (data.operation_id !== operationId")
+    assert recovery_validation < recovery_block.index(
+        "await presentDocumentOpsAgentResult(data, provenance);"
+    )
+    assert recovery_validation < recovery_block.index(
+        "clearDocumentOpsPendingRunMarker(operationId);"
+    )
+
+
+def test_index_html_document_ops_agent_renders_only_allowlisted_provenance():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    start = content.index("function renderDocumentOpsExecutionProvenance(provenance)")
+    end = content.index("function renderDocumentOpsResult", start)
+    renderer = content[start:end]
+
+    assert 'class="docops-execution-provenance"' in renderer
+    assert 'aria-labelledby="document-ops-provenance-heading"' in renderer
+    assert "escapeHtml(provenance.skillName)" in renderer
+    assert "escapeHtml(provenance.skillVersion)" in renderer
+    assert "escapeHtml(provenance.riskLevel)" in renderer
+    assert "escapeHtml(provenance.contentSha256)" in renderer
+    assert "escapeHtml(provenance.catalogFingerprint)" in renderer
+    assert "escapeHtml(provenance.replayState)" in renderer
+    assert "code execution: not authorized · external runtime: not authorized" in renderer
+    assert "data." not in renderer
+    for forbidden in ("source_path", "instruction", "credential", "provider", "approval", "publication"):
+        assert forbidden not in renderer
+
+
 def test_index_html_exports_current_generated_docs_before_regenerating():
     content = open("app/static/index.html", encoding="utf-8").read()
     export_blob_fn = re.search(
@@ -1067,7 +1199,7 @@ def test_index_html_keeps_blob_url_and_shows_download_fallback():
 def test_index_html_result_download_actions_use_event_listeners():
     content = open("app/static/index.html", encoding="utf-8").read()
     block_start = content.index("function renderDownloadButtons(requestId, title)")
-    block_end = content.index("async function exportZip(requestId)", block_start)
+    block_end = content.index("async function exportZip(requestId, options = {})", block_start)
     block = content[block_start:block_end]
 
     assert not re.search(r"\son[a-zA-Z]+\s*=", block)
@@ -1097,11 +1229,92 @@ def test_index_html_result_download_action_wiring_exists():
         "const action = RESULT_EXPORT_ACTIONS[btn.dataset.resultExport || ''];",
         "exportDocument(action.format, action.buttonId, action.icon, action.extension, action.label);",
         "container.querySelector('[data-result-export-zip]')?.addEventListener('click', event => {",
-        "exportZip(event.currentTarget.dataset.requestId || '');",
+        "exportZip(event.currentTarget.dataset.requestId || '', { button: event.currentTarget });",
         "container.querySelector('[data-result-share]')?.addEventListener('click', event => {",
         "shareDocument(target.dataset.requestId || '', target.dataset.title || '');",
     ):
         assert marker in content
+
+
+def test_index_html_export_zip_verifies_headers_and_exact_bytes_before_download():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    start = content.index("async function exportZip(requestId, options = {})")
+    end = content.index("/* ── Bundle empty state", start)
+    block = content[start:end]
+
+    for marker in (
+        "X-DecisionDoc-Export-Packet-SHA256",
+        "X-DecisionDoc-Export-Manifest-SHA256",
+        "X-DecisionDoc-Export-Verified",
+        "X-DecisionDoc-Operational-Approval",
+        "contentType !== 'application/zip'",
+        "packetVerified !== 'true'",
+        "operationalApproval !== 'false'",
+        "const packetBytes = await res.arrayBuffer();",
+        "crypto.subtle.digest('SHA-256', packetBytes)",
+        "if (actualPacketSha256 !== packetSha256)",
+    ):
+        assert marker in block
+    assert block.index("const blob = new Blob([packetBytes]") > block.index(
+        "if (actualPacketSha256 !== packetSha256)"
+    )
+    assert block.index("_triggerBrowserDownload(blob") > block.index("const blob = new Blob([packetBytes]")
+
+
+def test_index_html_generation_export_review_uses_one_context_bound_five_format_path():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    start = content.index("function captureGenerationExportReviewContext({")
+    end = content.index("/* ── Bundle empty state", start)
+    block = content[start:end]
+    project_start = content.index("function renderProjectDetail(p, procurementDecision = null, options = {})")
+    project_end = content.index("function _renderBundleBreakdown", project_start)
+    project_block = content[project_start:project_end]
+
+    for marker in (
+        "const GENERATION_EXPORT_REVIEW_FORMATS = 'docx,pdf,pptx,hwp,excel';",
+        "const _generationExportReviewFlights = new Set();",
+        "authRevision: _authSessionRevision",
+        "tenantId: _currentTenantId",
+        "signedUserId: _currentSignedUserId()",
+        "projectDetailLoadId: source === 'project' ? _projectDetailLoadId : null",
+        "projectId: source === 'project' ? String(projectId || '').trim() : ''",
+        "documentId: source === 'project' ? String(documentId || '').trim() : ''",
+        "_generationExportReviewFlights.has(flightKey)",
+        "formats=${GENERATION_EXPORT_REVIEW_FORMATS}",
+        "const packetBytes = await res.arrayBuffer();",
+        "if (!isGenerationExportReviewContextCurrent(context)) return;",
+        "const blob = new Blob([packetBytes], { type: 'application/zip' });",
+        "GENERATION_EXPORT_PROJECT_DOWNLOAD_SCOPE",
+        "EXPORT_SOURCE_NOT_FOUND",
+        "문서를 다시 생성한 뒤 검토 ZIP을 요청하세요.",
+    ):
+        assert marker in content
+    assert block.index("const blob = new Blob([packetBytes]") > block.index(
+        "if (actualPacketSha256 !== packetSha256)"
+    )
+    assert block.index("_triggerBrowserDownload(blob") > block.index("const blob = new Blob([packetBytes]")
+    assert 'data-project-detail-action="doc-verified-review-export"' in project_block
+    assert "String(d.request_id || '').trim() ?" in project_block
+    assert "doc_snapshot" not in block
+    assert "approval_status" not in block
+
+
+def test_index_html_project_generation_export_cleans_only_scoped_urls_on_context_exit():
+    content = open("app/static/index.html", encoding="utf-8").read()
+    load_start = content.index("async function loadProjectDetail(projectId)")
+    load_end = content.index("window.hideProjectDetail", load_start)
+    load_block = content[load_start:load_end]
+    hide_start = load_end
+    hide_end = content.index("function renderProjectDetail", hide_start)
+    hide_block = content[hide_start:hide_end]
+    render_start = hide_end
+    render_end = content.index("function runProjectDetailAction", render_start)
+    render_block = content[render_start:render_end]
+
+    assert "_clearScopedExportDownloadUrls(GENERATION_EXPORT_PROJECT_DOWNLOAD_SCOPE);" in load_block
+    assert "_projectDetailLoadId += 1;" in hide_block
+    assert "_clearScopedExportDownloadUrls(GENERATION_EXPORT_PROJECT_DOWNLOAD_SCOPE);" in hide_block
+    assert "project-generation-export-download-fallback" in render_block
 
 
 def test_index_html_distinguishes_invalid_and_recoverable_auth_refresh_failures():
@@ -3199,6 +3412,83 @@ def test_completion_readiness_local_receipts_and_prod_env_stay_gitignored():
         assert completed.returncode == 0, f"{path} must remain gitignored"
 
 
+def test_documentation_completion_snapshot_and_core_loop_contract():
+    root = Path(__file__).resolve().parents[1]
+    snapshot_link = "development-plan.md#0-current-completionreadiness-snapshot"
+    development_plan = (root / "docs/development-plan.md").read_text(encoding="utf-8")
+    product_plan = (root / "docs/product_execution_plan.md").read_text(encoding="utf-8")
+    roadmap = (root / "docs/roadmap.md").read_text(encoding="utf-8")
+    checklist = (root / "docs/evidence-checklist.md").read_text(encoding="utf-8")
+    procurement_status = (
+        root / "docs/specs/public_procurement_copilot/STATUS.md"
+    ).read_text(encoding="utf-8")
+    readme = (root / "README.md").read_text(encoding="utf-8")
+
+    assert "## 0. Current Completion/Readiness Snapshot" in development_plan
+    assert "유일한 volatile snapshot" in development_plan
+    assert "27523032d68d2b217f4537ab96ade23eb20ef38a" in development_plan
+    assert "final-tree backend (mock/local, non-live)" in development_plan
+    assert "final-tree E2E (mock/local, non-live)" in development_plan
+    assert "M1은 historical OpenAI proof" in development_plan
+    assert "M2는 local live G2B smoke" in development_plan
+    assert "M6는 deployment/runtime evidence" in development_plan
+    assert "### H129 historical reviewer-attributed registry evidence" in development_plan
+    assert "### H129.1 current server-issued provenance" in development_plan
+    assert "issuance_provenance=server_issued" in development_plan
+    for boundary in (
+        "signature",
+        "actor attestation",
+        "currentness",
+        "atomic snapshot",
+        "approval",
+        "external authenticity",
+    ):
+        assert boundary in development_plan
+
+    for document in (readme, roadmap, checklist, product_plan, procurement_status):
+        assert snapshot_link in document
+    assert "현재 전체 no-cost backend baseline" not in readme
+
+    assert "## 6. Completed Core-Loop Evidence" in product_plan
+    assert "## 6. Immediate Backlog" not in product_plan
+    core_loop_section = product_plan.split("## 6. Completed Core-Loop Evidence", 1)[1]
+    core_loop_section = core_loop_section.split("## 7. Future Feature Gate", 1)[0]
+    for capability in (
+        "Decision Package shape",
+        "Deterministic sample",
+        "Evidence summary",
+        "Package handoff",
+        "Pending sign-off",
+        "Export packet",
+        "Demo runbook",
+        "CLI evidence contract",
+        "Packet-bound review receipt",
+    ):
+        assert capability in core_loop_section
+    evidence_paths = re.findall(r"`((?:app|docs|scripts|tests)/[^`]+)`", core_loop_section)
+    assert evidence_paths
+    for relative_path in evidence_paths:
+        assert (root / relative_path).is_file(), relative_path
+
+    future_gate = product_plan.split("## 7. Future Feature Gate", 1)[1]
+    for field in (
+        "target user",
+        "concrete observed problem/evidence",
+        "current workaround",
+        "desired outcome",
+        "bounded acceptance criteria",
+        "affected boundaries",
+        "explicit authority scope",
+        "local verification path",
+    ):
+        assert field in future_gate
+
+    for document in (roadmap, checklist, product_plan, procurement_status):
+        assert "same-backend" in document
+        assert "server-issued provenance" in document
+        assert "M1" in document and "M2" in document and "M6" in document
+
+
 def test_completion_readiness_runbook_keeps_external_proof_boundaries():
     root = Path(__file__).resolve().parents[1]
     runbook = (root / "docs" / "completion-readiness-runbook.md").read_text(encoding="utf-8")
@@ -4025,6 +4315,124 @@ def test_document_ops_service_binds_agent_run_to_request_tenant():
 
     assert len(agent_calls) == 1
     assert any(keyword.arg == "tenant_id" for keyword in agent_calls[0].keywords)
+
+
+def test_document_ops_comparison_file_intake_stays_local_strict_and_ephemeral():
+    root = Path(__file__).resolve().parents[1]
+    service = (root / "app" / "services" / "document_ops_comparison_intake.py").read_text(
+        encoding="utf-8",
+    )
+    router = (root / "app" / "routers" / "document_ops_agent.py").read_text(
+        encoding="utf-8",
+    )
+    page = (root / "app" / "static" / "index.html").read_text(encoding="utf-8")
+
+    assert "from app.services.attachment_service import" in service
+    assert "extract_text," in service
+    assert "extract_text_with_ai_fallback" not in service
+    assert "get_provider" not in service
+    assert "app.storage" not in service
+    assert "comparison-documents/extract" in router
+    assert "Depends(require_not_maintenance), Depends(require_api_key)" in router
+    assert "await file.read(MAX_COMPARISON_DOCUMENT_BYTES + 1)" in router
+    assert 'headers={"Cache-Control": "no-store"}' in router
+    assert "document_ops.comparison_document_extract" in router
+
+    for marker in (
+        'id="docops-baseline-file"',
+        'id="docops-candidate-file"',
+        'id="docops-baseline-file-status"',
+        'id="docops-candidate-file-status"',
+        "DOCUMENT_OPS_COMPARISON_DOCUMENT_KEYS",
+        "documentOpsValidatedComparisonDocument",
+        "documentOpsSha256Bytes",
+        "documentOpsSha256Text",
+        "extractDocumentOpsComparisonFile",
+        "documentOpsComparisonFileRequestIsCurrent",
+        "invalidateDocumentOpsComparisonFileProvenance",
+        "documentOpsComparisonProvenanceMatchesText",
+        "deterministic_local_existing_parser",
+        "DOCUMENT_OPS_COMPARISON_MAX_SOURCE_BYTES",
+        "DOCUMENT_OPS_COMPARISON_MAX_EXTRACTED_CHARS",
+        "provider_called !== false",
+        "persisted !== false",
+    ):
+        assert marker in page
+
+    comparison_start = page.index('id="docops-comparison-inputs"')
+    comparison_end = page.index('id="docops-capture-trajectory"', comparison_start)
+    comparison_controls = page[comparison_start:comparison_end]
+    assert 'id="docops-baseline-file"' in comparison_controls
+    assert 'id="docops-candidate-file"' in comparison_controls
+    assert 'id="docops-baseline-document"' in comparison_controls
+    assert 'id="docops-candidate-document"' in comparison_controls
+
+
+def test_document_ops_comparison_change_set_has_one_pure_diff_and_pre_provider_browser_gate():
+    root = Path(__file__).resolve().parents[1]
+    service = (root / "app" / "services" / "document_ops_comparison.py").read_text(
+        encoding="utf-8",
+    )
+    provider = (root / "app" / "providers" / "mock" / "provider.py").read_text(
+        encoding="utf-8",
+    )
+    schema = (root / "app" / "schemas" / "document_ops.py").read_text(encoding="utf-8")
+    router = (root / "app" / "routers" / "document_ops_agent.py").read_text(
+        encoding="utf-8",
+    )
+    page = (root / "app" / "static" / "index.html").read_text(encoding="utf-8")
+
+    assert service.count("difflib.SequenceMatcher(") == 1
+    assert "autojunk=False" in service
+    assert "MAX_COMBINED_HUNK_LINES = 200" in service
+    assert "get_provider" not in service
+    assert "app.storage" not in service
+    assert "import logging" not in service
+    assert "difflib" not in provider
+    assert "build_document_ops_comparison_change_set" in provider
+    assert "total_hunk_count" in schema
+    assert "hunks_truncated" in schema
+    for authority_key in (
+        "approval",
+        "code_execution",
+        "external_effect",
+        "external_runtime",
+        "persistence",
+        "provider_call",
+        "semantic",
+    ):
+        assert f"{authority_key}: Literal[False]" in schema
+
+    assert '"/comparison-documents/change-set"' in router
+    assert "canonical_document_ops_comparison_change_set_bytes" in router
+    assert '"X-DecisionDoc-Document-Comparison-SHA256"' in router
+    assert '"X-Content-Type-Options": "nosniff"' in router
+    assert 'attachment; filename="document-ops-comparison-change-set.json"' in router
+    assert "document_ops.comparison_change_set" in router
+
+    verify_start = page.index("async function verifyDocumentOpsComparisonChangeSet")
+    verify_end = page.index("function downloadVerifiedDocumentOpsComparisonChangeSet", verify_start)
+    verify_block = page[verify_start:verify_end]
+    send_start = page.index("async function sendDocumentOpsAgentRequest")
+    send_end = page.index("function renderDocumentOpsRunRecovery", send_start)
+    send_block = page[send_start:send_end]
+    for marker in (
+        "response.arrayBuffer()",
+        "new TextDecoder('utf-8', { fatal: true })",
+        "DOCUMENT_OPS_COMPARISON_CHANGE_SET_HASH_HEADER",
+        "documentOpsValidatedComparisonChangeSet",
+        "documentOpsComparisonSnapshotIsCurrent",
+        "URL.createObjectURL",
+        "exactBytes",
+    ):
+        assert marker in verify_block
+    assert "response.json()" not in verify_block
+    assert "documentOpsComparisonEvidenceMatchesPayload" in send_block
+    assert send_block.index("documentOpsComparisonEvidenceMatchesPayload") < send_block.index(
+        "fetch('/api/agent/document-ops/run'",
+    )
+    assert "URL.revokeObjectURL" in page
+    assert 'id="document-ops-comparison-change-set-download"' in page
 
 
 def test_primary_smoke_modules_stay_within_800_line_guide():

@@ -46,6 +46,7 @@ SOURCE_FILES = (
     "docs/project-card.md",
     "docs/resume-bullets.md",
     "docs/roadmap.md",
+    "docs/specs/external_repo_integration/ANALYSIS_20260812.md",
     "docs/specs/report_quality_learning/PILOT_REVIEW_RUNBOOK.md",
     "evidence/evidence_manifest.md",
     "reports/eval/v1/eval_report.md",

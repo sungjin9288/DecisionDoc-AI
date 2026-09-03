@@ -146,6 +146,7 @@
 | Completion readiness proof runbook | 재현 가능 | `docs/completion-readiness-runbook.md` |
 | Local post-login UI flow evidence | 재현 가능 | `python3 scripts/capture_ui_flow_evidence.py` |
 | H126-H128 Guided Review local mock demo | 재현 가능 | `python3 scripts/capture_guided_decision_review_demo_evidence.py` -> receipt, sanitized H126/H127/H128 JSON in `evidence/cli-logs/`, five SHA-256-bound `guided-review-demo-*.png` screenshots; `--check-only`로 browser 없이 재검증 |
+| H129 Guided Review disposition registry | 재현 가능 | 두 same-basename pytest module collect, local/fake-S3 immutable replay/conflict, auth/privacy/audit/canonical response, Chromium single-flight 및 stale-context focused gates; H128 demo 자체는 H129 record를 만들지 않음 |
 
 위 local evidence contract 검증은 repo 밖 `/tmp` receipt를 사용한다. Provider API, AWS runtime, dataset upload, training execution, model promotion, production service resume, bid submission, legal approval, contractual commitment는 실행하지 않는다.
 
@@ -176,3 +177,22 @@ Completion readiness/proof receipt는 gitignored `reports/completion-readiness/`
 - 고객/기관 내부자료: 포함하지 않음
 - 소스코드 전체 폴더: portfolio zip에는 포함하지 않음
 - generated runtime data: zip에는 포함하지 않음
+
+## H129 historical evidence and H129.1 current issuance provenance
+
+- H128 success is same-backend existential evidence: strict metadata for the
+  tenant/project/bundle/exact canonical receipt SHA-256 is conditionally
+  created and exact-read-back before the receipt body returns.
+- Metadata and audit keep only scope/hash/binding/false-boundary values; they
+  keep no receipt body, identity, session, network value, token, rationale,
+  secret, approval, or execution claim.
+- H129 historical evidence records the initial immutable reviewer-attributed
+  registry verification. Its dated numeric results are historical, not the
+  current final-tree snapshot.
+- H129.1 current server-issued provenance revalidates and embeds only that
+  same-backend metadata plus its hash. Existing v1 bytes are not migrated or
+  rewritten and are labeled Legacy issuance unrecorded. This is not a
+  signature, actor attestation, currentness, atomic snapshot, approval, or
+  external authenticity.
+- Current M1/M2/M6 readiness and final-tree commands/results are owned only by
+  [Development Plan — Current Completion/Readiness Snapshot](./development-plan.md#0-current-completionreadiness-snapshot): M1 partial/blocked after historical OpenAI proof, M2 local live smoke complete but durable stage proof missing, M6 deployment/runtime blocked; human UAT and external approval are unproven.

@@ -49,6 +49,7 @@
 |-----------|----------------|------|
 | OWASP Top 10 대응 | `tests/test_security.py`, `tests/test_bundle_expander.py`, `tests/test_knowledge.py`, `tests/storage/test_trajectory_store.py` | XSS, auth, SSRF, project/approval/procurement/report-workflow/model-registry/trajectory의 tenant 필수 조회, tenant-bound billing/user/invite/style/SSO/template/notification/message/history/share/audit/meeting-recording/quality-learning/request-pattern/knowledge 상태, provider-derived path와 cross-tenant IDOR 차단 |
 | 인프라 보안 | `tests/test_infrastructure.py` | 헤더, 운영 설정 |
+| 민감정보 로그 비식별화 | `tests/test_observability.py` | 애플리케이션 JSON log와 Uvicorn access log의 query token, API key, password, Authorization 값 redaction |
 | Rate Limiting | `tests/test_infrastructure.py` 포함 | 로그인/요청 제한 |
 
 ### 2.3 성능 시험
@@ -76,6 +77,29 @@
 
 # 보안 스캔
 .venv/bin/bandit -r app/ -f json -o bandit_report.json
+```
+
+### DocumentOps comparison file intake
+
+`POST /api/agent/document-ops/comparison-documents/extract`는 API key/maintenance gate, multipart single-file input, safe basename, exact source/extracted-text SHA-256, exact response field set, `Cache-Control: no-store`, local parser errors와 false provider/persistence flags를 unit/API test로 확인한다. Infrastructure test는 dedicated service가 existing `extract_text`만 사용하고 fallback/provider/storage import가 없는지, browser validator와 baseline/candidate control의 task-scoped wiring을 고정한다. Chromium test는 real local endpoint의 text-file baseline/candidate fill, malformed response의 pre-mutation rejection, late response discard, edit provenance invalidation, existing comparison run/redaction, desktop과 390px overflow 및 console/page error 0건을 확인한다.
+
+```bash
+python3 -m pytest -q tests/test_document_ops_agent_api.py -k comparison_document --tb=short
+python3 -m pytest -q tests/test_infrastructure.py -k comparison_file_intake --tb=short
+python3 -m pytest -q tests/e2e/test_main_flow.py -k comparison_file_intake --tb=short
+```
+
+### DocumentOps verified comparison change set
+
+`POST /api/agent/document-ops/comparison-documents/change-set` 회귀는 strict request/response가 invalid UTF-8·criteria·unknown field·count/identity/truncation drift·invalid opcode side·discontinuous range·incomplete non-truncated coverage를 거부하는지 확인한다. 하나의 `SequenceMatcher(autojunk=False)`가 API와 mock provider에 full splitlines count와 aggregate를 제공해야 하며, multiple replace opcode의 `replaced_line_count`는 3→1 뒤 1→3 사례에서도 aggregate baseline/candidate replacement 합의 최댓값이어야 한다. Long-identical 및 alternating source는 response 전체의 exposed baseline/candidate line 합계 200, contiguous zero-prefix, clipped first over-budget hunk의 exact range/array, full aggregate, coherent `total_hunk_count`/`hunks_truncated`를 고정한다. API는 exact route auth/maintenance gate, canonical UTF-8 JSON bytes와 body-bound `X-DecisionDoc-Document-Comparison-SHA256`, `no-store`, `nosniff`, safe filename, all-false authority, provider/storage/operation effect 0건과 raw-content audit redaction을 검증한다.
+
+Real Chromium은 missing/wrong body hash, malformed UTF-8, malformed JSON, malformed schema를 서로 독립적으로 주입하고 모두 Agent POST 0건인지 확인한다. Valid response는 exact bytes만 download하고 readable equal/add/remove/replace panel과 hunk가 실제 visible인 상태에서 desktop 및 390px screenshot·overflow·console/page error를 먼저 검사한다. 그 뒤 criteria edit가 evidence를 지우고 stale object URL을 한 번 revoke하며 download를 disable하는지 확인한다. 별도 reverse-order 회귀는 newer response만 Agent POST로 이어지고 task/auth invalidation 및 late completion이 evidence를 복구하지 못하는지 확인한다.
+
+```bash
+python3 -m pytest -q tests/agents/test_document_ops_agent.py -k comparison --tb=short
+python3 -m pytest -q tests/test_document_ops_agent_api.py -k comparison --tb=short
+python3 -m pytest -q tests/test_infrastructure.py -k document_ops --tb=short
+python3 -m pytest -q tests/e2e/test_main_flow.py -k comparison_change_set --tb=short
 ```
 
 ### 대표 bundle 구조 품질 evidence
@@ -110,7 +134,7 @@ Generation tenant 테스트는 service, DocumentOps agent, context cache, eval p
 
 Quality-learning store 계약 테스트는 feedback, eval, A/B test, prompt override, fine-tune, request-pattern 생성자의 `tenant_id`가 required keyword인지와 cached factory의 tenant 기본값이 제거됐는지 AST로 확인한다. Production 호출부는 constructor keyword 또는 factory positional/keyword로 tenant를 반드시 선택해야 한다. 생성자 생략 호출은 `TypeError`, 빈 값·공백·경로 구분자·`.`·`..`·NUL tenant는 `ValueError`로 실패하고 `tenants/` 경로도 만들지 않아야 한다. 이 검증은 local filesystem만 사용한다.
 
-Model lifecycle과 realtime event 테스트는 `ModelRegistry`와 `KnowledgeStore` 생성자의 tenant 필수 계약, model registry public API의 constructor-owned tenant 불변식, production caller의 명시적 tenant 전달을 AST로 고정한다. 같은 model/job ID의 cross-tenant 조회·상태 변경 차단, explicit foreign drift 보존, 20개 독립 registry 인스턴스의 concurrent registration, unsafe tenant의 경로 생성 전 거부를 local filesystem에서 검증한다. `/events`는 middleware 단계에서는 query token 인증을 위해 public path로 남지만 handler가 missing·invalid·refresh token과 tenant claim 누락을 `401`로 거부하고 access token의 tenant만 구독 범위로 선택하는지 확인한다. Tenant user state가 있으면 같은 token을 persisted `is_active`에 다시 결속해 비활성화 직후 새 subscription을 거부하고, state failure를 authorization success로 축소하지 않아야 한다. Session ID가 있는 token은 selected backend의 exact tenant/user/version session authority에도 결속하고 revoked·expired·corrupt·unavailable state를 각각 거부해야 한다. 열린 stream은 recheck 전까지 정상 application event를 전달하되 credential이 폐기되면 `auth_revoked`, authority read가 실패하면 `auth_unavailable` control event만 보낸 뒤 반드시 unsubscribe해야 한다. Chromium은 password version 또는 exact-session 폐기가 열린 SSE를 종료하고 stale refresh를 invalid-session cleanup으로 연결하는지, temporary unavailable event는 token·current user·draft를 보존하는지, 닫힌 source의 늦은 callback이 replacement source를 건드리지 않는지 확인한다.
+Model lifecycle과 realtime event 테스트는 `ModelRegistry`와 `KnowledgeStore` 생성자의 tenant 필수 계약, model registry public API의 constructor-owned tenant 불변식, production caller의 명시적 tenant 전달을 AST로 고정한다. 같은 model/job ID의 cross-tenant 조회·상태 변경 차단, explicit foreign drift 보존, 20개 독립 registry 인스턴스의 concurrent registration, unsafe tenant의 경로 생성 전 거부를 local filesystem에서 검증한다. `/events`는 protected route로 유지하고 browser가 access token을 URL query가 아닌 Authorization Bearer header로 보내는지, missing·invalid·refresh token과 tenant claim 누락을 `401`로 거부하고 access token의 tenant만 구독 범위로 선택하는지 확인한다. Tenant user state가 있으면 같은 token을 persisted `is_active`에 다시 결속해 비활성화 직후 새 subscription을 거부하고, state failure를 authorization success로 축소하지 않아야 한다. Session ID가 있는 token은 selected backend의 exact tenant/user/version session authority에도 결속하고 revoked·expired·corrupt·unavailable state를 각각 거부해야 한다. 열린 stream은 recheck 전까지 정상 application event를 전달하되 credential이 폐기되면 `auth_revoked`, authority read가 실패하면 `auth_unavailable` control event만 보낸 뒤 반드시 unsubscribe해야 한다. Chromium은 password version 또는 exact-session 폐기가 열린 SSE를 종료하고 stale refresh를 invalid-session cleanup으로 연결하는지, temporary unavailable event는 token·current user·draft를 보존하는지, 닫힌 stream의 늦은 callback이 replacement stream을 건드리지 않는지 확인한다.
 
 Per-session auth 회귀는 register·login·invite·LDAP·SAML·GCloud·password-change token pair가 같은 random session ID와 strict `auth-session.v2` object를 공유하고 refresh가 그 identity를 유지하는지 확인한다. 기존 v1 record는 exact schema로 읽되 label mutation에서 v2로 승격해야 한다. Store는 duplicate-key rejection, tenant/user/version/expiry binding과 conditional create/CAS를 사용해야 한다. Label은 API에서 trim한 뒤 40자로 제한하고, API와 persisted-state validation 모두 Unicode control, surrogate, line/paragraph separator와 bidirectional·invisible format 문자를 거부해야 한다. ZWNJ/ZWJ는 허용하며 direct storage rejection은 원본 bytes를 바꾸지 않아야 한다.
 
@@ -750,3 +774,38 @@ pytest: 9.0.x
 ## H119 Retention Registry
 
 H119 regression은 auth-first session-admin denial, exact H118 source validation, UUIDv4/hash path binding, full-record binding의 historical username·recorded-at tamper rejection, local/fake-S3 concurrency, username rename replay, changed source/reviewer conflict, response-loss read-back, corrupt/foreign/path drift와 list disappearance preservation, list sorting, canonical read/download bytes/hash, reviewer-only audit projection과 browser JWT-only registration/history download guard를 포함한다.
+
+## Generated export review packet regression
+
+`tests/storage/test_generation_export_source_store.py` covers local/fake-S3 independent-worker CAS convergence, restart readback, fixed TTL/count/size/tenant-byte limits, deterministic oldest-first eviction, one clock sample per CAS attempt at the exact fresh TTL boundary, expired write-loss false-reconciliation prevention, idempotency/conflict, missing/expired/foreign indistinguishability, and corrupt/missing/tampered/unavailable fail-closed behavior without rewriting original bytes. `tests/test_generation_export_packet.py` covers format trim/lowercase/dedup/canonical ordering, HWPX mapping, unsafe title isolation, all-five-format repeatability, canonical manifest and deterministic ZIP metadata, converter failure without partial delivery, every authority false-value/type drift plus missing/extra authority keys, every mutable ZIP metadata field, prefix/trailing bytes, artifact/extra-member tamper rejection, durable source wiring for normal/streamed generation, generic source failure, independent-app packet export, stable route errors/headers/audit, and read-only CLI verification. `tests/test_phase2_features.py` retains the route/auth/default-format surface while asserting the fixed HWPX artifact path; `tests/test_infrastructure.py` asserts browser header/hash verification precedes Blob allocation and download; focused Playwright proof covers one valid download and zero downloads for missing evidence, authority drift, hash mismatch, and crypto failure.
+
+The packet verifier is intentionally local, deterministic, and byte-only. Test evidence distinguishes archive integrity from issuer authenticity and review readiness from human or operational approval; no test treats a successful packet as provider, AWS, G2B, training, persistence, deployment, or approval evidence.
+
+## H129 Guided Review Disposition Registry
+
+두 same-basename test module이 default pytest import mode에서 함께
+collect되어야 한다. Storage tests는 local/fake-S3 conditional-create
+concurrency, hashed operation path, exact historical replay, stable
+reviewer/source conflict, uncertain-write reconciliation, full-record tamper,
+corrupt/duplicate/disappearing-list fail-closed를 검증한다. API/auth/audit
+tests는 admin/assigned-member visibility, API/Ops key와 sessionless JWT 거부,
+foreign/nonexistent privacy, assigned non-owner `404`, canonical
+create/read/list/download, summary redaction/sort, nested H126-H128
+revalidation과 redacted audit를 검증한다. Chromium은 verified page-memory
+H128 source, one UUID per source/scope, request-owned single flight,
+stale-A/newer-B race, context drift discard와 pre-Blob verification을
+확인한다. 모든 authority boundary와 external effect count는 false/zero다.
+
+## H128 issuance and H129 v2 provenance
+
+Storage/API/browser regression covers local and fake-S3 conditional issuance
+create concurrency, first-issued-at replay, exact read-back, uncertain-write
+reconciliation, malformed/noncanonical/corrupt/foreign/disappearing/unavailable
+fail-closed behavior, and no source-byte repair. H128 success requires the
+issuance-record hash header before the browser keeps proof in page memory. H129
+v2 creates only from an independently validated H128 body plus authoritative
+same-backend issuance metadata, then checks embedded proof/hash before render
+or Blob creation; v1 replay/list/read/download keeps historical bytes and
+explicit Legacy issuance unrecorded status. These tests do not treat issuance
+as a signature, actor attestation, currentness, atomic snapshot, approval, or
+external authenticity.

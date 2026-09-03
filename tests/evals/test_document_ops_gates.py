@@ -127,3 +127,52 @@ def test_document_ops_gate_explains_missing_draft_and_plan() -> None:
     assert "검토 가능한 본문" in issues["missing_output_sections"].remediation_hint
     assert issues["missing_plan"].affected_field == "plan"
     assert "plan에 추가" in issues["missing_plan"].remediation_hint
+
+
+def test_document_ops_gate_blocks_comparison_without_required_review_sections() -> None:
+    result = evaluate_document_ops_output(
+        task_type="document_comparison_review",
+        draft="## 관찰된 변경\n두 입력은 서로 다릅니다.",
+        plan=["비교"],
+        evidence_status={"source_references": ["baseline_document", "candidate_document"]},
+    )
+
+    assert result.hard_gate_pass is False
+    issue = next(issue for issue in result.issues if issue.code == "missing_comparison_sections")
+    assert issue.affected_field == "draft"
+
+
+def test_document_ops_gate_accepts_grounded_structured_comparison() -> None:
+    result = evaluate_document_ops_output(
+        task_type="document_comparison_review",
+        draft="""# 문서 비교 검토
+
+## 관찰된 변경
+두 입력의 UTF-8 hash가 다르므로 텍스트 차이가 관찰됩니다.
+
+## 근거와 가정 변화
+근거는 두 입력에 한정되며 의미 변화는 사람 확인이 필요하다는 가정으로 둡니다.
+
+## 결정 및 트레이드오프 영향
+일정과 운영 책임 영향은 조건부로 검토하며 확정하지 않습니다.
+
+## 권한·거버넌스 경계
+이 검토는 승인이나 외부 실행 권한을 만들지 않습니다.
+
+## 권고
+변경 의도와 책임 범위를 사람 검토로 확인합니다.
+
+## 사람 재확인 질문
+승인·보안·감사 범위가 달라지는가를 확인합니다.
+""",
+        plan=["hash 확인", "가정 분리", "사람 재확인"],
+        evidence_status={
+            "confirmed": ["two document hash comparison"],
+            "assumptions": ["semantic impact requires human confirmation"],
+            "gaps": ["approval impact review"],
+            "source_references": ["baseline_document", "candidate_document"],
+        },
+    )
+
+    assert result.hard_gate_pass is True
+    assert "missing_comparison_sections" not in {issue.code for issue in result.issues}

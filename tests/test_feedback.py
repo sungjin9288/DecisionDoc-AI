@@ -2,7 +2,6 @@
 
 import json
 
-import pytest
 from fastapi.testclient import TestClient
 
 from app.storage.feedback_store import FeedbackStore

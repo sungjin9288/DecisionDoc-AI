@@ -1,5 +1,4 @@
 """Tests for app/eval/llm_judge.py — mocked to avoid real API calls."""
-import pytest
 from unittest.mock import patch, MagicMock
 from app.eval.llm_judge import (
     _call_openai_judge,

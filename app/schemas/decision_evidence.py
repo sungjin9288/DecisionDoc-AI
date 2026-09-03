@@ -240,6 +240,18 @@ def require_complete_guided_decision_review_recheck_receipt(
     )
 
 
+def require_complete_guided_decision_review_disposition_receipt(
+    receipt: "GuidedDecisionReviewDispositionReceipt",
+    label: str = "source_disposition_receipt",
+) -> None:
+    _require_explicit_fields(receipt, label)
+    _require_explicit_fields(receipt.authority, f"{label}.authority")
+    require_complete_guided_decision_review_recheck_receipt(
+        receipt.source_recheck_receipt,
+        f"{label}.source_recheck_receipt",
+    )
+
+
 class GuidedDecisionReviewRecheckRequest(_StrictModel):
     contract_version: Literal["guided-decision-review-recheck-request.v1"]
     source_handoff: GuidedDecisionReviewHandoffResponse
@@ -354,3 +366,120 @@ class GuidedDecisionReviewDispositionReceipt(_StrictModel):
                 "guided decision review disposition does not match review state"
             )
         return self
+
+
+class GuidedDecisionReviewDispositionIssuanceMetadata(_StrictModel):
+    """Hash-only same-backend issuance proof for one canonical H128 body."""
+
+    contract_version: Literal[
+        "guided-decision-review-disposition-issuance.v1"
+    ] = "guided-decision-review-disposition-issuance.v1"
+    tenant_id: str = Field(min_length=1)
+    project_id: str = Field(min_length=1)
+    bundle_type: DecisionEvidenceBundleType
+    disposition_receipt_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    issued_at: str = Field(min_length=1)
+    issuance_binding_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    issuance_record_binding_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    issuance_status: Literal["issued"] = "issued"
+    evidence_only: Literal[True] = True
+    review_state_only: Literal[True] = True
+    review_only: Literal[True] = True
+    read_only: Literal[True] = True
+    reviewer_identity_bound: Literal[False] = False
+    snapshot_atomic: Literal[False] = False
+    requires_recheck_before_reliance: Literal[True] = True
+    disposition_receipt_persisted: Literal[False] = False
+    authority: DecisionEvidenceAuthority = Field(
+        default_factory=DecisionEvidenceAuthority
+    )
+
+
+class GuidedDecisionReviewDispositionRecordRequest(_StrictModel):
+    contract_version: Literal[
+        "guided-decision-review-disposition-record-request.v1",
+        "guided-decision-review-disposition-record-request.v2",
+    ]
+    operation_id: str = Field(
+        pattern=(
+            r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-"
+            r"[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        )
+    )
+    source_disposition_receipt: GuidedDecisionReviewDispositionReceipt
+    source_disposition_receipt_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+    @model_validator(mode="after")
+    def require_complete_source_receipt(
+        self,
+    ) -> "GuidedDecisionReviewDispositionRecordRequest":
+        require_complete_guided_decision_review_disposition_receipt(
+            self.source_disposition_receipt,
+        )
+        return self
+
+
+class GuidedDecisionReviewDispositionRecord(_StrictModel):
+    contract_version: Literal[
+        "guided-decision-review-disposition-record.v1"
+    ] = "guided-decision-review-disposition-record.v1"
+    operation_id: str = Field(
+        pattern=(
+            r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-"
+            r"[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        )
+    )
+    request_binding_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    record_binding_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    tenant_id: str = Field(min_length=1)
+    project_id: str = Field(min_length=1)
+    bundle_type: DecisionEvidenceBundleType
+    reviewer_user_id: str = Field(min_length=1)
+    reviewer_username: str = Field(min_length=1)
+    reviewer_role: Literal["admin", "member"]
+    recorded_at: str = Field(min_length=1)
+    source_disposition_receipt: GuidedDecisionReviewDispositionReceipt
+    source_disposition_receipt_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    source_recheck_receipt_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    current_handoff_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    current_review_state_fingerprint_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    review_state_status: Literal["unchanged", "changed"]
+    review_disposition: Literal[
+        "acknowledged_unchanged",
+        "new_handoff_required",
+        "review_deferred",
+    ]
+    disposition_binding_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    record_status: Literal["recorded"] = "recorded"
+    review_state_only: Literal[True] = True
+    review_only: Literal[True] = True
+    read_only: Literal[True] = True
+    reviewer_identity_bound: Literal[True] = True
+    registry_record_persisted: Literal[True] = True
+    snapshot_atomic: Literal[False] = False
+    requires_recheck_before_reliance: Literal[True] = True
+    authority: DecisionEvidenceAuthority = Field(
+        default_factory=DecisionEvidenceAuthority
+    )
+
+    @model_validator(mode="after")
+    def require_complete_source_receipt(
+        self,
+    ) -> "GuidedDecisionReviewDispositionRecord":
+        require_complete_guided_decision_review_disposition_receipt(
+            self.source_disposition_receipt,
+        )
+        return self
+
+
+class GuidedDecisionReviewDispositionRecordV2(
+    GuidedDecisionReviewDispositionRecord
+):
+    """H129 record whose H128 source is proven by the selected backend."""
+
+    contract_version: Literal[
+        "guided-decision-review-disposition-record.v2"
+    ] = "guided-decision-review-disposition-record.v2"
+    source_issuance_metadata: GuidedDecisionReviewDispositionIssuanceMetadata
+    source_issuance_metadata_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    issuance_provenance: Literal["server_issued"] = "server_issued"

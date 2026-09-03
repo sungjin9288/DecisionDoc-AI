@@ -1,5 +1,4 @@
 """Tests for POST /generate/recommend-bundle endpoint."""
-import pytest
 
 
 def _create_client(tmp_path, monkeypatch):

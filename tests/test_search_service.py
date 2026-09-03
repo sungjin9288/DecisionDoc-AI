@@ -1,8 +1,7 @@
 """Tests for SearchService — unit tests without real HTTP calls."""
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
 
 
 def test_search_service_not_available_by_default():

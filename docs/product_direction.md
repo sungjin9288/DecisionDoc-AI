@@ -355,3 +355,22 @@ H121 closes the surrounding read and assignment boundary. A session-bound admin 
 ## H122 Verified Original Review Packet Re-download
 
 H122 lets an authorized reviewer return to the exact immutable source packet without rebuilding it. The server checks the current session-bound admin or stable assignee before reading bytes, then revalidates the stored SHA-256, receipt binding, package semantics, recommendation, and false operational-authority boundary. The browser compares the safe response headers with its current review projection, verifies the downloaded byte length and SHA-256, and revokes the context-bound object URL and fallback link when the user, tenant, or project context changes. This is evidence retrieval only; it does not reassign a reviewer, complete a review, approve operations, submit a bid, call a provider, or resume a service.
+
+## H129 Guided Review Reviewer Evidence
+
+H129 turns one verified H128 disposition into immutable, reviewer-attributed
+historical evidence. Stable user identity controls replay and member visibility;
+mutable username and role remain first-write historical display values. This
+registry is not an approval ledger or workflow engine: the source remains
+reviewer-unbound and non-persistent, and the wrapper remains review-only,
+read-only, non-atomic, and recheck-required. Product claims must not treat H129
+as closing human UAT, M1/M2/M6, deployment, or external approval evidence.
+
+H128 now records a hash-only same-backend issuance proof and H129 v2 embeds
+strict metadata after independent validation; legacy v1 remains explicitly
+issuance-unrecorded. Product claims must not treat this as a signature, actor
+attestation, currentness, atomic snapshot, approval, or external authenticity.
+
+## Generated document export packets
+
+Generated-document ZIP export is a local review-readiness handoff: a tenant-bound rendered source is durably available for one hour through the selected local/S3 backend, so an independent app instance can build the same deterministic, self-verified packet. The source is bounded to 500 references, 8 MiB each, and 64 MiB referenced bytes per tenant with deterministic oldest-first eviction; it is not a durable packet archive, issuer attestation, completed human review, or operational approval. Product copy must keep `packet_persisted=false`, provider execution, AWS/G2B submission, training, deployment, and approval authority explicitly false even when the packet verifier succeeds; this local integrity work does not close the M1/M2/M6 external-evidence gaps.

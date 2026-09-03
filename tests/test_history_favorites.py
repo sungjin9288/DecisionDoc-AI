@@ -1,7 +1,6 @@
 """Tests for history favorites endpoints."""
 from datetime import UTC, datetime
 
-import pytest
 from fastapi.testclient import TestClient
 
 
