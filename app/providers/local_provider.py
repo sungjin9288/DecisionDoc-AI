@@ -163,7 +163,7 @@ class LocalProvider(UsageTokenMixin, Provider):
         last_exc: Exception | None = None
         for attempt in range(self.max_retries):
             try:
-                with httpx.Client(timeout=self.timeout) as client:
+                with httpx.Client(timeout=self.timeout, trust_env=False) as client:
                     res = client.post(
                         f"{self.base_url}/chat/completions",
                         headers=headers,
@@ -233,7 +233,7 @@ class LocalProvider(UsageTokenMixin, Provider):
         """
         # 1. Try OpenAI-compatible /models endpoint
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
+            async with httpx.AsyncClient(timeout=10, trust_env=False) as client:
                 res = await client.get(
                     f"{self.base_url}/models",
                     headers={"Authorization": f"Bearer {self.api_key}"},
@@ -252,7 +252,7 @@ class LocalProvider(UsageTokenMixin, Provider):
         # 2. Try Ollama /api/tags endpoint
         try:
             ollama_base = self.base_url.replace("/v1", "").rstrip("/")
-            async with httpx.AsyncClient(timeout=10) as client:
+            async with httpx.AsyncClient(timeout=10, trust_env=False) as client:
                 res = await client.get(f"{ollama_base}/api/tags")
                 if res.status_code == 200:
                     models = res.json().get("models", [])

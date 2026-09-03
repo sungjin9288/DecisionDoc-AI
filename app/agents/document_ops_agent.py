@@ -107,6 +107,16 @@ class DocumentOpsAgent:
             request_id=request_id,
             record_provider_usage=record_provider_usage,
         )
+        if request.comparison_context is not None:
+            draft = DocumentOpsDraftOutput.model_validate(
+                _redact_comparison_source_echo(
+                    draft.model_dump(),
+                    source_texts=(
+                        request.requirements["baseline_document_text"],
+                        request.requirements["candidate_document_text"],
+                    ),
+                )
+            )
         qa = self._merge_qa(draft.qa, self._local_qa(draft, task_type=request.task_type))
         quality_warnings = list(qa.get("warnings", []))
         trajectory = (
@@ -360,6 +370,23 @@ class DocumentOpsAgent:
         provider: Provider,
         request_id: str,
     ) -> dict[str, Any]:
+        output = {
+            "plan": draft.plan,
+            "critique": draft.critique,
+            "revision_tasks": draft.revision_tasks,
+            "evidence_status": draft.evidence_status.model_dump(),
+            "draft_output": draft.draft,
+            "qa": qa,
+        }
+        if request.comparison_context is not None:
+            output = _redact_comparison_source_echo(
+                output,
+                source_texts=(
+                    request.requirements["baseline_document_text"],
+                    request.requirements["candidate_document_text"],
+                ),
+            )
+
         return {
             "trajectory_id": f"trj_{uuid.uuid4().hex}",
             "schema_version": "document_ops_trajectory_v1",
@@ -385,12 +412,7 @@ class DocumentOpsAgent:
             "requirements_keys": sorted(request.requirements.keys()),
             "source_summary_count": len(request.source_summaries),
             "source_reference_count": len(request.source_references),
-            "plan": draft.plan,
-            "critique": draft.critique,
-            "revision_tasks": draft.revision_tasks,
-            "evidence_status": draft.evidence_status.model_dump(),
-            "draft_output": draft.draft,
-            "qa": qa,
+            **output,
             "human_review_status": "pending",
             "human_feedback": {"accepted": False},
         }
@@ -414,6 +436,69 @@ def _redact_for_trajectory(value: Any) -> Any:
     if isinstance(value, str) and len(value) > 2000:
         digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
         return f"{value[:300]}...[redacted_long_text sha256={digest}]"
+    return value
+
+
+def _redact_comparison_source_echo(value: Any, *, source_texts: tuple[str, str]) -> Any:
+    fragments = frozenset(
+        fragment.strip()
+        for source_text in source_texts
+        for fragment in (source_text, *source_text.splitlines())
+        if fragment.strip()
+    )
+    embedded_fragments = {
+        fragment
+        for fragment in fragments
+        if len(fragment) >= 8
+    }
+    alternatives = "|".join(
+        re.escape(fragment)
+        for fragment in sorted(embedded_fragments, key=len, reverse=True)
+    )
+    matcher = re.compile(rf"(?<!\w)(?:{alternatives})(?!\w)") if alternatives else None
+    return _redact_comparison_source_fragments(
+        value,
+        exact_fragments=fragments,
+        matcher=matcher,
+    )
+
+
+def _redact_comparison_source_fragments(
+    value: Any,
+    *,
+    exact_fragments: frozenset[str],
+    matcher: re.Pattern[str] | None,
+) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: _redact_comparison_source_fragments(
+                item,
+                exact_fragments=exact_fragments,
+                matcher=matcher,
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [
+            _redact_comparison_source_fragments(
+                item,
+                exact_fragments=exact_fragments,
+                matcher=matcher,
+            )
+            for item in value
+        ]
+    if isinstance(value, tuple):
+        return tuple(
+            _redact_comparison_source_fragments(
+                item,
+                exact_fragments=exact_fragments,
+                matcher=matcher,
+            )
+            for item in value
+        )
+    if isinstance(value, str):
+        if value.strip() in exact_fragments or (matcher is not None and matcher.search(value)):
+            return "[redacted_comparison_source_echo]"
     return value
 
 

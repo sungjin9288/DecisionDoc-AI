@@ -223,6 +223,67 @@ def test_document_ops_agent_runs_grounded_document_comparison_with_redacted_traj
         assert heading in result.draft
 
 
+def test_document_ops_agent_redacts_provider_echo_from_comparison_trajectory() -> None:
+    baseline = "first private line\nsecond private line"
+    candidate = "a\nb"
+    raw = json.dumps(
+        {
+            "plan": [
+                "first private line",
+                "baseline and candidate",
+                "Option a remains viable",
+            ],
+            "critique": ["second private line"],
+            "revision_tasks": [baseline],
+            "draft": "baseline and candidate",
+            "evidence_status": {
+                "confirmed": ["a"],
+                "assumptions": [],
+                "gaps": ["b"],
+                "source_references": [],
+            },
+            "qa": {
+                "hard_gate_pass": True,
+                "warnings": ["review second private line"],
+            },
+        }
+    )
+    result = DocumentOpsAgent(provider=StaticJsonProvider(raw)).run(
+        DocumentOpsRequest(
+            task_type="document_comparison_review",
+            requirements={
+                "baseline_document_text": baseline,
+                "candidate_document_text": candidate,
+            },
+            capture_trajectory=True,
+        ),
+        request_id="agent-document-comparison-echo",
+        tenant_id="system",
+    )
+
+    serialized_result = result.model_dump_json()
+    assert "first private line" not in serialized_result
+    assert "second private line" not in serialized_result
+    assert result.draft == "baseline and candidate"
+    assert "Option a remains viable" in result.plan
+    assert result.evidence_status.confirmed == ["[redacted_comparison_source_echo]"]
+    assert result.evidence_status.gaps == ["[redacted_comparison_source_echo]"]
+    assert result.trajectory is not None
+    serialized_trajectory = json.dumps(result.trajectory, ensure_ascii=False)
+    assert "first private line" not in serialized_trajectory
+    assert "second private line" not in serialized_trajectory
+    assert "[redacted_comparison_source_echo]" in serialized_trajectory
+
+    from app.agents.document_ops_agent import _redact_comparison_source_echo
+
+    many_lines = "\n".join(f"private source line {index}" for index in range(1_400))
+    safe_output = ["ordinary provider output"] * 8
+    assert _redact_comparison_source_echo(
+        safe_output,
+        source_texts=(many_lines, "candidate source"),
+    ) == safe_output
+
+
 def test_document_ops_agent_compares_identical_documents_without_inventing_a_change() -> None:
     document = "동일 문서\n검토 대기"
     result = DocumentOpsAgent(provider=MockProvider()).run(
@@ -277,6 +338,32 @@ def test_document_comparison_change_set_keeps_complete_long_identical_counts_wit
     assert result.hunks[0].baseline_end == result.hunks[0].candidate_end == 100
 
 
+@pytest.mark.parametrize(
+    ("baseline", "candidate"),
+    [
+        ("same content\n", "same content"),
+        ("same content\r\n", "same content\n"),
+    ],
+)
+def test_document_comparison_change_set_reports_line_ending_only_changes(
+    baseline: str,
+    candidate: str,
+) -> None:
+    result = build_document_ops_comparison_change_set(
+        DocumentOpsComparisonChangeSetRequest(
+            baseline_document_text=baseline,
+            candidate_document_text=candidate,
+        )
+    )
+
+    assert result.documents_identical is False
+    assert result.equal_line_count == 0
+    assert result.replaced_line_count == 1
+    assert result.hunks[0].opcode == "replace"
+    assert result.hunks[0].baseline_lines == [baseline]
+    assert result.hunks[0].candidate_lines == [candidate]
+
+
 def test_document_comparison_change_set_aggregates_asymmetric_replace_sides_before_max() -> None:
     baseline = "same\nA1\nA2\nA3\nanchor\nB1\ntail"
     candidate = "same\nX1\nanchor\nY1\nY2\nY3\ntail"
@@ -301,12 +388,12 @@ def test_document_comparison_change_set_aggregates_asymmetric_replace_sides_befo
 
 
 def test_document_comparison_change_set_applies_one_global_contiguous_hunk_budget() -> None:
-    baseline = "\n".join(f"line-{index}" for index in range(150))
+    baseline = "\n".join(f"line-{index}" for index in range(150)) + "\n"
     candidate = "\n".join(
         value
         for index in range(150)
         for value in (f"line-{index}", f"add-{index}")
-    )
+    ) + "\n"
 
     result = build_document_ops_comparison_change_set(
         DocumentOpsComparisonChangeSetRequest(

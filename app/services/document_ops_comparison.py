@@ -53,8 +53,8 @@ def build_document_ops_comparison_change_set(
     """Build one complete opcode stream without provider, storage, or logging effects."""
     baseline_bytes = request.baseline_document_text.encode("utf-8")
     candidate_bytes = request.candidate_document_text.encode("utf-8")
-    baseline_lines = request.baseline_document_text.splitlines()
-    candidate_lines = request.candidate_document_text.splitlines()
+    baseline_lines = request.baseline_document_text.splitlines(keepends=True)
+    candidate_lines = request.candidate_document_text.splitlines(keepends=True)
 
     matcher = difflib.SequenceMatcher(
         a=baseline_lines,

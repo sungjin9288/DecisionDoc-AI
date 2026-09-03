@@ -635,13 +635,27 @@ def test_document_ops_comparison_validates_before_provider_and_replays_trusted_r
 ) -> None:
     client = _create_client(tmp_path, monkeypatch)
     provider = client.app.state.document_ops_service._agent.provider
-    original_generate_raw = provider.generate_raw
     calls = 0
 
     def counted_generate_raw(prompt: str, *, request_id: str, max_output_tokens=None) -> str:
         nonlocal calls
         calls += 1
-        return original_generate_raw(prompt, request_id=request_id, max_output_tokens=max_output_tokens)
+        return json.dumps(
+            {
+                "plan": [baseline.splitlines()[0], "baseline and candidate"],
+                "critique": [candidate.splitlines()[-1]],
+                "revision_tasks": [],
+                "draft": "baseline and candidate",
+                "evidence_status": {
+                    "confirmed": [baseline.splitlines()[-1]],
+                    "assumptions": [],
+                    "gaps": [candidate.splitlines()[0]],
+                    "source_references": [],
+                },
+                "qa": {"hard_gate_pass": True, "warnings": []},
+            },
+            ensure_ascii=False,
+        )
 
     provider.generate_raw = counted_generate_raw
     client.app.state.document_ops_service._agent._provider = provider
@@ -709,6 +723,10 @@ def test_document_ops_comparison_validates_before_provider_and_replays_trusted_r
     serialized_trajectory = json.dumps(trajectory, ensure_ascii=False)
     assert baseline not in serialized_trajectory
     assert candidate not in serialized_trajectory
+    assert all(
+        fragment not in serialized_trajectory
+        for fragment in (*baseline.splitlines(), *candidate.splitlines())
+    )
 
     persisted = "\n".join(
         path.read_text(encoding="utf-8")
@@ -717,6 +735,10 @@ def test_document_ops_comparison_validates_before_provider_and_replays_trusted_r
     )
     assert baseline not in persisted
     assert candidate not in persisted
+    assert all(
+        fragment not in persisted
+        for fragment in (*baseline.splitlines(), *candidate.splitlines())
+    )
 
 
 def test_document_ops_run_operation_conflicts_on_skill_or_catalog_drift_before_provider(

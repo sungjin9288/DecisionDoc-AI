@@ -317,6 +317,53 @@ def test_json_formatter_redacts_bearer_authorization_in_traceback():
     assert "RuntimeError: upstream rejected" in payload["traceback"]
 
 
+def test_json_formatter_redacts_quoted_sensitive_fields_in_message_and_traceback():
+    formatter = JsonLineFormatter()
+    sentinels = (
+        "json-access-secret",
+        "repr-password-secret",
+        "json-auth-secret",
+        "escaped-token-secret",
+        "escaped-auth-secret",
+        "opposite-quote-secret",
+        "escaped-inner-quote-secret",
+        "multi-escaped-secret",
+    )
+    message = (
+        '{"access_token":"json-access-secret",'
+        "'password': 'repr-password-secret',"
+        '"Authorization":"Bearer json-auth-secret"} '
+        r'{\"refresh_token\":\"escaped-token-secret\",'
+        r'\"Authorization\":\"Bearer escaped-auth-secret\"} '
+        '{"api_key":"abc\'opposite-quote-secret"} '
+        r'{\"password\":\"abc\\\"escaped-inner-quote-secret\"} '
+        r'{\\\"access_token\\\":\\\"multi-escaped-secret\\\"}'
+    )
+    try:
+        raise RuntimeError(message)
+    except RuntimeError:
+        record = logging.getLogger("decisiondoc.test").makeRecord(
+            name="decisiondoc.test",
+            level=logging.ERROR,
+            fn=__file__,
+            lno=0,
+            msg=message,
+            args=(),
+            exc_info=sys.exc_info(),
+        )
+
+    payload = json.loads(formatter.format(record))
+    serialized = json.dumps(payload, ensure_ascii=False)
+
+    assert all(sentinel not in serialized for sentinel in sentinels)
+    assert '"access_token":"[REDACTED]"' in payload["message"]
+    assert "'password': '[REDACTED]'" in payload["message"]
+    assert '"Authorization":"[REDACTED]"' in payload["message"]
+    assert r'\"refresh_token\":\"[REDACTED]\"' in payload["message"]
+    assert r'\"Authorization\":\"[REDACTED]\"' in payload["message"]
+    assert all(sentinel not in payload["traceback"] for sentinel in sentinels)
+
+
 def test_json_formatter_redacts_sensitive_structured_fields():
     formatter = JsonLineFormatter()
     record = logging.getLogger("decisiondoc.test").makeRecord(

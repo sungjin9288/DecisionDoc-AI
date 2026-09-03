@@ -89,6 +89,22 @@ class TestParseJsonResponse:
 # ────────────────────────────────────────────────────────────────────────────
 
 class TestChatCompletionSuccess:
+    def test_disables_environment_proxy_resolution(self, provider, monkeypatch):
+        monkeypatch.setenv("HTTP_PROXY", "http://proxy.example.test:8080")
+        resp_data = _make_openai_response('{"result": "ok"}')
+        mock_response = MagicMock()
+        mock_response.json.return_value = resp_data
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("httpx.Client") as mock_client_cls:
+            mock_client = MagicMock()
+            mock_client_cls.return_value.__enter__.return_value = mock_client
+            mock_client.post.return_value = mock_response
+
+            provider._chat_completion([{"role": "user", "content": "hello"}])
+
+        assert mock_client_cls.call_args.kwargs["trust_env"] is False
+
     def test_returns_content_string(self, provider):
         resp_data = _make_openai_response('{"result": "ok"}')
         mock_response = MagicMock()
@@ -278,6 +294,22 @@ class TestGenerateBundle:
 # ────────────────────────────────────────────────────────────────────────────
 
 class TestHealthCheck:
+    def test_disables_environment_proxy_resolution(self, provider, monkeypatch):
+        monkeypatch.setenv("ALL_PROXY", "http://proxy.example.test:8080")
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"data": []}
+        mock_client = AsyncMock()
+        mock_client.get.return_value = mock_resp
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("httpx.AsyncClient", return_value=mock_client) as mock_client_cls:
+            result = run_async(provider.health_check())
+
+        assert result["status"] == "ok"
+        assert mock_client_cls.call_args.kwargs["trust_env"] is False
+
     def test_openai_endpoint_ok(self, provider):
         models_response = {"data": [{"id": "llama3.1:8b"}, {"id": "qwen2.5:14b"}]}
         mock_resp = MagicMock()
@@ -316,12 +348,14 @@ class TestHealthCheck:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=None)
 
-        with patch("httpx.AsyncClient", return_value=mock_client):
+        with patch("httpx.AsyncClient", return_value=mock_client) as mock_client_cls:
             result = run_async(provider.health_check())
 
         assert result["status"] == "ok"
         assert result.get("type") == "ollama"
         assert "llama3.1:8b" in result["available_models"]
+        assert mock_client_cls.call_count == 2
+        assert all(call.kwargs["trust_env"] is False for call in mock_client_cls.call_args_list)
 
     def test_server_unreachable_returns_error(self):
         p = LocalProvider(base_url="http://localhost:19999/v1")

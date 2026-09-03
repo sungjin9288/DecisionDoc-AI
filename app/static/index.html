@@ -8260,9 +8260,21 @@
   }
 
   function documentOpsComparisonSourceLines(value) {
-    const lines = String(value || '').split(/\r\n|[\n\v\f\r\x1c-\x1e\x85\u2028\u2029]/);
-    if (lines.length && lines[lines.length - 1] === '') lines.pop();
+    const text = String(value || '');
+    const lines = [];
+    const lineEnding = /\r\n|[\n\v\f\r\x1c-\x1e\x85\u2028\u2029]/g;
+    let start = 0;
+    for (const match of text.matchAll(lineEnding)) {
+      const end = match.index + match[0].length;
+      lines.push(text.slice(start, end));
+      start = end;
+    }
+    if (start < text.length) lines.push(text.slice(start));
     return lines;
+  }
+
+  function documentOpsComparisonDisplayLine(value) {
+    return escapeHtml(JSON.stringify(String(value)).slice(1, -1));
   }
 
   function documentOpsComparisonChangeSetSnapshot() {
@@ -8315,8 +8327,8 @@
           : hunk.opcode === 'delete'
             ? 'remove'
             : 'replace';
-      const baselineText = hunk.baseline_lines.length ? hunk.baseline_lines.map(line => escapeHtml(line)).join('\n') : '(none)';
-      const candidateText = hunk.candidate_lines.length ? hunk.candidate_lines.map(line => escapeHtml(line)).join('\n') : '(none)';
+      const baselineText = hunk.baseline_lines.length ? hunk.baseline_lines.map(documentOpsComparisonDisplayLine).join('\n') : '(none)';
+      const candidateText = hunk.candidate_lines.length ? hunk.candidate_lines.map(documentOpsComparisonDisplayLine).join('\n') : '(none)';
       return `<section data-comparison-opcode="${escapeHtml(label)}" style="border:1px solid var(--border);border-radius:10px;padding:.55rem;margin-top:.5rem;min-width:0;">
         <div style="font-weight:900;">${escapeHtml(label)} #${index + 1}</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.45rem;margin-top:.4rem;min-width:0;">

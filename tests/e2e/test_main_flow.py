@@ -7921,6 +7921,46 @@ def test_document_ops_comparison_change_set_keeps_only_current_exact_download_an
     assert page.locator("#document-ops-comparison-change-set-download").is_visible()
     assert page.locator("#document-ops-comparison-change-set-download").is_enabled()
 
+    line_ending_result = page.evaluate(
+        """async () => {
+          const baseline = 'same content\\r\\n';
+          const candidate = 'same content\\n';
+          const response = await fetch('/api/agent/document-ops/comparison-documents/change-set', {
+            method: 'POST',
+            headers: { ...getAuthHeaders(_currentTenantId), 'Content-Type': 'application/json' },
+            cache: 'no-store',
+            body: JSON.stringify({
+              schema_version: 'document_ops_comparison_change_set_request_v1',
+              baseline_document_text: baseline,
+              candidate_document_text: candidate,
+              comparison_criteria: [],
+            }),
+          });
+          const value = await response.json();
+          const validated = await documentOpsValidatedComparisonChangeSet(
+            value,
+            baseline,
+            candidate,
+            [],
+          );
+          if (validated) renderDocumentOpsComparisonChangeSet({ value: validated });
+          return {
+            validated: Boolean(validated),
+            opcode: validated?.hunks?.[0]?.opcode || '',
+            baselineLine: validated?.hunks?.[0]?.baseline_lines?.[0] || '',
+            candidateLine: validated?.hunks?.[0]?.candidate_lines?.[0] || '',
+            rendered: document.querySelector('#document-ops-comparison-change-set')?.innerText || '',
+          };
+        }"""
+    )
+    assert line_ending_result["validated"] is True
+    assert line_ending_result["opcode"] == "replace"
+    assert line_ending_result["baselineLine"] == "same content\r\n"
+    assert line_ending_result["candidateLine"] == "same content\n"
+    assert "same content\\r\\n" in line_ending_result["rendered"]
+    assert "same content\\n" in line_ending_result["rendered"]
+    page.evaluate("() => renderDocumentOpsComparisonChangeSet(_documentOpsVerifiedComparisonChangeSet)")
+
     page.set_viewport_size({"width": 1440, "height": 1000})
     assert panel.is_visible()
     page.screenshot(path=str(tmp_path / "document-ops-change-set-desktop.png"), full_page=True)

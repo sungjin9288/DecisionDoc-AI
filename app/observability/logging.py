@@ -9,17 +9,17 @@ from typing import Any
 
 REDACTED = "[REDACTED]"
 _QUERY_PARAMETER = re.compile(r"([?&])([^=&#\s]+)=([^&#\s\"']*)")
-_AUTHORIZATION_VALUE = re.compile(
-    r"(?P<prefix>\bauthorization\s*[:=]\s*(?:[a-z][a-z0-9_-]*\s+)?)"
-    r"(?P<value>\"[^\"]*\"|'[^']*'|[^\s,;&?#]+)",
+_SENSITIVE_ASSIGNMENT_PREFIX = re.compile(
+    r"(?<![a-z0-9_])(?P<key_quote>[\\]*[\"']|)"
+    r"(?P<key>authorization|service[_-]?key|(?:[a-z0-9]+[_-])*"
+    r"(?:api[_-]?key|password|secret|signature|token))"
+    r"(?P=key_quote)\s*[:=]\s*",
     re.IGNORECASE,
 )
-_SENSITIVE_ASSIGNMENT = re.compile(
-    r"(?P<prefix>\b(?:service[_-]?key|(?:[a-z0-9]+[_-])*"
-    r"(?:api[_-]?key|password|secret|signature|token))\s*[:=]\s*)"
-    r"(?P<value>\"[^\"]*\"|'[^']*'|[^\s,;&?#]+)",
-    re.IGNORECASE,
+_AUTHORIZATION_SCHEMES = frozenset(
+    {"apikey", "basic", "bearer", "digest", "negotiate", "oauth", "token"}
 )
+_UNQUOTED_VALUE_STOPS = frozenset(" \t\r\n,;&?#}]\"'")
 
 
 def _is_sensitive_field(name: object) -> bool:
@@ -27,6 +27,85 @@ def _is_sensitive_field(name: object) -> bool:
     return normalized in {"authorization", "servicekey"} or normalized.endswith(
         ("apikey", "password", "secret", "signature", "token")
     )
+
+
+def _quoted_value_end(value: str, start: int, delimiter: str) -> int:
+    quote = delimiter[-1]
+    expected_backslashes = len(delimiter) - 1
+    cursor = start + len(delimiter)
+    while True:
+        quote_index = value.find(quote, cursor)
+        if quote_index < 0:
+            return len(value)
+        backslashes = 0
+        probe = quote_index - 1
+        while probe >= start and value[probe] == "\\":
+            backslashes += 1
+            probe -= 1
+        if (
+            backslashes == expected_backslashes
+            or (expected_backslashes == 0 and backslashes % 2 == 0)
+        ):
+            return quote_index + 1
+        cursor = quote_index + 1
+
+
+def _consume_sensitive_value(
+    value: str,
+    start: int,
+    *,
+    authorization: bool,
+    preserve_quotes: bool,
+) -> tuple[int, str] | None:
+    if start >= len(value) or value[start] in ",;&?#}]":
+        return None
+
+    delimiter_end = start
+    while delimiter_end < len(value) and value[delimiter_end] == "\\":
+        delimiter_end += 1
+    if delimiter_end < len(value) and value[delimiter_end] in "\"'":
+        delimiter = value[start : delimiter_end + 1]
+        end = _quoted_value_end(value, start, delimiter)
+        replacement = f"{delimiter}{REDACTED}{delimiter}" if preserve_quotes else REDACTED
+        return end, replacement
+
+    token_end = start
+    while token_end < len(value) and value[token_end] not in _UNQUOTED_VALUE_STOPS:
+        token_end += 1
+    if token_end == start:
+        return None
+
+    token = value[start:token_end]
+    if authorization and token.casefold() in _AUTHORIZATION_SCHEMES:
+        secret_start = token_end
+        while secret_start < len(value) and value[secret_start] in " \t":
+            secret_start += 1
+        secret_end = secret_start
+        while secret_end < len(value) and value[secret_end] not in _UNQUOTED_VALUE_STOPS:
+            secret_end += 1
+        if secret_end > secret_start:
+            return secret_end, f"{token}{value[token_end:secret_start]}{REDACTED}"
+    return token_end, REDACTED
+
+
+def _redact_sensitive_assignments(value: str) -> str:
+    parts: list[str] = []
+    cursor = 0
+    while match := _SENSITIVE_ASSIGNMENT_PREFIX.search(value, cursor):
+        parts.append(value[cursor:match.end()])
+        consumed = _consume_sensitive_value(
+            value,
+            match.end(),
+            authorization=match.group("key").casefold() == "authorization",
+            preserve_quotes=bool(match.group("key_quote")),
+        )
+        if consumed is None:
+            cursor = match.end()
+            continue
+        cursor, replacement = consumed
+        parts.append(replacement)
+    parts.append(value[cursor:])
+    return "".join(parts)
 
 
 def _redact_sensitive_text(value: str) -> str:
@@ -37,14 +116,7 @@ def _redact_sensitive_text(value: str) -> str:
         return f"{separator}{name}={REDACTED}" if raw_value else match.group(0)
 
     value = _QUERY_PARAMETER.sub(replace_query_parameter, value)
-    value = _AUTHORIZATION_VALUE.sub(
-        lambda match: f"{match.group('prefix')}{REDACTED}",
-        value,
-    )
-    return _SENSITIVE_ASSIGNMENT.sub(
-        lambda match: f"{match.group('prefix')}{REDACTED}",
-        value,
-    )
+    return _redact_sensitive_assignments(value)
 
 
 def _redact_sensitive_values(value: Any, *, field_name: object = "") -> Any:
