@@ -2478,6 +2478,82 @@ def test_password_change_rotates_session_and_reloads_other_tabs(page, live_serve
         second_page.close()
 
 
+def test_sse_uses_bearer_header_without_query_token(page):
+    page.evaluate("stopSSE()")
+
+    with page.expect_request(lambda request: "/events" in request.url) as request_info:
+        page.evaluate("startSSE()")
+
+    request = request_info.value
+    assert request.url.endswith("/events")
+    assert "token=" not in request.url
+    assert request.headers["authorization"].startswith("Bearer ")
+
+
+def test_sse_parser_preserves_named_multiline_events_across_chunks(page):
+    result = page.evaluate(
+        r"""async () => {
+          stopSSE();
+          const nativeFetch = window.fetch;
+          let capturedRequest = null;
+
+          window.fetch = async (url, options = {}) => {
+            capturedRequest = { url, headers: options.headers };
+            const encoder = new TextEncoder();
+            const chunks = [
+              'event: notifi',
+              'cation\r\ndata: {"part":"first"}',
+              '\r\ndata: second\r\n\r\n',
+            ];
+            let index = 0;
+            const body = new ReadableStream({
+              pull(controller) {
+                if (index < chunks.length) {
+                  controller.enqueue(encoder.encode(chunks[index++]));
+                  return;
+                }
+                controller.close();
+              },
+            });
+            return new Response(body, {
+              status: 200,
+              headers: { 'Content-Type': 'text/event-stream' },
+            });
+          };
+
+          try {
+            const source = createAuthenticatedEventStream('/events', {
+              Authorization: 'Bearer parser-test-token',
+            });
+            const data = await new Promise((resolve, reject) => {
+              const timeout = setTimeout(
+                () => reject(new Error('Timed out waiting for parsed SSE event.')),
+                1000,
+              );
+              source.addEventListener('notification', event => {
+                clearTimeout(timeout);
+                resolve(event.data);
+              });
+            });
+            source.close();
+            return { data, capturedRequest };
+          } finally {
+            window.fetch = nativeFetch;
+            startSSE();
+          }
+        }"""
+    )
+
+    assert result["data"] == '{"part":"first"}\nsecond'
+    assert result["capturedRequest"] == {
+        "url": "/events",
+        "headers": {
+            "Authorization": "Bearer parser-test-token",
+            "Accept": "text/event-stream",
+        },
+    }
+
+
 def test_open_sse_session_closes_after_password_credential_rotation(
     page,
     live_server,
@@ -2502,7 +2578,7 @@ def test_open_sse_session_closes_after_password_credential_rotation(
           startSSE();
         }"""
     )
-    page.wait_for_function("() => _sse?.readyState === EventSource.OPEN", timeout=5000)
+    page.wait_for_function("() => _sse?.readyState === 1", timeout=5000)
 
     password_changed = False
     try:
@@ -2555,12 +2631,13 @@ def test_sse_stale_callbacks_do_not_close_replacement_session(page):
         """() => {
           stopSSE();
           stopNotifPolling();
-          const NativeEventSource = window.EventSource;
+          const nativeEventStreamFactory = _eventStreamFactory;
           const sources = [];
 
-          class FakeEventSource {
-            constructor(url) {
+          class FakeEventStream {
+            constructor(url, headers) {
               this.url = url;
+              this.headers = headers;
               this.closed = false;
               this.listeners = new Map();
               sources.push(this);
@@ -2576,7 +2653,7 @@ def test_sse_stale_callbacks_do_not_close_replacement_session(page):
             }
           }
 
-          window.EventSource = FakeEventSource;
+          _eventStreamFactory = (url, headers) => new FakeEventStream(url, headers);
           _documentOpsReviewDrafts.set('sse-authority-unavailable-draft', {
             notes: '일시 장애 뒤에도 남아야 하는 검토 메모',
             scoreText: '0.7',
@@ -2606,7 +2683,7 @@ def test_sse_stale_callbacks_do_not_close_replacement_session(page):
 
           stopSSE();
           stopNotifPolling();
-          window.EventSource = NativeEventSource;
+          _eventStreamFactory = nativeEventStreamFactory;
           startSSE();
           return { staleCallback, unavailable };
         }"""
@@ -2757,7 +2834,7 @@ def test_logout_closes_same_session_in_another_browser_context(
             }"""
         )
         copied_page.wait_for_function(
-            "() => _sse?.readyState === EventSource.OPEN",
+            "() => _sse?.readyState === 1",
             timeout=5000,
         )
 
@@ -8030,13 +8107,35 @@ def test_localStorage_form_draft_saved(page):
 
 
 def test_history_saved_after_generate(page):
-    """After a successful generate, dd_history must contain the latest entry."""
+    """A successful stream generation must appear in local and server history."""
     _generate_to_results(page, "이력 테스트", "이력 확인")
     raw = page.evaluate("localStorage.getItem('dd_history')")
     assert raw is not None
     history = json.loads(raw)
     assert len(history) >= 1
     assert history[0]["title"] == "이력 테스트"
+
+    page.click("#history-toggle-btn")
+    page.wait_for_selector("#history-list .history-item", timeout=5000)
+    assert "이력 테스트" in page.locator("#history-list .history-item").first.inner_text()
+
+
+def test_completed_generation_clears_screen_reader_status(page):
+    """A completed result must not remain announced as an in-progress generation."""
+    _generate_to_results(page, "상태 완료 테스트", "완료 상태 확인")
+
+    assert page.locator("#sr-live-region").text_content() == ""
+
+
+def test_bundle_badge_matches_loaded_catalog(page):
+    """The visible bundle count must follow the loaded server catalog."""
+    expected_count = page.locator(".bundle-card").count()
+
+    assert expected_count > 0
+    assert (
+        page.locator("#bundle-count-badge").inner_text()
+        == f"🗂️ {expected_count}가지 번들"
+    )
 
 
 # ── 스케치 플로우 ─────────────────────────────────────────────────────────────

@@ -158,7 +158,7 @@ tenant-scoped DocumentOps stats endpoint successfully. No external provider or d
   backend while export and download paths remain local handoff artifacts resolved inside the tenant boundary.
 - Agent execution is blocked by maintenance mode. Read-only review surfaces remain separately
   authenticated.
-- Protected requests and `/events` query-token subscriptions re-resolve the signed user against the current
+- Protected requests and Authorization Bearer `/events` subscriptions re-resolve the signed user against the current
   tenant user store. Current role replaces a stale token role, inactive users are rejected, and store failures
   fail closed.
 - Password changes advance a persisted credential version with the password hash. Older access and refresh

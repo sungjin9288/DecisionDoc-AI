@@ -11,6 +11,7 @@ def _create_client(tmp_path, monkeypatch):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.setenv("DECISIONDOC_ENV", "dev")
     monkeypatch.setenv("DECISIONDOC_MAINTENANCE", "0")
+    monkeypatch.setenv("JWT_SECRET_KEY", "stream-test-secret-key-32chars!!")
     monkeypatch.delenv("DECISIONDOC_API_KEY", raising=False)
     monkeypatch.delenv("DECISIONDOC_API_KEYS", raising=False)
     from app.main import create_app
@@ -81,6 +82,39 @@ def test_stream_complete_event_has_docs(tmp_path, monkeypatch):
     complete = next(e for e in events if e["event"] == "complete")
     assert isinstance(complete["data"]["docs"], list)
     assert len(complete["data"]["docs"]) > 0
+
+
+def test_stream_generation_is_available_in_same_users_history(tmp_path, monkeypatch):
+    """The UI streaming path must persist the completed result for immediate reuse."""
+    client = _create_client(tmp_path, monkeypatch)
+    register = client.post(
+        "/auth/register",
+        json={
+            "username": "stream_history_admin",
+            "display_name": "Stream History Admin",
+            "email": "stream-history@example.com",
+            "password": "StreamHistory1!",
+        },
+    )
+    assert register.status_code == 200
+    headers = {"Authorization": f"Bearer {register.json()['access_token']}"}
+
+    with client.stream(
+        "POST",
+        "/generate/stream",
+        json={"title": "stream history", "goal": "persist completed result"},
+        headers=headers,
+    ) as response:
+        assert response.status_code == 200
+        events = _parse_events(response.read().decode())
+
+    completed = next(event for event in events if event["event"] == "complete")
+    history = client.get("/history", headers=headers)
+
+    assert history.status_code == 200
+    assert history.json()["count"] == 1
+    assert history.json()["history"][0]["entry_id"] == completed["data"]["request_id"]
+    assert history.json()["history"][0]["title"] == "stream history"
 
 
 def test_stream_invalid_payload_returns_422(tmp_path, monkeypatch):

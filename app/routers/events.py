@@ -10,7 +10,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from app.observability.logging import log_event
@@ -28,8 +28,8 @@ _POLL_INTERVAL = 0.4
 
 
 @router.get("/events")
-async def sse_stream(request: Request, token: str = Query(default="")):
-    """SSE endpoint. Clients connect with ?token=<jwt>.
+async def sse_stream(request: Request):
+    """Stream tenant events for the access token in the Bearer header.
 
     Streams events:
       event: notification
@@ -37,6 +37,8 @@ async def sse_stream(request: Request, token: str = Query(default="")):
       event: message_posted
       : heartbeat   (every 15s to keep connection alive)
     """
+    authorization = request.headers.get("Authorization", "")
+    token = authorization[7:] if authorization.startswith("Bearer ") else ""
     tenant_id = _resolve_event_tenant_id(
         token,
         data_dir=getattr(request.app.state, "data_dir", None),

@@ -31,6 +31,8 @@ from app.services.attachment_service import (
 )
 from app.storage.generation_export_source_store import GenerationExportSourceStore
 
+from app.routers.generate._history import store_generation_history
+
 logger = logging.getLogger("decisiondoc.generate")
 
 
@@ -736,33 +738,14 @@ def _run_generate(req: GenerateRequest, request: Request) -> GenerateResponse:
     )
     log_event(logger, _build_generate_log_event(request, result, request_id, template_version))
 
-    # 이력 자동 저장 (fire-and-forget)
-    try:
-        from datetime import datetime, timezone
-        from app.storage.history_store import HistoryStore, HistoryEntry
-        user_id = getattr(request.state, "user_id", None) or "anonymous"
-        HistoryStore(
-            tenant_id,
-            base_dir=str(request.app.state.data_dir),
-            backend=request.app.state.state_backend,
-        ).add(HistoryEntry(
-            entry_id=request_id,
-            tenant_id=tenant_id,
-            user_id=user_id,
-            bundle_id=req.bundle_type,
-            bundle_type=req.bundle_type,
-            bundle_name=req.bundle_type,
-            title=req.title,
-            request_id=request_id,
-            created_at=datetime.now(timezone.utc).isoformat(),
-            project_id=req.project_id or "",
-            score=0.0,
-            tags=[],
-            applied_references=metadata.get("applied_references", []),
-            docs=_build_generated_docs_response(result["docs"], result.get("raw_bundle")),
-        ))
-    except Exception as _he:
-        logger.warning("[History] 이력 저장 실패 (무시): %s", _he)
+    store_generation_history(
+        req,
+        request,
+        tenant_id=tenant_id,
+        request_id=request_id,
+        docs=_build_generated_docs_response(result["docs"], result.get("raw_bundle")),
+        applied_references=metadata.get("applied_references", []),
+    )
 
     return GenerateResponse(
         request_id=request_id,

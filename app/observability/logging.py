@@ -92,13 +92,19 @@ def setup_logging() -> None:
     for handler in root.handlers:
         if getattr(handler, "_decisiondoc_json", False):
             handler.setLevel(level)
-            return
+            break
+    else:
+        handler = logging.StreamHandler()
+        handler.setLevel(level)
+        handler.setFormatter(JsonLineFormatter())
+        handler._decisiondoc_json = True  # type: ignore[attr-defined]
+        root.handlers = [handler]
 
-    handler = logging.StreamHandler()
-    handler.setLevel(level)
-    handler.setFormatter(JsonLineFormatter())
-    handler._decisiondoc_json = True  # type: ignore[attr-defined]
-    root.handlers = [handler]
+    access_logger = logging.getLogger("uvicorn.access")
+    for handler in access_logger.handlers:
+        handler.setLevel(level)
+        handler.setFormatter(JsonLineFormatter())
+        handler._decisiondoc_json = True  # type: ignore[attr-defined]
 
 
 def log_event(logger: logging.Logger, event: dict[str, Any]) -> None:

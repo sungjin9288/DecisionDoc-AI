@@ -52,9 +52,11 @@ from app.services.visual_asset_service import requires_provider_visuals
 from app.storage.usage_store import UsageStoreError
 from app.storage.generation_export_source_store import GenerationExportSourceStoreError
 
+from app.routers.generate._history import store_generation_history
 from app.routers.generate._shared import (
     _apply_generate_state,
     _build_generate_log_event,
+    _build_generated_docs_response,
     _build_structured_slide_data,
     _ensure_procurement_bundle_enabled,
     _ensure_procurement_override_reason_for_downstream,
@@ -379,6 +381,16 @@ async def generate_stream(
                     ),
                     decision_evidence_refs=metadata.get("decision_evidence_refs", []),
                     docs=result["docs"],
+                )
+                store_generation_history(
+                    payload,
+                    request,
+                    tenant_id=tenant_id,
+                    request_id=request_id,
+                    docs=_build_generated_docs_response(
+                        result["docs"], result.get("raw_bundle")
+                    ),
+                    applied_references=metadata.get("applied_references", []),
                 )
                 yield f"event: complete\ndata: {resp.model_dump_json()}\n\n"
                 # Auto-link to project if project_id provided

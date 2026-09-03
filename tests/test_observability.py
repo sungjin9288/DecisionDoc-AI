@@ -1,5 +1,6 @@
-import logging
+import io
 import json
+import logging
 import sys
 from unittest.mock import AsyncMock, patch
 
@@ -215,6 +216,49 @@ def test_json_formatter_redacts_sensitive_query_parameters():
     assert "g2b-secret" not in payload["message"]
     assert "serviceKey=[REDACTED]" in payload["message"]
     assert "numOfRows=20" in payload["message"]
+
+
+def test_app_startup_redacts_uvicorn_access_query_tokens(tmp_path, monkeypatch):
+    from app.main import create_app
+
+    monkeypatch.setenv("DECISIONDOC_PROVIDER", "mock")
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("DECISIONDOC_ENV", "dev")
+    monkeypatch.delenv("DECISIONDOC_API_KEY", raising=False)
+    monkeypatch.delenv("DECISIONDOC_API_KEYS", raising=False)
+    app = create_app()
+
+    sentinel = "uvicorn-access-token-must-not-leak"
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    access_logger = logging.getLogger("uvicorn.access")
+    original_handlers = list(access_logger.handlers)
+    original_level = access_logger.level
+    original_propagate = access_logger.propagate
+    access_logger.handlers = [handler]
+    access_logger.setLevel(logging.INFO)
+    access_logger.propagate = False
+
+    try:
+        with TestClient(app):
+            access_logger.info(
+                '%s - "%s %s HTTP/%s" %d',
+                "127.0.0.1:12345",
+                "GET",
+                f"/events?token={sentinel}&cursor=1",
+                "1.1",
+                200,
+            )
+    finally:
+        access_logger.handlers = original_handlers
+        access_logger.setLevel(original_level)
+        access_logger.propagate = original_propagate
+
+    output = stream.getvalue()
+    assert sentinel not in output
+    assert "token=[REDACTED]" in output
+    assert "cursor=1" in output
 
 
 def test_json_formatter_redacts_bearer_authorization_in_message():

@@ -255,7 +255,8 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def _lifespan(app: FastAPI):
-        """FastAPI lifespan: drain background eval executor on shutdown."""
+        """Configure runtime logging and drain the eval executor on shutdown."""
+        setup_logging()
         yield
         if os.getenv("AWS_LAMBDA_FUNCTION_NAME") or os.getenv("LAMBDA_TASK_ROOT"):
             return
