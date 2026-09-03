@@ -13,10 +13,15 @@ from app.schemas import (
     ProcurementRecommendationValue,
 )
 from app.services.decision_council_service import DecisionCouncilService
+from app.services.generation_export_packet import (
+    build_generated_document_review_packet,
+    verify_generation_export_packet,
+)
 from app.storage.approval_store import ApprovalStore
 from app.storage.bookmark_store import BookmarkStore
 from app.storage.decision_council_store import DecisionCouncilStore
 from app.storage.history_store import HistoryEntry, HistoryStore
+from app.storage.generated_document_review_store import GeneratedDocumentReviewStore
 from app.storage.meeting_recording_store import MeetingRecordingStore
 from app.storage.notification_store import NotificationStore
 from app.storage.procurement_store import ProcurementDecisionStore
@@ -26,6 +31,7 @@ from app.storage.share_store import ShareStore
 from app.storage.state_backend import S3StateBackend
 from app.storage.tenant_store import TenantStore
 from app.storage.user_store import UserRole, UserStore
+from tests.async_helper import run_async
 
 
 class _FakeBody:
@@ -369,6 +375,65 @@ def test_procurement_review_store_preserves_packet_and_completed_package_on_s3()
     assert store.list_by_tenant(tenant_id="alpha") == [completed]
     assert store.list_by_project(tenant_id="beta", project_id="proj-1") == []
     assert store.list_by_tenant(tenant_id="beta") == []
+
+
+def test_generated_document_review_store_preserves_exact_packet_on_s3():
+    backend, client = _backend()
+    store = GeneratedDocumentReviewStore(base_dir="/virtual/data", backend=backend)
+    packet = run_async(
+        build_generated_document_review_packet(
+            docs=[{"doc_type": "adr", "markdown": "# S3 review"}],
+            title="S3 generated review",
+            tenant_id="alpha",
+            project_id="project-s3",
+            project_document_id="document-s3",
+            request_id="request-s3",
+            bundle_id="bundle-s3",
+            document_source_sha256="a" * 64,
+            formats=("docx",),
+        )
+    )
+    verification = verify_generation_export_packet(packet["content"])
+    arguments = {
+        "tenant_id": "alpha",
+        "project_id": "project-s3",
+        "project_document_id": "document-s3",
+        "packet_content": packet["content"],
+        "packet_verification": verification,
+        "prepared_at": "2026-09-03T00:00:00+00:00",
+        "creator_assignment": {
+            "user_id": "admin-id",
+            "username": "admin",
+            "role": "admin",
+        },
+        "reviewer_assignment": {
+            "user_id": "reviewer-id",
+            "username": "reviewer",
+            "role": "member",
+        },
+    }
+
+    record, created = store.prepare(**arguments)
+    replay, replay_created = store.prepare(
+        **{**arguments, "prepared_at": "2026-09-03T00:01:00+00:00"}
+    )
+
+    assert created is True
+    assert replay_created is False
+    assert replay == record
+    assert store.read_packet(record, tenant_id="alpha") == packet["content"]
+    packet_key = (
+        "unit-bucket",
+        "decisiondoc-ai/state/tenants/alpha/generated_document_reviews/packets/"
+        f"{record.packet_sha256}.zip",
+    )
+    record_key = (
+        "unit-bucket",
+        "decisiondoc-ai/state/tenants/alpha/generated_document_reviews/projects/"
+        f"project-s3/document-s3/{record.packet_sha256}/record.json",
+    )
+    assert client.objects[packet_key] == packet["content"]
+    assert record_key in client.objects
 
 
 def test_share_store_persists_to_s3_state_backend():

@@ -303,12 +303,12 @@ external effect gap을 닫지 않는다.
 
 ```bash
 python3 scripts/count_readme_metrics.py --field router_files      # → 23 (top-level 라우터 파일)
-python3 scripts/count_readme_metrics.py --field service_files     # → 50 (서비스)
-python3 scripts/count_readme_metrics.py --field storage_files     # → 53 (top-level storage modules)
-python3 scripts/count_readme_metrics.py --field middleware_files  # → 12 (미들웨어)
-python3 scripts/count_readme_metrics.py --field route_decorators  # → 296 (라우트)
-python3 scripts/count_readme_metrics.py --field test_files        # → 278 (테스트 파일)
-python3 scripts/count_readme_metrics.py --field test_functions    # → 3857 (Python AST test_ 정의; pass 수 아님)
+python3 scripts/count_readme_metrics.py --field service_files     # → 51 (서비스)
+python3 scripts/count_readme_metrics.py --field storage_files     # → 55 (top-level storage modules)
+python3 scripts/count_readme_metrics.py --field middleware_files  # → 13 (미들웨어)
+python3 scripts/count_readme_metrics.py --field route_decorators  # → 300 (라우트)
+python3 scripts/count_readme_metrics.py --field test_files        # → 281 (테스트 파일)
+python3 scripts/count_readme_metrics.py --field test_functions    # → 3888 (Python AST test_ 정의; pass 수 아님)
 ```
 
 ```text
@@ -323,14 +323,14 @@ FastAPI (app/main.py — create_app(), 모듈 레벨 side-effect 없음)
   │     audit context helpers: document_ops_audit / auth_session_retention_audit
   │       / procurement_review_audit
   │
-  ├─ Routers (23 top-level files, 라우트 296):
+  ├─ Routers (23 top-level files, 라우트 300):
   │     generate / approvals / projects / knowledge / report_workflows
   │     auth / sso / admin / audit / billing / dashboard / history
   │     eval / finetune / local_llm / g2b / document_ops_agent
   │     templates / styles / messages / notifications / events / health
   │
   ▼
-Services (50) — 도메인 오케스트레이션
+Services (51) — 도메인 오케스트레이션
   ├─ generation_service ─ 핵심 파이프라인:
   │     요청 → 캐시 → Provider.generate_bundle() → 스키마 검증
   │        → Stabilizer → Storage 저장 → Jinja2 렌더 → Lint → 반환
@@ -341,7 +341,7 @@ Services (50) — 도메인 오케스트레이션
   │
   ├────────────────┬─────────────────────┐
   ▼                ▼                     ▼
-Providers (5)    Storage (51 modules)   Ops
+Providers (5)    Storage (55 modules)   Ops
   factory +        factory +             CloudWatch 조사
   fallback chain   Local / S3            Statuspage 연동
   mock / openai    (atomic write 공통)   eval / eval_live
@@ -414,6 +414,36 @@ Providers (5)    Storage (51 modules)   Ops
 ---
 
 생성 export packet의 source는 이제 selected local/S3 backend에 bounded durable state로 보존되어 restart·독립 worker 재다운로드를 지원한다. 이는 local implementation/integrity 범위를 보강한 것이며 M1 live provider, M2 G2B stage receipt, M6 AWS deploy/runtime proof의 외부 실증 갭을 해소하지 않는다.
+
+### Generated document review handoff local slice (2026-09-03)
+
+저장된 project document를 current session-bound reviewer에게 전달하는 별도
+`pending` 경로를 구현했다. Packet manifest는 project/document/request/bundle과
+document source SHA-256, 선택된 최대 5개 형식을 포함하고, immutable packet과 record는 selected
+`StateBackend`에 저장된다. Admin은 활성 tenant admin/member를 지정하고 member는
+자신에게만 지정한다. API key, Ops key, sessionless JWT, viewer, inactive/foreign
+identity는 이 경로를 사용할 수 없다.
+
+Browser는 project action, project history와 generated-document inbox를 제공한다.
+ZIP media type, `Content-Length`, packet/manifest SHA-256, artifact count,
+`pending`, reviewer binding, review-only, persisted state와 seven all-false
+authority headers가 모두 맞고 packet bytes의 SHA-256이 일치한 뒤에만 download를
+시작한다. Source가 `changed` 또는 `missing`이면 historical bytes를 변경하지 않고
+명시적 확인을 요구한다. Auth, tenant, user, project, document, packet 또는 request
+generation drift는 늦은 response와 object URL을 폐기한다.
+
+이 slice는 review completion, reassignment, reminder/notification, expiry,
+deletion, approval state mutation, provider call, AWS/G2B, dataset upload, training,
+deployment 또는 production resume를 포함하지 않는다. Focused 재현 명령은 다음과
+같으며 current full-suite pass 수는 section 0의 별도 snapshot을 대체하지 않는다.
+
+```bash
+python3 -m pytest -q tests/test_generation_export_packet.py --tb=short
+python3 -m pytest -q tests/storage/test_generated_document_review_store.py --tb=short
+python3 -m pytest -q tests/test_generated_document_reviews.py tests/test_infrastructure.py -k generated_document_review --tb=short
+python3 -m pytest -q tests/test_generated_document_review_ui_static.py --tb=short
+python3 -m pytest -q tests/e2e/test_main_flow.py -k generated_document_review --browser chromium --tb=short
+```
 
 ---
 

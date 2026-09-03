@@ -16,6 +16,7 @@ from app.services.pptx_service import build_pptx_from_docs
 
 
 PACKET_SCHEMA = "decisiondoc.generate_export_review_packet.v1"
+PERSISTED_PACKET_SCHEMA = "decisiondoc.generated_document_review_packet.v1"
 MANIFEST_PATH = "export_packet_manifest.json"
 FORMAT_ORDER = ("docx", "pdf", "xlsx", "hwp", "pptx")
 ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
@@ -66,6 +67,17 @@ AUTHORITY_FALSE = {
     "g2b_submission_authorized": False,
     "provider_execution_authorized": False,
     "training_execution_authorized": False,
+}
+
+TRANSIENT_SOURCE_KEYS = {"request_id", "tenant_id", "title"}
+PERSISTED_SOURCE_KEYS = {
+    "bundle_id",
+    "document_source_sha256",
+    "project_document_id",
+    "project_id",
+    "request_id",
+    "tenant_id",
+    "title",
 }
 
 
@@ -179,9 +191,68 @@ async def build_generation_export_packet(
     formats: str | Sequence[str],
 ) -> dict[str, Any]:
     """Convert every requested artifact in memory, then self-verify the ZIP."""
-    canonical_formats = canonicalize_export_formats(formats)
     if not all(isinstance(value, str) and value for value in (title, tenant_id, request_id)):
         raise ExportPacketBuildError("source binding is invalid")
+    return await _build_export_packet(
+        docs=docs,
+        title=title,
+        formats=formats,
+        schema=PACKET_SCHEMA,
+        packet_persisted=False,
+        source={
+            "request_id": request_id,
+            "tenant_id": tenant_id,
+            "title": title,
+        },
+    )
+
+
+async def build_generated_document_review_packet(
+    *,
+    docs: list[dict[str, Any]],
+    title: str,
+    tenant_id: str,
+    project_id: str,
+    project_document_id: str,
+    request_id: str,
+    bundle_id: str,
+    document_source_sha256: str,
+    formats: str | Sequence[str],
+) -> dict[str, Any]:
+    """Build a deterministic packet bound to one persisted project document."""
+    source = {
+        "bundle_id": bundle_id,
+        "document_source_sha256": document_source_sha256,
+        "project_document_id": project_document_id,
+        "project_id": project_id,
+        "request_id": request_id,
+        "tenant_id": tenant_id,
+        "title": title,
+    }
+    if any(not isinstance(value, str) or not value for value in source.values()):
+        raise ExportPacketBuildError("source binding is invalid")
+    if not _is_sha256(document_source_sha256):
+        raise ExportPacketBuildError("source fingerprint is invalid")
+    return await _build_export_packet(
+        docs=docs,
+        title=title,
+        formats=formats,
+        schema=PERSISTED_PACKET_SCHEMA,
+        packet_persisted=True,
+        source=source,
+    )
+
+
+async def _build_export_packet(
+    *,
+    docs: list[dict[str, Any]],
+    title: str,
+    formats: str | Sequence[str],
+    schema: str,
+    packet_persisted: bool,
+    source: dict[str, str],
+) -> dict[str, Any]:
+    canonical_formats = canonicalize_export_formats(formats)
 
     artifacts: list[tuple[str, bytes]] = []
     manifest_artifacts: list[dict[str, Any]] = []
@@ -215,14 +286,10 @@ async def build_generation_export_packet(
         "artifacts": manifest_artifacts,
         "authority": dict(AUTHORITY_FALSE),
         "human_review_completed": False,
-        "packet_persisted": False,
+        "packet_persisted": packet_persisted,
         "review_only": True,
-        "schema": PACKET_SCHEMA,
-        "source": {
-            "request_id": request_id,
-            "tenant_id": tenant_id,
-            "title": title,
-        },
+        "schema": schema,
+        "source": source,
     }
     manifest_bytes = _canonical_json_bytes(manifest)
     packet = _build_zip(artifacts, manifest_bytes)
@@ -266,6 +333,14 @@ def _validate_zip_metadata(member: zipfile.ZipInfo) -> None:
         raise GenerationExportPacketError("packet ZIP entry exceeds size limit")
 
 
+def _is_sha256(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
 def _validate_manifest(manifest_bytes: bytes, entries: dict[str, bytes]) -> dict[str, Any]:
     try:
         text = manifest_bytes.decode("utf-8")
@@ -284,13 +359,19 @@ def _validate_manifest(manifest_bytes: bytes, entries: dict[str, bytes]) -> dict
         "source",
     }:
         raise GenerationExportPacketError("packet manifest keys are invalid")
-    if manifest.get("schema") != PACKET_SCHEMA:
+    schema = manifest.get("schema")
+    schema_rules = {
+        PACKET_SCHEMA: (False, TRANSIENT_SOURCE_KEYS),
+        PERSISTED_PACKET_SCHEMA: (True, PERSISTED_SOURCE_KEYS),
+    }
+    if schema not in schema_rules:
         raise GenerationExportPacketError("packet schema is invalid")
     if manifest.get("review_only") is not True:
         raise GenerationExportPacketError("packet review boundary is invalid")
     if manifest.get("human_review_completed") is not False:
         raise GenerationExportPacketError("packet human review state is invalid")
-    if manifest.get("packet_persisted") is not False:
+    expected_persisted, expected_source_keys = schema_rules[schema]
+    if manifest.get("packet_persisted") is not expected_persisted:
         raise GenerationExportPacketError("packet persistence state is invalid")
     authority = manifest.get("authority")
     if (
@@ -301,10 +382,14 @@ def _validate_manifest(manifest_bytes: bytes, entries: dict[str, bytes]) -> dict
         raise GenerationExportPacketError("packet authority boundary is invalid")
 
     source = manifest.get("source")
-    if not isinstance(source, dict) or set(source) != {"request_id", "tenant_id", "title"}:
+    if not isinstance(source, dict) or set(source) != expected_source_keys:
         raise GenerationExportPacketError("packet source binding is invalid")
     if any(not isinstance(source[key], str) or not source[key] for key in source):
         raise GenerationExportPacketError("packet source binding is invalid")
+    if schema == PERSISTED_PACKET_SCHEMA and not _is_sha256(
+        source["document_source_sha256"]
+    ):
+        raise GenerationExportPacketError("packet source fingerprint is invalid")
 
     artifacts = manifest.get("artifacts")
     if not isinstance(artifacts, list) or not 1 <= len(artifacts) <= len(FORMAT_ORDER):
@@ -405,9 +490,13 @@ def verify_generation_export_packet(content: bytes) -> dict[str, Any]:
         raise GenerationExportPacketError("packet bytes are not canonical")
     return {
         "artifact_count": len(manifest["artifacts"]),
+        "formats": [artifact["format"] for artifact in manifest["artifacts"]],
         "manifest": manifest,
         "manifest_sha256": _sha256(manifest_bytes),
+        "packet_persisted": manifest["packet_persisted"],
         "packet_sha256": _sha256(content),
+        "schema": manifest["schema"],
+        "source": manifest["source"],
         "verified": True,
     }
 

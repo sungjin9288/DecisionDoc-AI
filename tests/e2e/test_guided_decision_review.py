@@ -561,6 +561,12 @@ def test_guided_review_uses_the_session_bound_project_loading_path(page):
     project["documents"] = [_document("proposal-a", "2026-07-26T10:00:00Z")]
     responses = {
         f"/projects/{project['project_id']}": project,
+        f"/projects/{project['project_id']}/generated-document-reviews": {
+            "reviews": [],
+            "total": 0,
+            "access_scope": "tenant",
+            "operational_approval": False,
+        },
         f"/projects/{project['project_id']}/procurement": {"decision": _decision()},
         f"/projects/{project['project_id']}/procurement/reviews": {
             "reviews": [_review("2026-07-27T09:00:00Z", "a" * 64)]

@@ -14,10 +14,12 @@ from fastapi.testclient import TestClient
 from app.services.generation_export_packet import (
     AUTHORITY_FALSE,
     MANIFEST_PATH,
+    PERSISTED_PACKET_SCHEMA,
     ExportPacketBuildError,
     GenerationExportPacketError,
     _canonical_json_bytes,
     _write_zip_entry,
+    build_generated_document_review_packet,
     build_generation_export_packet,
     canonicalize_export_formats,
     verify_generation_export_packet,
@@ -35,6 +37,22 @@ def _build_packet(formats: str = "docx,hwp") -> dict:
             title="Unsafe / title\\..\x00 with control\ncharacters",
             tenant_id="tenant-a",
             request_id="source-request-1",
+            formats=formats,
+        )
+    )
+
+
+def _build_persisted_packet(formats: str = "pptx,docx") -> dict:
+    return run_async(
+        build_generated_document_review_packet(
+            docs=DOCS,
+            title="검토 문서",
+            tenant_id="tenant-a",
+            project_id="project-a",
+            project_document_id="document-a",
+            request_id="request-a",
+            bundle_id="bundle-a",
+            document_source_sha256="a" * 64,
             formats=formats,
         )
     )
@@ -136,6 +154,77 @@ def test_packet_is_byte_identical_for_all_supported_formats():
 
     assert first["content"] == second["content"]
     assert verify_generation_export_packet(first["content"])["artifact_count"] == 5
+
+
+def test_persisted_packet_binds_project_document_source_and_canonical_formats():
+    packet = _build_persisted_packet()
+    evidence = verify_generation_export_packet(packet["content"])
+
+    assert evidence["schema"] == PERSISTED_PACKET_SCHEMA
+    assert evidence["packet_persisted"] is True
+    assert evidence["formats"] == ["docx", "pptx"]
+    assert evidence["source"] == {
+        "bundle_id": "bundle-a",
+        "document_source_sha256": "a" * 64,
+        "project_document_id": "document-a",
+        "project_id": "project-a",
+        "request_id": "request-a",
+        "tenant_id": "tenant-a",
+        "title": "검토 문서",
+    }
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "persisted_false",
+        "transient_source",
+        "extra_source",
+        "invalid_source_sha256",
+        "unknown_schema",
+    ),
+)
+def test_persisted_packet_verifier_rejects_schema_source_and_persistence_drift(mutation):
+    packet = _build_persisted_packet()
+    entries, names = _packet_entries(packet["content"])
+    manifest = json.loads(entries[MANIFEST_PATH])
+    if mutation == "persisted_false":
+        manifest["packet_persisted"] = False
+    elif mutation == "transient_source":
+        manifest["source"] = {
+            "request_id": "request-a",
+            "tenant_id": "tenant-a",
+            "title": "검토 문서",
+        }
+    elif mutation == "extra_source":
+        manifest["source"]["unexpected"] = "value"
+    elif mutation == "invalid_source_sha256":
+        manifest["source"]["document_source_sha256"] = "A" * 64
+    else:
+        manifest["schema"] = "decisiondoc.generated_document_review_packet.v2"
+    entries[MANIFEST_PATH] = _canonical_json_bytes(manifest)
+
+    with pytest.raises(GenerationExportPacketError):
+        verify_generation_export_packet(_repack(entries, names))
+
+
+def test_transient_packet_verifier_rejects_persisted_schema_values():
+    packet = _build_packet("docx")
+    entries, names = _packet_entries(packet["content"])
+    manifest = json.loads(entries[MANIFEST_PATH])
+    manifest["packet_persisted"] = True
+    manifest["source"].update(
+        {
+            "bundle_id": "bundle-a",
+            "document_source_sha256": "a" * 64,
+            "project_document_id": "document-a",
+            "project_id": "project-a",
+        }
+    )
+    entries[MANIFEST_PATH] = _canonical_json_bytes(manifest)
+
+    with pytest.raises(GenerationExportPacketError):
+        verify_generation_export_packet(_repack(entries, names))
 
 
 def test_packet_verifier_rejects_tampered_artifact_and_extra_member():

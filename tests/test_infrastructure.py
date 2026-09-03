@@ -4466,3 +4466,74 @@ def test_procurement_package_constants_facade_reexports_foundation_contract():
     assert foundation_names
     for name in foundation_names:
         assert getattr(constants, name) is getattr(package_constants, name)
+
+
+def test_generated_document_review_handoff_keeps_separate_immutable_boundary():
+    root = Path(__file__).resolve().parents[1]
+    packet = (root / "app/services/generation_export_packet.py").read_text(
+        encoding="utf-8"
+    )
+    store = (root / "app/storage/generated_document_review_store.py").read_text(
+        encoding="utf-8"
+    )
+    service = (root / "app/services/generated_document_review_service.py").read_text(
+        encoding="utf-8"
+    )
+    router = (
+        root / "app/routers/projects/generated_document_reviews.py"
+    ).read_text(encoding="utf-8")
+    main = (root / "app/main.py").read_text(encoding="utf-8")
+
+    assert 'PERSISTED_PACKET_SCHEMA = "decisiondoc.generated_document_review_packet.v1"' in packet
+    assert 'RECORD_SCHEMA = "decisiondoc.generated_document_review_handoff.v1"' in (
+        root / "app/storage/generated_document_review_models.py"
+    ).read_text(encoding="utf-8")
+    assert store.index("write_bytes_if_absent") < store.index("write_text_if_absent")
+    assert '"packets" / f"{packet_sha256}.zip"' in store
+    assert '/ "projects"' in store
+    assert 'dependencies=[Depends(require_session_bound_generated_document_reviewer)]' in router
+    assert '"/generated-document-reviews"' in router
+    assert '"/projects/{project_id}/generated-document-reviews"' in router
+    assert '"/projects/{project_id}/generated-document-reviews/{packet_sha256}/packet"' in router
+    assert "app.state.generated_document_review_store" in main
+    assert "app.state.generated_document_review_service" in main
+    for source in (store, service, router):
+        assert "ApprovalStore" not in source
+        assert "get_provider" not in source
+        assert "boto3" not in source
+
+
+def test_generated_document_review_observability_is_explicit_and_redacted():
+    root = Path(__file__).resolve().parents[1]
+    observability = (root / "app/middleware/observability.py").read_text(
+        encoding="utf-8"
+    )
+    audit = (root / "app/middleware/audit.py").read_text(encoding="utf-8")
+    projection = (
+        root / "app/middleware/generated_document_review_audit.py"
+    ).read_text(encoding="utf-8")
+
+    for field in (
+        "generated_document_review_action",
+        "generated_document_review_project_id",
+        "generated_document_review_document_id",
+        "generated_document_review_packet_sha256",
+        "generated_document_review_status",
+        "generated_document_review_access_scope",
+        "generated_document_review_replay",
+        "generated_document_review_source_status",
+        "generated_document_review_operational_approval",
+    ):
+        assert f'"{field}"' in observability
+    for action in (
+        "generated_document_review.prepare",
+        "generated_document_review.inbox_view",
+        "generated_document_review.project_history_view",
+        "generated_document_review.packet_download",
+    ):
+        assert action in projection
+    assert "generated_document_review_audit.RULES" in audit
+    assert 'return "", username, user_role, ""' in projection
+    assert 'return "", ""' in projection
+    assert "doc_snapshot" not in projection
+    assert "packet_content" not in projection

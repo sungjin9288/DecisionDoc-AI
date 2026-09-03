@@ -173,6 +173,9 @@ from app.schemas.decision_evidence import (
     GuidedDecisionReviewRecheckRequest,
     GuidedDecisionReviewStage,
 )
+from app.schemas.generated_document_reviews import (
+    CreateGeneratedDocumentReviewRequest,
+)
 
 __all__ = [
     "DocType",
@@ -316,4 +319,5 @@ __all__ = [
     "GuidedDecisionReviewRecheckReceipt",
     "GuidedDecisionReviewRecheckRequest",
     "GuidedDecisionReviewStage",
+    "CreateGeneratedDocumentReviewRequest",
 ]

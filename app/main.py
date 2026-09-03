@@ -46,6 +46,7 @@ from app.storage.report_workflow_store import ReportWorkflowStore
 from app.storage.trajectory_store import TrajectoryStore
 from app.storage.feedback_store import FeedbackStore
 from app.storage.generation_export_source_store import GenerationExportSourceStore
+from app.storage.generated_document_review_store import GeneratedDocumentReviewStore
 from app.storage.prompt_override_store import PromptOverrideStore
 from app.storage.state_backend import get_state_backend
 from app.tenant import SYSTEM_TENANT_ID
@@ -143,6 +144,10 @@ def create_app() -> FastAPI:
     storage = get_storage()
     state_backend = get_state_backend(data_dir=data_dir)
     generation_export_source_store = GenerationExportSourceStore(backend=state_backend)
+    generated_document_review_store = GeneratedDocumentReviewStore(
+        base_dir=str(data_dir),
+        backend=state_backend,
+    )
 
     # ── Multi-tenant setup ──────────────────────────────────────────────────
     from app.storage.tenant_store import TenantStore, migrate_legacy_data
@@ -216,6 +221,15 @@ def create_app() -> FastAPI:
     ops_service = get_ops_service()
     approval_store = ApprovalStore(base_dir=str(data_dir), backend=state_backend)
     project_store = ProjectStore(base_dir=str(data_dir), backend=state_backend)
+    from app.services.generated_document_review_service import (
+        GeneratedDocumentReviewService,
+    )
+    generated_document_review_service = GeneratedDocumentReviewService(
+        project_store=project_store,
+        review_store=generated_document_review_store,
+        data_dir=data_dir,
+        state_backend=state_backend,
+    )
     report_workflow_store = ReportWorkflowStore(base_dir=str(data_dir), backend=state_backend)
     trajectory_store = TrajectoryStore(data_dir, backend=state_backend)
     meeting_recording_store = MeetingRecordingStore(base_dir=str(data_dir), backend=state_backend)
@@ -311,6 +325,8 @@ def create_app() -> FastAPI:
     app.state.document_ops_service = document_ops_service
     app.state.procurement_store = procurement_store
     app.state.procurement_review_store = procurement_review_store
+    app.state.generated_document_review_store = generated_document_review_store
+    app.state.generated_document_review_service = generated_document_review_service
     app.state.decision_council_store = decision_council_store
     app.state.decision_council_service = decision_council_service
     app.state.decision_evidence_service = decision_evidence_service

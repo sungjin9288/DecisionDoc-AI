@@ -2211,6 +2211,189 @@
       opacity: 0.5;
       cursor: not-allowed;
     }
+    .review-inbox-tabs {
+      display: flex;
+      gap: 4px;
+      margin: 4px 0 0;
+      border-bottom: 1px solid var(--border, #e5e7eb);
+    }
+    .review-inbox-tabs button {
+      min-height: 38px;
+      padding: 0 12px;
+      border: 0;
+      border-bottom: 2px solid transparent;
+      background: transparent;
+      color: var(--muted, #6b7280);
+      font-size: 0.82rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .review-inbox-tabs button.active {
+      border-bottom-color: var(--p1, #4f46e5);
+      color: var(--p1, #4f46e5);
+    }
+    .generated-document-review-inbox,
+    .generated-document-review-history {
+      display: grid;
+      gap: 12px;
+      margin: 0 0 18px;
+      padding: 16px 0;
+      border-bottom: 1px solid var(--border, #e5e7eb);
+    }
+    .generated-document-review-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .generated-document-review-heading h2,
+    .generated-document-review-heading h4 {
+      margin: 0;
+      font-size: 1rem;
+      line-height: 1.3;
+    }
+    .generated-document-review-list {
+      display: grid;
+    }
+    .generated-document-review-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(190px, 0.75fr) auto;
+      gap: 12px;
+      align-items: center;
+      padding: 12px 0;
+      border-top: 1px solid var(--border, #e5e7eb);
+    }
+    .generated-document-review-row:first-child { border-top: 0; }
+    .generated-document-review-primary,
+    .generated-document-review-meta {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+    }
+    .generated-document-review-primary strong,
+    .generated-document-review-primary span,
+    .generated-document-review-meta span {
+      overflow-wrap: anywhere;
+    }
+    .generated-document-review-primary span,
+    .generated-document-review-meta span,
+    .generated-document-review-empty,
+    .generated-document-review-boundary {
+      color: var(--muted, #6b7280);
+      font-size: 0.78rem;
+      line-height: 1.5;
+    }
+    .generated-document-review-status {
+      display: inline-flex;
+      width: fit-content;
+      min-height: 24px;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #fef3c7;
+      color: #92400e;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+    .generated-document-review-source.changed,
+    .generated-document-review-source.missing {
+      color: #b45309;
+      font-weight: 700;
+    }
+    .generated-document-review-actions {
+      display: flex;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .generated-document-review-actions button,
+    .generated-document-review-heading button {
+      min-height: 34px;
+      padding: 0 10px;
+      border: 1px solid var(--border, #e5e7eb);
+      border-radius: 6px;
+      background: var(--surface, #fff);
+      color: inherit;
+      font-size: 0.76rem;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .generated-document-review-actions button:disabled,
+    .generated-document-review-heading button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .generated-document-review-dialog-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 1100;
+      display: grid;
+      place-items: center;
+      padding: 16px;
+      background: rgba(15, 23, 42, 0.46);
+    }
+    .generated-document-review-dialog {
+      width: min(100%, 560px);
+      max-height: min(90vh, 720px);
+      overflow: auto;
+      border: 1px solid var(--border, #e5e7eb);
+      border-radius: 8px;
+      background: var(--surface, #fff);
+      box-shadow: 0 20px 45px rgba(15, 23, 42, 0.2);
+      padding: 20px;
+    }
+    .generated-document-review-dialog h3 { margin: 0; font-size: 1.05rem; }
+    .generated-document-review-dialog-form {
+      display: grid;
+      gap: 16px;
+      margin-top: 16px;
+    }
+    .generated-document-review-dialog-form > label {
+      display: grid;
+      gap: 6px;
+      font-size: 0.82rem;
+      font-weight: 700;
+    }
+    .generated-document-review-format-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .generated-document-review-format-grid label {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      min-width: 0;
+      min-height: 38px;
+      border: 1px solid var(--border, #e5e7eb);
+      border-radius: 6px;
+      font-size: 0.76rem;
+      font-weight: 700;
+    }
+    .generated-document-review-dialog-actions {
+      display: flex;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .generated-document-review-dialog-actions button {
+      min-height: 38px;
+      padding: 0 14px;
+      border: 1px solid var(--border, #e5e7eb);
+      border-radius: 6px;
+      background: var(--surface, #fff);
+      color: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .generated-document-review-dialog-actions button[data-generated-document-review-submit] {
+      border-color: var(--p1, #4f46e5);
+      background: var(--p1, #4f46e5);
+      color: #fff;
+    }
     .procurement-summary-list {
       margin: 10px 0 0;
       padding-left: 18px;
@@ -3479,6 +3662,12 @@
       .procurement-review-inbox-search { width: 100%; }
       .procurement-review-inbox-row { grid-template-columns: 1fr; }
       .procurement-review-inbox-actions { justify-content: flex-start; }
+      .review-inbox-tabs { overflow-x: auto; }
+      .generated-document-review-row { grid-template-columns: 1fr; }
+      .generated-document-review-actions { justify-content: flex-start; }
+      .generated-document-review-dialog { width: min(100%, 560px); }
+      .generated-document-review-format-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .generated-document-review-dialog-actions button { flex: 1 1 160px; }
       .decision-council-form { grid-template-columns: 1fr; }
       .decision-council-actions button { width: 100%; }
       .decision-evidence-head { align-items: stretch; flex-direction: column; }
@@ -6486,6 +6675,22 @@
   </div>
   <!-- Stats row -->
   <div id="project-stats-row" class="stats-row"></div>
+  <div id="review-inbox-tabs" class="review-inbox-tabs" role="tablist" aria-label="검토함 종류">
+    <button type="button" class="active" role="tab" aria-selected="true" data-review-inbox-tab="generated">문서 검토 전달</button>
+    <button type="button" role="tab" aria-selected="false" data-review-inbox-tab="procurement">조달 검토</button>
+  </div>
+  <section id="generated-document-review-inbox" class="generated-document-review-inbox" aria-labelledby="generated-document-review-inbox-title">
+    <div class="generated-document-review-heading">
+      <div>
+        <h2 id="generated-document-review-inbox-title">문서 검토 전달</h2>
+        <p class="generated-document-review-boundary">검토 증빙이며 운영 승인 아님</p>
+      </div>
+      <button type="button" data-generated-document-review-inbox-refresh aria-label="문서 검토 전달함 새로고침">새로고침</button>
+    </div>
+    <div id="generated-document-review-inbox-summary" class="generated-document-review-boundary"></div>
+    <div id="generated-document-review-inbox-list" class="generated-document-review-list" aria-live="polite"></div>
+    <div id="generated-document-review-inbox-download-fallback" style="display:none;"></div>
+  </section>
   <section id="procurement-review-inbox" class="procurement-review-inbox" aria-labelledby="procurement-review-inbox-title" style="display:none;">
     <div class="procurement-review-inbox-header">
       <h2 id="procurement-review-inbox-title">조달 검토함</h2>
@@ -22660,6 +22865,616 @@
     }
   }
 
+  const GENERATED_DOCUMENT_REVIEW_FORMATS = ['docx', 'pdf', 'xlsx', 'hwp', 'pptx'];
+  const GENERATED_DOCUMENT_REVIEW_DOWNLOAD_SCOPE = 'generated-document-review';
+  const GENERATED_DOCUMENT_REVIEW_AUTHORITY_HEADERS = [
+    'X-DecisionDoc-Authority-Approval-Authorized',
+    'X-DecisionDoc-Authority-Aws-Execution-Authorized',
+    'X-DecisionDoc-Authority-Dataset-Upload-Authorized',
+    'X-DecisionDoc-Authority-Deployment-Authorized',
+    'X-DecisionDoc-Authority-G2b-Submission-Authorized',
+    'X-DecisionDoc-Authority-Provider-Execution-Authorized',
+    'X-DecisionDoc-Authority-Training-Execution-Authorized',
+  ];
+  const _generatedDocumentReviewState = {
+    requestEpoch: 0,
+    activeInbox: 'procurement',
+    inboxReviews: [],
+    projectReviews: [],
+    pendingOperations: new Set(),
+    objectUrls: new Set(),
+    dialogContext: null,
+  };
+
+  function canUseGeneratedDocumentReviews() {
+    return ['admin', 'member'].includes(String(_currentUser?.role || ''));
+  }
+
+  function clearGeneratedDocumentReviewObjectUrls() {
+    for (const url of _generatedDocumentReviewState.objectUrls) {
+      try { URL.revokeObjectURL(url); } catch (_) {}
+    }
+    _generatedDocumentReviewState.objectUrls.clear();
+    _clearScopedExportDownloadUrls(GENERATED_DOCUMENT_REVIEW_DOWNLOAD_SCOPE);
+  }
+
+  function invalidateGeneratedDocumentReviewState() {
+    _generatedDocumentReviewState.requestEpoch += 1;
+    _generatedDocumentReviewState.inboxReviews = [];
+    _generatedDocumentReviewState.projectReviews = [];
+    _generatedDocumentReviewState.pendingOperations.clear();
+    _generatedDocumentReviewState.dialogContext = null;
+    document.querySelector('.generated-document-review-dialog-backdrop')?.remove();
+    clearGeneratedDocumentReviewObjectUrls();
+  }
+
+  function invalidateGeneratedDocumentReviewProjectContext() {
+    _generatedDocumentReviewState.requestEpoch += 1;
+    _generatedDocumentReviewState.projectReviews = [];
+    _generatedDocumentReviewState.pendingOperations.clear();
+    _generatedDocumentReviewState.dialogContext = null;
+    document.querySelector('.generated-document-review-dialog-backdrop')?.remove();
+    clearGeneratedDocumentReviewObjectUrls();
+  }
+
+  function captureGeneratedDocumentReviewContext({
+    operation,
+    projectId = '',
+    documentId = '',
+    packetSha256 = '',
+  }) {
+    const requestEpoch = ++_generatedDocumentReviewState.requestEpoch;
+    const currentDocument = _currentProjectDetail?.project?.project_id === projectId
+      ? _currentProjectDetail?.docsById?.[documentId]
+      : null;
+    return {
+      operation,
+      requestEpoch,
+      authRevision: _authSessionRevision,
+      tenantId: _currentTenantId,
+      userId: _currentSignedUserId(),
+      projectId: String(projectId || ''),
+      documentId: String(documentId || ''),
+      packetSha256: String(packetSha256 || ''),
+      requestId: String(currentDocument?.request_id || ''),
+      documentPresent: Boolean(currentDocument),
+      projectDetailLoadId: _projectDetailLoadId,
+    };
+  }
+
+  function isGeneratedDocumentReviewContextCurrent(context) {
+    if (
+      !context
+      || context.requestEpoch !== _generatedDocumentReviewState.requestEpoch
+      || context.authRevision !== _authSessionRevision
+      || context.tenantId !== _currentTenantId
+      || context.userId !== _currentSignedUserId()
+    ) return false;
+
+    if (context.operation === 'inbox-load') return true;
+    if (context.operation === 'inbox-download') {
+      return _generatedDocumentReviewState.inboxReviews.some(review => (
+        review?.project_id === context.projectId
+        && review?.project_document_id === context.documentId
+        && review?.packet_sha256 === context.packetSha256
+      ));
+    }
+
+    const detail = _currentProjectDetail;
+    const document = detail?.docsById?.[context.documentId];
+    if (
+      context.projectDetailLoadId !== _projectDetailLoadId
+      || detail?.project?.project_id !== context.projectId
+    ) return false;
+    if (context.operation === 'create') {
+      return Boolean(
+        document
+        && context.documentPresent
+        && context.requestId === String(document.request_id || '')
+        && String(document.request_id || '').trim()
+        && String(document.doc_snapshot || '').trim()
+      );
+    }
+    const documentIdentityIsCurrent = (
+      Boolean(document) === context.documentPresent
+      && (!document || context.requestId === String(document.request_id || ''))
+    );
+    return documentIdentityIsCurrent && _generatedDocumentReviewState.projectReviews.some(review => (
+      review?.project_id === context.projectId
+      && review?.project_document_id === context.documentId
+      && review?.packet_sha256 === context.packetSha256
+    ));
+  }
+
+  function generatedDocumentReviewOperationKey(context) {
+    return [
+      context.operation,
+      context.projectId,
+      context.documentId,
+      context.packetSha256,
+    ].join(':');
+  }
+
+  async function readVerifiedGeneratedDocumentReviewPacket(
+    response,
+    { requestIsCurrent, expectedSourceStatus = '' },
+  ) {
+    if (!requestIsCurrent()) return null;
+    const contentType = String(response.headers.get('Content-Type') || '')
+      .split(';', 1)[0]
+      .trim()
+      .toLowerCase();
+    const contentLengthValue = String(response.headers.get('Content-Length') || '');
+    const contentLength = Number(contentLengthValue);
+    const packetSha256 = String(response.headers.get('X-DecisionDoc-Packet-SHA256') || '');
+    const manifestSha256 = String(response.headers.get('X-DecisionDoc-Manifest-SHA256') || '');
+    const artifactCountValue = String(response.headers.get('X-DecisionDoc-Artifact-Count') || '');
+    const artifactCount = Number(artifactCountValue);
+    const reviewStatus = response.headers.get('X-DecisionDoc-Review-Status');
+    const reviewerIdentityBound = response.headers.get('X-DecisionDoc-Reviewer-Identity-Bound');
+    const replay = response.headers.get('X-DecisionDoc-Replay');
+    const reviewOnly = response.headers.get('X-DecisionDoc-Review-Only');
+    const packetPersisted = response.headers.get('X-DecisionDoc-Packet-Persisted');
+    const humanReviewCompleted = response.headers.get('X-DecisionDoc-Human-Review-Completed');
+    const operationalApproval = response.headers.get('X-DecisionDoc-Operational-Approval');
+    const sourceStatus = String(response.headers.get('X-DecisionDoc-Source-Status') || '');
+    const contentDisposition = String(response.headers.get('Content-Disposition') || '');
+    const cacheControl = String(response.headers.get('Cache-Control') || '');
+    const contentTypeOptions = String(response.headers.get('X-Content-Type-Options') || '');
+    const authorityIsClosed = GENERATED_DOCUMENT_REVIEW_AUTHORITY_HEADERS.every(
+      header => response.headers.get(header) === 'false',
+    );
+    if (
+      contentType !== 'application/zip'
+      || !/^\d+$/.test(contentLengthValue)
+      || !Number.isSafeInteger(contentLength)
+      || contentLength <= 0
+      || !/^[0-9a-f]{64}$/.test(packetSha256)
+      || !/^[0-9a-f]{64}$/.test(manifestSha256)
+      || !/^\d+$/.test(artifactCountValue)
+      || !Number.isSafeInteger(artifactCount)
+      || artifactCount < 1
+      || artifactCount > GENERATED_DOCUMENT_REVIEW_FORMATS.length
+      || reviewStatus !== 'pending'
+      || reviewerIdentityBound !== 'true'
+      || !['true', 'false'].includes(replay)
+      || reviewOnly !== 'true'
+      || packetPersisted !== 'true'
+      || humanReviewCompleted !== 'false'
+      || operationalApproval !== 'false'
+      || !authorityIsClosed
+      || cacheControl.toLowerCase() !== 'no-store'
+      || contentTypeOptions.toLowerCase() !== 'nosniff'
+      || !/^attachment;/i.test(contentDisposition)
+      || (expectedSourceStatus && sourceStatus !== expectedSourceStatus)
+    ) {
+      throw new Error('generated document review verification headers are invalid');
+    }
+    const packetBytes = await response.arrayBuffer();
+    if (!requestIsCurrent()) return null;
+    if (contentLength !== packetBytes.byteLength) {
+      throw new Error('generated document review content length mismatch');
+    }
+    const digest = await crypto.subtle.digest('SHA-256', packetBytes);
+    if (!requestIsCurrent()) return null;
+    const actualPacketSha256 = Array.from(
+      new Uint8Array(digest),
+      value => value.toString(16).padStart(2, '0'),
+    ).join('');
+    if (actualPacketSha256 !== packetSha256) {
+      throw new Error('generated document review packet hash mismatch');
+    }
+    if (!requestIsCurrent()) return null;
+    const blob = new Blob([packetBytes], { type: 'application/zip' });
+    return {
+      blob,
+      packetSha256,
+      replay: replay === 'true',
+      sourceStatus,
+    };
+  }
+
+  function generatedDocumentReviewSourceStatusMeta(sourceStatus) {
+    if (sourceStatus === 'changed') {
+      return {
+        label: '원본 변경됨',
+        copy: '현재 문서가 전달 시점 이후 변경되었습니다.',
+        confirmation: '현재 문서가 전달 시점 이후 변경되었습니다. 전달 당시의 검토 패킷을 다운로드할까요?',
+      };
+    }
+    if (sourceStatus === 'missing') {
+      return {
+        label: '원본 없음',
+        copy: '현재 프로젝트에서 원본 문서를 찾을 수 없습니다.',
+        confirmation: '현재 프로젝트에서 원본 문서를 찾을 수 없습니다. 전달 당시의 검토 패킷을 다운로드할까요?',
+      };
+    }
+    return { label: '원본 일치', copy: '현재 문서와 전달 시점 원본이 일치합니다.', confirmation: '' };
+  }
+
+  function renderGeneratedDocumentReviewRows(reviews, { surface }) {
+    if (!Array.isArray(reviews) || !reviews.length) {
+      return '<p class="generated-document-review-empty">대기 중인 문서 검토 전달이 없습니다.</p>';
+    }
+    return reviews.map(review => {
+      const projectId = String(review?.project_id || '');
+      const documentId = String(review?.project_document_id || '');
+      const packetSha256 = String(review?.packet_sha256 || '');
+      const sourceStatus = String(review?.source_status || 'current');
+      const sourceMeta = generatedDocumentReviewSourceStatusMeta(sourceStatus);
+      const formatCount = Array.isArray(review?.formats) ? review.formats.length : Number(review?.artifact_count || 0);
+      const projectLabel = surface === 'project'
+        ? String(_currentProjectDetail?.project?.name || projectId)
+        : projectId;
+      return `
+        <article class="generated-document-review-row" data-generated-document-review-packet="${escapeHtml(packetSha256)}">
+          <div class="generated-document-review-primary">
+            <span class="generated-document-review-status">검토 대기</span>
+            <strong>${escapeHtml(String(review?.title || '프로젝트 문서'))}</strong>
+            <span>${escapeHtml(projectLabel)} · document ${escapeHtml(documentId)}</span>
+          </div>
+          <div class="generated-document-review-meta">
+            <span>reviewer ${escapeHtml(String(review?.reviewer?.username || ''))} · creator ${escapeHtml(String(review?.creator?.username || ''))}</span>
+            <span>${formatCount}개 형식 · ${escapeHtml(String(review?.prepared_at || '').replace('T', ' ').slice(0, 16))}</span>
+            <span>packet ${escapeHtml(packetSha256.slice(0, 12))}</span>
+            <span class="generated-document-review-source ${escapeHtml(sourceStatus)}">${escapeHtml(sourceMeta.label)} · ${escapeHtml(sourceMeta.copy)}</span>
+          </div>
+          <div class="generated-document-review-actions">
+            ${surface === 'inbox' ? `<button type="button" data-generated-document-review-open-project="${escapeHtml(projectId)}">프로젝트 열기</button>` : ''}
+            <button
+              type="button"
+              ${surface === 'project' ? 'data-project-detail-action="generated-document-review-download"' : 'data-generated-document-review-download'}
+              data-project-id="${escapeHtml(projectId)}"
+              data-doc-id="${escapeHtml(documentId)}"
+              data-packet-sha256="${escapeHtml(packetSha256)}"
+              data-source-status="${escapeHtml(sourceStatus)}"
+            >검증된 패킷 ZIP</button>
+          </div>
+        </article>`;
+    }).join('');
+  }
+
+  function renderGeneratedDocumentReviewInbox() {
+    const tabs = document.getElementById('review-inbox-tabs');
+    const section = document.getElementById('generated-document-review-inbox');
+    const summary = document.getElementById('generated-document-review-inbox-summary');
+    const list = document.getElementById('generated-document-review-inbox-list');
+    if (!tabs || !section || !summary || !list) return;
+    const canUse = canUseGeneratedDocumentReviews();
+    if (_generatedDocumentReviewState.activeInbox === 'procurement' && !isProcurementCopilotEnabled()) {
+      _generatedDocumentReviewState.activeInbox = 'generated';
+    }
+    tabs.style.display = canUse || isProcurementCopilotEnabled() ? 'flex' : 'none';
+    tabs.querySelectorAll('[data-review-inbox-tab]').forEach(button => {
+      const active = button.dataset.reviewInboxTab === _generatedDocumentReviewState.activeInbox;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-selected', active ? 'true' : 'false');
+      if (button.dataset.reviewInboxTab === 'procurement') {
+        button.style.display = isProcurementCopilotEnabled() ? '' : 'none';
+      }
+    });
+    const visible = canUse && _generatedDocumentReviewState.activeInbox === 'generated';
+    section.style.display = visible ? 'grid' : 'none';
+    if (!visible) return;
+    const reviews = _generatedDocumentReviewState.inboxReviews;
+    summary.textContent = `대기 ${reviews.length}건 · 검토 증빙이며 운영 승인 아님`;
+    list.innerHTML = renderGeneratedDocumentReviewRows(reviews, { surface: 'inbox' });
+    wireGeneratedDocumentReviewInboxActions(section);
+  }
+
+  function renderProjectGeneratedDocumentReviewHistory(projectId, reviews) {
+    if (!canUseGeneratedDocumentReviews()) return '';
+    const visibleReviews = Array.isArray(reviews) ? reviews : [];
+    return `
+      <section class="generated-document-review-history" aria-labelledby="project-generated-document-review-title">
+        <div class="generated-document-review-heading">
+          <div>
+            <h4 id="project-generated-document-review-title">문서 검토 전달</h4>
+            <p class="generated-document-review-boundary">pending 전달 이력입니다. 검토 증빙이며 운영 승인 아님</p>
+          </div>
+        </div>
+        <div class="generated-document-review-list" data-generated-document-review-project="${escapeHtml(projectId)}">
+          ${renderGeneratedDocumentReviewRows(visibleReviews, { surface: 'project' })}
+        </div>
+        <div id="project-generated-document-review-download-fallback" style="display:none;"></div>
+      </section>`;
+  }
+
+  async function loadGeneratedDocumentReviewInbox() {
+    if (!canUseGeneratedDocumentReviews()) {
+      _generatedDocumentReviewState.inboxReviews = [];
+      renderGeneratedDocumentReviewInbox();
+      return;
+    }
+    const context = captureGeneratedDocumentReviewContext({ operation: 'inbox-load' });
+    const requestIsCurrent = () => isGeneratedDocumentReviewContextCurrent(context);
+    const list = document.getElementById('generated-document-review-inbox-list');
+    if (list && _generatedDocumentReviewState.activeInbox === 'generated') {
+      list.innerHTML = '<p class="generated-document-review-empty">문서 검토 전달함을 불러오는 중입니다.</p>';
+    }
+    try {
+      const response = await fetch(
+        '/generated-document-reviews?review_status=pending&limit=50&offset=0',
+        { headers: getAuthHeaders() },
+      );
+      if (!requestIsCurrent()) return;
+      if (!response.ok) {
+        const error = await resolveApiErrorResponse(response);
+        if (!requestIsCurrent()) return;
+        throw new Error(error.message);
+      }
+      const payload = await response.json();
+      if (!requestIsCurrent()) return;
+      _generatedDocumentReviewState.inboxReviews = Array.isArray(payload?.reviews) ? payload.reviews : [];
+      renderGeneratedDocumentReviewInbox();
+    } catch (error) {
+      if (!requestIsCurrent()) return;
+      _generatedDocumentReviewState.inboxReviews = [];
+      if (list) {
+        list.innerHTML = `<p class="generated-document-review-empty">${escapeHtml(error.message || '문서 검토 전달함을 불러오지 못했습니다.')}</p>`;
+      }
+    }
+  }
+
+  function setReviewInboxTab(tab) {
+    const requested = tab === 'procurement' && isProcurementCopilotEnabled() ? 'procurement' : 'generated';
+    _generatedDocumentReviewState.activeInbox = requested;
+    document.querySelectorAll('[data-review-inbox-tab]').forEach(button => {
+      const active = button.dataset.reviewInboxTab === requested;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-selected', active ? 'true' : 'false');
+      if (button.dataset.reviewInboxTab === 'procurement') {
+        button.style.display = isProcurementCopilotEnabled() ? '' : 'none';
+      }
+    });
+    renderGeneratedDocumentReviewInbox();
+    renderProcurementReviewInbox();
+  }
+
+  async function downloadGeneratedDocumentReviewPacket({
+    surface,
+    projectId,
+    documentId,
+    packetSha256,
+    sourceStatus,
+    button,
+  }) {
+    const sourceMeta = generatedDocumentReviewSourceStatusMeta(sourceStatus);
+    if (sourceMeta.confirmation && !window.confirm(sourceMeta.confirmation)) return;
+    const operationKey = [
+      surface === 'inbox' ? 'inbox-download' : 'project-download',
+      projectId,
+      documentId,
+      packetSha256,
+    ].join(':');
+    if (_generatedDocumentReviewState.pendingOperations.has(operationKey)) return;
+    const context = captureGeneratedDocumentReviewContext({
+      operation: surface === 'inbox' ? 'inbox-download' : 'project-download',
+      projectId,
+      documentId,
+      packetSha256,
+    });
+    const requestIsCurrent = () => isGeneratedDocumentReviewContextCurrent(context);
+    _generatedDocumentReviewState.pendingOperations.add(operationKey);
+    if (button) button.disabled = true;
+    try {
+      const response = await fetch(
+        `/projects/${encodeURIComponent(context.projectId)}/generated-document-reviews/${encodeURIComponent(context.packetSha256)}/packet`,
+        { headers: getAuthHeaders() },
+      );
+      if (!requestIsCurrent()) return;
+      if (!response.ok) throw new Error('generated document review download failed');
+      const verified = await readVerifiedGeneratedDocumentReviewPacket(response, {
+        requestIsCurrent,
+        expectedSourceStatus: sourceStatus,
+      });
+      if (!verified || !requestIsCurrent()) return;
+      clearGeneratedDocumentReviewObjectUrls();
+      const url = _triggerBrowserDownload(
+        verified.blob,
+        `generated-document-review-${verified.packetSha256}.zip`,
+        '문서 검토 전달 패킷 ZIP',
+        {
+          fallbackContainerId: surface === 'inbox'
+            ? 'generated-document-review-inbox-download-fallback'
+            : 'project-generated-document-review-download-fallback',
+          scope: GENERATED_DOCUMENT_REVIEW_DOWNLOAD_SCOPE,
+        },
+      );
+      _generatedDocumentReviewState.objectUrls.add(url);
+      if (!requestIsCurrent()) {
+        clearGeneratedDocumentReviewObjectUrls();
+        return;
+      }
+      showNotification('검증된 문서 검토 전달 패킷 다운로드를 요청했습니다. 운영 승인은 실행되지 않았습니다.', 'success');
+    } catch (_) {
+      if (!requestIsCurrent()) return;
+      showNotification('문서 검토 전달 패킷을 검증하지 못했습니다.', 'error');
+    } finally {
+      _generatedDocumentReviewState.pendingOperations.delete(operationKey);
+      if (button && requestIsCurrent()) button.disabled = false;
+    }
+  }
+
+  function wireGeneratedDocumentReviewInboxActions(section) {
+    section?.querySelectorAll('[data-generated-document-review-open-project]').forEach(button => {
+      button.addEventListener('click', () => openProjectDetailFromList(
+        button.dataset.generatedDocumentReviewOpenProject || '',
+      ));
+    });
+    section?.querySelectorAll('[data-generated-document-review-download]').forEach(button => {
+      button.addEventListener('click', () => downloadGeneratedDocumentReviewPacket({
+        surface: 'inbox',
+        projectId: button.dataset.projectId || '',
+        documentId: button.dataset.docId || '',
+        packetSha256: button.dataset.packetSha256 || '',
+        sourceStatus: button.dataset.sourceStatus || '',
+        button,
+      }));
+    });
+  }
+
+  function closeGeneratedDocumentReviewDialog({ invalidate = true } = {}) {
+    document.querySelector('.generated-document-review-dialog-backdrop')?.remove();
+    _generatedDocumentReviewState.dialogContext = null;
+    if (invalidate) _generatedDocumentReviewState.requestEpoch += 1;
+  }
+
+  async function resolveGeneratedDocumentReviewers(context) {
+    if (_currentUser?.role === 'member') {
+      return [{
+        username: String(_currentUser?.username || ''),
+        display_name: String(_currentUser?.display_name || _currentUser?.username || ''),
+        role: 'member',
+        is_active: true,
+      }].filter(user => user.username);
+    }
+    const response = await fetch('/admin/users', { headers: getAuthHeaders() });
+    if (!isGeneratedDocumentReviewContextCurrent(context)) return [];
+    if (!response.ok) throw new Error('reviewer list unavailable');
+    const payload = await response.json();
+    if (!isGeneratedDocumentReviewContextCurrent(context)) return [];
+    return (Array.isArray(payload?.users) ? payload.users : []).filter(user => (
+      user?.is_active === true && ['admin', 'member'].includes(String(user?.role || ''))
+    ));
+  }
+
+  async function openGeneratedDocumentReviewDialog(projectId, documentId) {
+    const projectDocument = getProjectDocumentById(projectId, documentId);
+    if (!canUseGeneratedDocumentReviews() || !projectDocument) return;
+    if (!String(projectDocument.request_id || '').trim() || !String(projectDocument.doc_snapshot || '').trim()) {
+      showNotification('저장된 생성 원본이 있는 문서만 검토 패킷으로 전달할 수 있습니다.', 'error');
+      return;
+    }
+    closeGeneratedDocumentReviewDialog();
+    const context = captureGeneratedDocumentReviewContext({
+      operation: 'create',
+      projectId,
+      documentId,
+    });
+    _generatedDocumentReviewState.dialogContext = context;
+    try {
+      const reviewers = await resolveGeneratedDocumentReviewers(context);
+      if (!isGeneratedDocumentReviewContextCurrent(context)) return;
+      if (!reviewers.length) throw new Error('active reviewer unavailable');
+      const backdrop = document.createElement('div');
+      backdrop.className = 'generated-document-review-dialog-backdrop';
+      backdrop.innerHTML = `
+        <section class="generated-document-review-dialog" role="dialog" aria-modal="true" aria-labelledby="generated-document-review-dialog-title">
+          <h3 id="generated-document-review-dialog-title">검토 패킷 전달</h3>
+          <p class="generated-document-review-boundary">${escapeHtml(String(projectDocument.title || '프로젝트 문서'))}의 현재 저장본을 지정 reviewer에게 전달합니다.</p>
+          <div class="generated-document-review-dialog-form">
+            <label>
+              검토 담당자
+              <select data-generated-document-review-reviewer>
+                ${reviewers.map(user => `
+                  <option value="${escapeHtml(String(user.username || ''))}">${escapeHtml(String(user.display_name || user.username || ''))} · ${escapeHtml(String(user.role || ''))}</option>
+                `).join('')}
+              </select>
+            </label>
+            <div>
+              <strong style="font-size:.82rem;">전달 형식</strong>
+              <div class="generated-document-review-format-grid" style="margin-top:6px;">
+                ${GENERATED_DOCUMENT_REVIEW_FORMATS.map(format => `
+                  <label><input type="checkbox" value="${format}" data-generated-document-review-format checked><span>${format.toUpperCase()}</span></label>
+                `).join('')}
+              </div>
+            </div>
+            <p class="generated-document-review-boundary">검토 증빙이며 운영 승인 아님</p>
+            <div class="generated-document-review-dialog-actions">
+              <button type="button" data-generated-document-review-cancel>취소</button>
+              <button type="button" data-generated-document-review-submit>검토 패킷 전달</button>
+            </div>
+          </div>
+        </section>`;
+      document.body.appendChild(backdrop);
+      backdrop.querySelector('[data-generated-document-review-cancel]')?.addEventListener(
+        'click',
+        () => closeGeneratedDocumentReviewDialog(),
+      );
+      backdrop.addEventListener('click', event => {
+        if (event.target === backdrop) closeGeneratedDocumentReviewDialog();
+      });
+      backdrop.querySelector('[data-generated-document-review-submit]')?.addEventListener(
+        'click',
+        event => submitGeneratedDocumentReview(context, event.currentTarget),
+      );
+      backdrop.querySelector('[data-generated-document-review-reviewer]')?.focus();
+    } catch (_) {
+      if (!isGeneratedDocumentReviewContextCurrent(context)) return;
+      showNotification('활성 검토 담당자를 불러오지 못했습니다.', 'error');
+    }
+  }
+
+  async function submitGeneratedDocumentReview(context, button) {
+    if (!isGeneratedDocumentReviewContextCurrent(context)) return;
+    const dialog = document.querySelector('.generated-document-review-dialog');
+    const reviewer = String(dialog?.querySelector('[data-generated-document-review-reviewer]')?.value || '');
+    const formats = [...(dialog?.querySelectorAll('[data-generated-document-review-format]:checked') || [])]
+      .map(input => String(input.value || ''));
+    if (!reviewer || !formats.length) {
+      showNotification('검토 담당자와 전달 형식을 선택하세요.', 'error');
+      return;
+    }
+    const operationKey = generatedDocumentReviewOperationKey(context);
+    if (_generatedDocumentReviewState.pendingOperations.has(operationKey)) return;
+    _generatedDocumentReviewState.pendingOperations.add(operationKey);
+    button.disabled = true;
+    const requestIsCurrent = () => isGeneratedDocumentReviewContextCurrent(context);
+    try {
+      const response = await fetch(
+        `/projects/${encodeURIComponent(context.projectId)}/documents/${encodeURIComponent(context.documentId)}/generated-reviews`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          body: JSON.stringify({ reviewer, formats }),
+        },
+      );
+      if (!requestIsCurrent()) return;
+      if (!response.ok) throw new Error('generated document review create failed');
+      const verified = await readVerifiedGeneratedDocumentReviewPacket(response, { requestIsCurrent });
+      if (!verified || !requestIsCurrent()) return;
+      clearGeneratedDocumentReviewObjectUrls();
+      const url = _triggerBrowserDownload(
+        verified.blob,
+        `generated-document-review-${verified.packetSha256}.zip`,
+        '문서 검토 전달 패킷 ZIP',
+        {
+          fallbackContainerId: 'project-generated-document-review-download-fallback',
+          scope: GENERATED_DOCUMENT_REVIEW_DOWNLOAD_SCOPE,
+        },
+      );
+      _generatedDocumentReviewState.objectUrls.add(url);
+      if (!requestIsCurrent()) {
+        clearGeneratedDocumentReviewObjectUrls();
+        return;
+      }
+      closeGeneratedDocumentReviewDialog({ invalidate: false });
+      showNotification(
+        verified.replay
+          ? '기존 문서 검토 전달 패킷을 검증해 다시 다운로드했습니다.'
+          : '문서 검토 전달을 기록하고 검증된 패킷을 다운로드했습니다. 운영 승인은 실행되지 않았습니다.',
+        'success',
+      );
+      await loadProjectDetail(context.projectId);
+      await loadGeneratedDocumentReviewInbox();
+    } catch (_) {
+      if (!requestIsCurrent()) return;
+      showNotification('문서 검토 전달을 생성하거나 검증하지 못했습니다.', 'error');
+    } finally {
+      _generatedDocumentReviewState.pendingOperations.delete(operationKey);
+      if (button && requestIsCurrent()) button.disabled = false;
+    }
+  }
+
+  document.querySelectorAll('[data-review-inbox-tab]').forEach(button => {
+    button.addEventListener('click', () => setReviewInboxTab(button.dataset.reviewInboxTab || 'generated'));
+  });
+  document.querySelector('[data-generated-document-review-inbox-refresh]')?.addEventListener(
+    'click',
+    loadGeneratedDocumentReviewInbox,
+  );
+
   function getProcurementReviewInboxStatusLabel(status) {
     return status === 'completed' ? '완료' : '검토 대기';
   }
@@ -22683,7 +23498,10 @@
     const listEl = document.getElementById('procurement-review-inbox-list');
     if (!section || !summaryEl || !listEl) return;
 
-    if (!isProcurementCopilotEnabled()) {
+    if (
+      !isProcurementCopilotEnabled()
+      || _generatedDocumentReviewState.activeInbox !== 'procurement'
+    ) {
       section.style.display = 'none';
       return;
     }
@@ -22758,8 +23576,11 @@
       return;
     }
 
-    section.style.display = 'grid';
-    listEl.innerHTML = '<p class="procurement-review-inbox-empty">검토함을 불러오는 중입니다.</p>';
+    const visible = _generatedDocumentReviewState.activeInbox === 'procurement';
+    section.style.display = visible ? 'grid' : 'none';
+    if (visible) {
+      listEl.innerHTML = '<p class="procurement-review-inbox-empty">검토함을 불러오는 중입니다.</p>';
+    }
     const loadId = ++_procurementReviewInboxLoadId;
     const authRevision = _authSessionRevision;
     const tenantId = _currentTenantId;
@@ -22798,6 +23619,7 @@
     _projectDetailLoadId += 1;
     _clearScopedExportDownloadUrls(PROCUREMENT_REVIEW_DOWNLOAD_SCOPE);
     clearGuidedDecisionReviewHandoffSource();
+    invalidateGeneratedDocumentReviewState();
   }
 
   function wireProcurementReviewInboxActions(section) {
@@ -22850,6 +23672,7 @@
         fetch(`/projects?${params}`, { headers: getAuthHeaders()}),
         fetch('/projects/stats', { headers: getAuthHeaders()}),
         loadProcurementReviewInbox(),
+        loadGeneratedDocumentReviewInbox(),
       ]);
       if (!listRes.ok || !statsRes.ok) throw new Error('로드 실패');
       const { projects } = await listRes.json();
@@ -28947,10 +29770,29 @@
       if (!res.ok) throw new Error(await res.text());
       const project = await res.json();
       if (!requestIsCurrent()) return;
+      let generatedDocumentReviews = [];
       let procurementDecision = null;
       let procurementReviews = [];
       let decisionCouncilSession = null;
       let decisionEvidenceMap = null;
+      if (canUseGeneratedDocumentReviews()) {
+        const generatedReviewsRes = await fetch(
+          `/projects/${encodeURIComponent(projectId)}/generated-document-reviews`,
+          { headers: getAuthHeaders() },
+        );
+        if (!requestIsCurrent()) return;
+        if (generatedReviewsRes.ok) {
+          const generatedReviewsPayload = await generatedReviewsRes.json();
+          if (!requestIsCurrent()) return;
+          generatedDocumentReviews = Array.isArray(generatedReviewsPayload?.reviews)
+            ? generatedReviewsPayload.reviews
+            : [];
+        } else if (generatedReviewsRes.status !== 404) {
+          const err = await resolveApiErrorResponse(generatedReviewsRes);
+          if (!requestIsCurrent()) return;
+          showNotification('문서 검토 전달 이력 로드 실패: ' + err.message, 'error');
+        }
+      }
       if (isProcurementCopilotEnabled()) {
         const procurementRes = await fetch(`/projects/${projectId}/procurement`, { headers: getAuthHeaders() });
         if (!requestIsCurrent()) return;
@@ -29006,6 +29848,7 @@
       }
       if (!requestIsCurrent()) return;
       renderProjectDetail(project, procurementDecision, {
+        generatedDocumentReviews,
         procurementEnabled: isProcurementCopilotEnabled(),
         procurementReviews,
         decisionCouncilSession,
@@ -29023,6 +29866,7 @@
 
   window.hideProjectDetail = function hideProjectDetail() {
     _projectDetailLoadId += 1;
+    invalidateGeneratedDocumentReviewProjectContext();
     clearGuidedDecisionReviewHandoffSource();
     const projectId = _currentProjectDetail?.project?.project_id || '';
     clearProjectProcurementDetailUrlState(projectId);
@@ -29044,11 +29888,24 @@
     const docs = p.documents || [];
     const recordings = p.meeting_recordings || [];
     const previousProjectId = _currentProjectDetail?.project?.project_id;
+    const currentDocIds = new Set(docs.map(doc => String(doc?.doc_id || '')));
+    const documentRemoved = previousProjectId === p.project_id && Object.keys(
+      _currentProjectDetail?.docsById || {},
+    ).some(documentId => !currentDocIds.has(documentId));
+    const requestIdentityChanged = previousProjectId === p.project_id && docs.some(doc => {
+      const previous = _currentProjectDetail?.docsById?.[doc?.doc_id];
+      return previous && String(previous.request_id || '') !== String(doc?.request_id || '');
+    });
     if (previousProjectId && previousProjectId !== p.project_id) {
       _clearScopedExportDownloadUrls(PROCUREMENT_REVIEW_DOWNLOAD_SCOPE);
       _clearScopedExportDownloadUrls(GENERATION_EXPORT_PROJECT_DOWNLOAD_SCOPE);
+      invalidateGeneratedDocumentReviewProjectContext();
     }
+    if (documentRemoved || requestIdentityChanged) invalidateGeneratedDocumentReviewProjectContext();
     const procurementEnabled = Boolean(options.procurementEnabled);
+    const generatedDocumentReviews = Array.isArray(options.generatedDocumentReviews)
+      ? options.generatedDocumentReviews
+      : [];
     const procurementReviews = Array.isArray(options.procurementReviews) ? options.procurementReviews : [];
     const decisionCouncilSession = options.decisionCouncilSession || null;
     const decisionEvidenceMap = options.decisionEvidenceMap || null;
@@ -29064,8 +29921,10 @@
       decisionCouncilSession,
       decisionEvidenceMap,
       procurementEnabled,
+      generatedDocumentReviews,
       docsById,
     };
+    _generatedDocumentReviewState.projectReviews = generatedDocumentReviews;
     const APPROVAL_COLOR = { approved: '#22c55e', rejected: '#ef4444', in_review: '#f59e0b', draft: '#6b7280', changes_requested: '#ef4444' };
     const APPROVAL_LABEL = { approved: '승인', rejected: '반려', in_review: '검토중', draft: '기안', changes_requested: '수정요청' };
     const canLaunchDownstream = canLaunchProcurementDownstream(procurementDecision);
@@ -29207,6 +30066,7 @@
       </div>
       ${renderDecisionEvidenceMapPanel(decisionEvidenceMap)}
       ` : ''}
+      ${renderProjectGeneratedDocumentReviewHistory(p.project_id, generatedDocumentReviews)}
       <h4 id="project-documents-heading" tabindex="-1" style="margin:16px 0 8px;font-weight:700;">📄 문서 목록 (${docs.length}건)</h4>
       ${docs.length === 0 ? `
         <div class="empty-state"><p>문서가 없습니다. 문서 생성 시 이 프로젝트를 선택하면 자동으로 추가됩니다.</p></div>` : `
@@ -29278,6 +30138,7 @@
 	                <button type="button" data-project-detail-action="doc-share" data-project-id="${escapeHtml(p.project_id)}" data-doc-id="${escapeHtml(d.doc_id)}">공유</button>
 	              </div>` : ''}
 	              <div class="doc-download-btns">
+	                ${String(d.request_id || '').trim() && String(d.doc_snapshot || '').trim() && canUseGeneratedDocumentReviews() ? `<button type="button" data-project-detail-action="generated-document-review-create" data-project-id="${escapeHtml(p.project_id)}" data-doc-id="${escapeHtml(d.doc_id)}" style="padding:4px 8px;font-size:0.78rem;border-radius:4px;border:1px solid var(--border,#e5e7eb);background:transparent;cursor:pointer;">검토 패킷 전달</button>` : ''}
 	                ${String(d.request_id || '').trim() ? `<button type="button" data-project-detail-action="doc-verified-review-export" data-project-id="${escapeHtml(p.project_id)}" data-doc-id="${escapeHtml(d.doc_id)}" data-request-id="${escapeHtml(String(d.request_id || '').trim())}" style="padding:4px 8px;font-size:0.78rem;border-radius:4px;border:1px solid var(--border,#e5e7eb);background:transparent;cursor:pointer;">검증된 검토 ZIP</button>` : ''}
 	                <button type="button" data-project-detail-action="doc-download" data-project-id="${escapeHtml(p.project_id)}" data-doc-id="${escapeHtml(d.doc_id)}" data-format="pdf" style="padding:4px 8px;font-size:0.78rem;border-radius:4px;border:1px solid var(--border,#e5e7eb);background:transparent;cursor:pointer;">PDF</button>
 	                <button type="button" data-project-detail-action="doc-download" data-project-id="${escapeHtml(p.project_id)}" data-doc-id="${escapeHtml(d.doc_id)}" data-format="docx" style="padding:4px 8px;font-size:0.78rem;border-radius:4px;border:1px solid var(--border,#e5e7eb);background:transparent;cursor:pointer;">Word</button>
@@ -29407,6 +30268,21 @@
 	    }
 	    if (action === 'doc-share') {
 	      shareProjectDocument(projectId, docId);
+	      return;
+	    }
+	    if (action === 'generated-document-review-create') {
+	      openGeneratedDocumentReviewDialog(projectId, docId);
+	      return;
+	    }
+	    if (action === 'generated-document-review-download') {
+	      downloadGeneratedDocumentReviewPacket({
+	        surface: 'project',
+	        projectId,
+	        documentId: docId,
+	        packetSha256: btn.dataset.packetSha256 || '',
+	        sourceStatus: btn.dataset.sourceStatus || '',
+	        button: btn,
+	      });
 	      return;
 	    }
 	    if (action === 'doc-download') {
