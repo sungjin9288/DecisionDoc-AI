@@ -1,6 +1,6 @@
 # DecisionDoc AI Product Direction
 
-Updated: 2026-06-23
+Updated: 2026-09-03
 
 This document defines the product direction for DecisionDoc AI. It is an internal planning artifact, not a public performance claim or launch announcement.
 
@@ -374,3 +374,22 @@ attestation, currentness, atomic snapshot, approval, or external authenticity.
 ## Generated document export packets
 
 Generated-document ZIP export is a local review-readiness handoff: a tenant-bound rendered source is durably available for one hour through the selected local/S3 backend, so an independent app instance can build the same deterministic, self-verified packet. The source is bounded to 500 references, 8 MiB each, and 64 MiB referenced bytes per tenant with deterministic oldest-first eviction; it is not a durable packet archive, issuer attestation, completed human review, or operational approval. Product copy must keep `packet_persisted=false`, provider execution, AWS/G2B submission, training, deployment, and approval authority explicitly false even when the packet verifier succeeds; this local integrity work does not close the M1/M2/M6 external-evidence gaps.
+
+## Generated document reviewer handoff
+
+Persisted project documents now have a separate review-only handoff path. The
+server binds the current document snapshot, source SHA-256, selected canonical
+formats, creator, and active tenant reviewer to one immutable `pending` packet
+record in the selected local/S3 backend. Admins may assign an active admin or
+member; members may assign only themselves. The assigned member and tenant
+admins can find the handoff in a dedicated inbox or project history and
+re-download the exact verified packet.
+
+Source status is derived at read time. `changed` and `missing` remain visible
+without rewriting the historical record, and the browser requires confirmation
+before retrieving those bytes. This handoff records delivery evidence only. It
+does not record that the reviewer opened, understood, accepted, or completed the
+packet, and it grants no approval, provider, AWS, G2B, training, deployment, or
+publication authority. Completion, reassignment, reminders, notifications,
+expiry, and deletion remain future product decisions rather than implicit v1
+behavior.

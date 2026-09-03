@@ -18,6 +18,7 @@ from app.middleware.document_ops_audit import (
     document_ops_audit_detail,
     document_ops_resource_identity,
 )
+from app.middleware import generated_document_review_audit
 from app.middleware.procurement_review_audit import (
     procurement_review_audit_detail,
     procurement_review_audit_network,
@@ -76,6 +77,7 @@ AUDIT_RULES: dict[tuple[str, str], str] = {
     ("POST", "/projects/{id}/procurement/reviews/{id}/complete"): "procurement.review_completed",
     ("GET", "/projects/{id}/procurement/reviews/{id}/packet"): "procurement.review_packet_download",
     ("GET", "/projects/{id}/procurement/reviews/{id}/reviewed-package"): "procurement.reviewed_package_download",
+    **generated_document_review_audit.RULES,
     ("POST", "/projects/{id}/decision-council/run"): "decision_council.run",
     ("POST", "/projects/{id}/procurement/override-reason"): "procurement.override_reason",
     ("POST", "/projects/{id}/procurement/remediation-link-copy"): "procurement.remediation_link_copied",
@@ -339,6 +341,10 @@ def _append_audit_entries(
             user_role,
             session_id,
         )
+        principal = (user_id, username, user_role, session_id)
+        user_id, username, user_role, session_id = (
+            generated_document_review_audit.redact_principal(action, principal)
+        )
         auth_session_revoked_count = getattr(
             request.state,
             "auth_session_revoked_count",
@@ -513,6 +519,7 @@ def _append_audit_entries(
         if procurement_packet_sha256:
             detail["packet_sha256"] = procurement_packet_sha256
         detail.update(procurement_review_audit_detail(request))
+        detail.update(generated_document_review_audit.detail(request))
         if decision_council_project_id:
             detail["project_id"] = decision_council_project_id
         if decision_council_session_id:
@@ -717,6 +724,8 @@ def _build_audit_log(
         ip_address,
         user_agent,
     )
+    network = (ip_address, user_agent)
+    ip_address, user_agent = generated_document_review_audit.redact_network(action, network)
     return AuditLog(
         log_id=str(uuid.uuid4()),
         tenant_id=tenant_id,

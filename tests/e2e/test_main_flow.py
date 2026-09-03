@@ -37,6 +37,423 @@ def _wait_until_text_contains(page, selector: str, expected: str, *, timeout_ms:
     raise AssertionError(f"{selector} did not contain {expected!r} within {timeout_ms}ms")
 
 
+def _generated_document_review_headers(
+    content: bytes,
+    *,
+    source_status: str | None = None,
+    overrides: dict[str, str] | None = None,
+) -> dict[str, str]:
+    packet_sha256 = hashlib.sha256(content).hexdigest()
+    headers = {
+        "Content-Type": "application/zip",
+        "Content-Length": str(len(content)),
+        "Content-Disposition": (
+            f'attachment; filename="generated-document-review-{packet_sha256}.zip"'
+        ),
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+        "X-DecisionDoc-Packet-SHA256": packet_sha256,
+        "X-DecisionDoc-Manifest-SHA256": "a" * 64,
+        "X-DecisionDoc-Artifact-Count": "5",
+        "X-DecisionDoc-Review-Status": "pending",
+        "X-DecisionDoc-Reviewer-Identity-Bound": "true",
+        "X-DecisionDoc-Replay": "false",
+        "X-DecisionDoc-Review-Only": "true",
+        "X-DecisionDoc-Packet-Persisted": "true",
+        "X-DecisionDoc-Human-Review-Completed": "false",
+        "X-DecisionDoc-Operational-Approval": "false",
+        "X-DecisionDoc-Authority-Approval-Authorized": "false",
+        "X-DecisionDoc-Authority-Aws-Execution-Authorized": "false",
+        "X-DecisionDoc-Authority-Dataset-Upload-Authorized": "false",
+        "X-DecisionDoc-Authority-Deployment-Authorized": "false",
+        "X-DecisionDoc-Authority-G2b-Submission-Authorized": "false",
+        "X-DecisionDoc-Authority-Provider-Execution-Authorized": "false",
+        "X-DecisionDoc-Authority-Training-Execution-Authorized": "false",
+    }
+    if source_status is not None:
+        headers["X-DecisionDoc-Source-Status"] = source_status
+    headers.update(overrides or {})
+    return headers
+
+
+def _generated_document_review_record(
+    packet_sha256: str,
+    *,
+    source_status: str = "current",
+    document_id: str = "generated-review-document",
+) -> dict:
+    return {
+        "project_id": "generated-review-project",
+        "project_document_id": document_id,
+        "request_id": "generated-review-request",
+        "bundle_id": "tech_decision",
+        "title": "Architecture Decision",
+        "packet_sha256": packet_sha256,
+        "packet_size_bytes": 512,
+        "manifest_sha256": "a" * 64,
+        "artifact_count": 5,
+        "formats": ["docx", "pdf", "xlsx", "hwp", "pptx"],
+        "prepared_at": "2026-09-03T10:00:00Z",
+        "creator": {"username": "creator", "role": "admin"},
+        "reviewer": {"username": "reviewer", "role": "member"},
+        "review_status": "pending",
+        "review_only": True,
+        "packet_persisted": True,
+        "human_review_completed": False,
+        "operational_approval": False,
+        "source_status": source_status,
+    }
+
+
+def _render_generated_document_review_project(
+    page,
+    *,
+    reviews: list[dict] | None = None,
+    request_id: str = "generated-review-request",
+) -> None:
+    page.evaluate(
+        """({ reviews, requestId }) => {
+          _currentUser = { ..._currentUser, role: 'admin' };
+          renderProjectDetail({
+            project_id: 'generated-review-project',
+            name: 'Generated Review Project',
+            fiscal_year: 2026,
+            documents: [{
+              doc_id: 'generated-review-document',
+              request_id: requestId,
+              bundle_id: 'tech_decision',
+              title: 'Architecture Decision',
+              generated_at: '2026-09-03T10:00:00Z',
+              doc_snapshot: JSON.stringify([{ doc_type: 'adr', markdown: '# ADR' }]),
+            }],
+            meeting_recordings: [],
+          }, null, { generatedDocumentReviews: reviews || [] });
+          document.querySelector('main').style.display = 'none';
+          document.getElementById('project-page').style.display = 'block';
+          document.getElementById('project-list').style.display = 'none';
+          document.getElementById('project-detail').style.display = 'block';
+        }""",
+        {"reviews": reviews or [], "requestId": request_id},
+    )
+
+
+def test_generated_document_review_creation_downloads_only_verified_packet(page):
+    content = b"generated-document-review-create"
+    headers = _generated_document_review_headers(content)
+    observed_payload: dict = {}
+    current_username = page.evaluate("() => _currentUser.username")
+
+    page.route(
+        "**/admin/users",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps(
+                {
+                    "users": [
+                        {
+                            "user_id": "reviewer-user",
+                            "username": current_username,
+                            "display_name": "Current reviewer",
+                            "role": "admin",
+                            "is_active": True,
+                        }
+                    ]
+                }
+            ),
+        ),
+    )
+
+    def fulfill_creation(route):
+        observed_payload.update(route.request.post_data_json)
+        route.fulfill(status=200, body=content, headers=headers)
+
+    page.route(
+        "**/projects/generated-review-project/documents/generated-review-document/generated-reviews",
+        fulfill_creation,
+    )
+    _render_generated_document_review_project(page)
+    page.evaluate(
+        """() => {
+          loadProjectDetail = async () => {};
+          loadGeneratedDocumentReviewInbox = async () => {};
+        }"""
+    )
+
+    page.locator(
+        '[data-project-detail-action="generated-document-review-create"]'
+    ).click()
+    dialog = page.locator(".generated-document-review-dialog")
+    dialog.wait_for(state="visible")
+    assert "검토 증빙이며 운영 승인 아님" in dialog.inner_text()
+    assert dialog.locator("[data-generated-document-review-format]").count() == 5
+
+    with page.expect_download() as download_info:
+        dialog.locator("[data-generated-document-review-submit]").click()
+
+    assert observed_payload == {
+        "reviewer": current_username,
+        "formats": ["docx", "pdf", "xlsx", "hwp", "pptx"],
+    }
+    assert download_info.value.suggested_filename == (
+        f"generated-document-review-{hashlib.sha256(content).hexdigest()}.zip"
+    )
+
+
+def test_generated_document_review_creation_is_single_flight(page):
+    content = b"generated-document-review-single-flight"
+    headers = _generated_document_review_headers(content)
+    current_username = page.evaluate("() => _currentUser.username")
+    page.route(
+        "**/admin/users",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps(
+                {
+                    "users": [
+                        {
+                            "user_id": "reviewer-user",
+                            "username": current_username,
+                            "display_name": "Current reviewer",
+                            "role": "admin",
+                            "is_active": True,
+                        }
+                    ]
+                }
+            ),
+        ),
+    )
+    _render_generated_document_review_project(page)
+    page.locator(
+        '[data-project-detail-action="generated-document-review-create"]'
+    ).click()
+    page.locator(".generated-document-review-dialog").wait_for(state="visible")
+    page.evaluate(
+        """() => {
+          window.__generatedReviewCreateCalls = 0;
+          window.__generatedReviewDownloads = 0;
+          window.__generatedReviewOriginalFetch = window.fetch;
+          window.fetch = (url, options) => {
+            if (String(url).endsWith('/generated-reviews')) {
+              window.__generatedReviewCreateCalls += 1;
+              return new Promise(resolve => { window.__resolveGeneratedReviewCreate = resolve; });
+            }
+            return window.__generatedReviewOriginalFetch(url, options);
+          };
+          _triggerBrowserDownload = () => {
+            window.__generatedReviewDownloads += 1;
+            return 'blob:generated-review-single-flight';
+          };
+          loadProjectDetail = async () => {};
+          loadGeneratedDocumentReviewInbox = async () => {};
+          const button = document.querySelector('[data-generated-document-review-submit]');
+          window.__generatedReviewCreatePromise = submitGeneratedDocumentReview(
+            _generatedDocumentReviewState.dialogContext,
+            button,
+          );
+          submitGeneratedDocumentReview(_generatedDocumentReviewState.dialogContext, button);
+        }"""
+    )
+    assert page.evaluate("() => window.__generatedReviewCreateCalls") == 1
+    page.evaluate(
+        """({ content, headers }) => {
+          window.__resolveGeneratedReviewCreate(new Response(new Uint8Array(content), {
+            status: 200,
+            headers,
+          }));
+        }""",
+        {"content": list(content), "headers": headers},
+    )
+    page.wait_for_function("() => window.__generatedReviewDownloads === 1")
+    page.evaluate("() => window.__generatedReviewCreatePromise")
+    assert page.evaluate("() => window.__generatedReviewCreateCalls") == 1
+
+
+def test_generated_document_review_inbox_history_and_mobile_layout(page):
+    packet_sha256 = "b" * 64
+    record = _generated_document_review_record(packet_sha256)
+    _render_generated_document_review_project(page, reviews=[record])
+    page.evaluate(
+        """review => {
+          _generatedDocumentReviewState.activeInbox = 'generated';
+          _generatedDocumentReviewState.inboxReviews = [review];
+          renderGeneratedDocumentReviewInbox();
+        }""",
+        record,
+    )
+
+    inbox = page.locator("#generated-document-review-inbox")
+    history = page.locator(".generated-document-review-history")
+    assert inbox.is_visible()
+    assert "Architecture Decision" in inbox.inner_text()
+    assert "reviewer reviewer · creator creator" in inbox.inner_text()
+    assert "문서 검토 전달" in history.inner_text()
+    assert history.locator('[data-source-status="current"]').count() == 1
+
+    for width, height in ((1280, 900), (390, 844)):
+        page.set_viewport_size({"width": width, "height": height})
+        assert inbox.evaluate("element => element.scrollWidth <= element.clientWidth")
+        assert history.evaluate("element => element.scrollWidth <= element.clientWidth")
+        for actions in (inbox, history):
+            box = actions.locator(".generated-document-review-actions").bounding_box()
+            row_box = actions.locator(".generated-document-review-row").bounding_box()
+            assert box is not None and row_box is not None
+            assert box["x"] >= row_box["x"]
+            assert box["x"] + box["width"] <= row_box["x"] + row_box["width"] + 1
+
+
+def test_generated_document_review_changed_and_missing_sources_confirm_before_download(page):
+    content = b"generated-document-review-changed"
+    packet_sha256 = hashlib.sha256(content).hexdigest()
+    changed = _generated_document_review_record(packet_sha256, source_status="changed")
+    missing = _generated_document_review_record(
+        "c" * 64,
+        source_status="missing",
+        document_id="missing-document",
+    )
+    _render_generated_document_review_project(page)
+    page.evaluate(
+        """reviews => {
+          _generatedDocumentReviewState.activeInbox = 'generated';
+          _generatedDocumentReviewState.inboxReviews = reviews;
+          renderGeneratedDocumentReviewInbox();
+          window.__generatedReviewConfirmations = [];
+          window.__generatedReviewFetchCalls = 0;
+          window.__generatedReviewDownloads = 0;
+          window.confirm = message => {
+            window.__generatedReviewConfirmations.push(message);
+            return message.includes('변경되었습니다');
+          };
+        }""",
+        [changed, missing],
+    )
+    page.evaluate(
+        """({ content, headers }) => {
+          window.fetch = async () => {
+            window.__generatedReviewFetchCalls += 1;
+            return new Response(new Uint8Array(content), { status: 200, headers });
+          };
+          _triggerBrowserDownload = () => {
+            window.__generatedReviewDownloads += 1;
+            return 'blob:generated-review-changed';
+          };
+        }""",
+        {
+            "content": list(content),
+            "headers": _generated_document_review_headers(
+                content,
+                source_status="changed",
+            ),
+        },
+    )
+
+    page.locator('[data-source-status="missing"]').click()
+    assert page.evaluate("() => window.__generatedReviewFetchCalls") == 0
+    page.locator('[data-source-status="changed"]').click()
+    page.wait_for_function("() => window.__generatedReviewDownloads === 1")
+    assert page.evaluate("() => window.__generatedReviewFetchCalls") == 1
+    confirmations = page.evaluate("() => window.__generatedReviewConfirmations")
+    assert any("원본 문서를 찾을 수 없습니다" in message for message in confirmations)
+    assert any("전달 시점 이후 변경되었습니다" in message for message in confirmations)
+
+
+def test_generated_document_review_rejects_malformed_and_widened_authority_headers(page):
+    content = b"generated-document-review-invalid"
+    packet_sha256 = hashlib.sha256(content).hexdigest()
+    record = _generated_document_review_record(packet_sha256)
+    malformed = _generated_document_review_headers(content, source_status="current")
+    malformed.pop("Content-Length")
+    widened = _generated_document_review_headers(
+        content,
+        source_status="current",
+        overrides={"X-DecisionDoc-Authority-Deployment-Authorized": "true"},
+    )
+    _render_generated_document_review_project(page, reviews=[record])
+    page.evaluate(
+        """({ content, responseHeaders }) => {
+          window.__generatedReviewInvalidDownloads = 0;
+          window.__generatedReviewInvalidIndex = 0;
+          window.fetch = async () => {
+            const headers = responseHeaders[window.__generatedReviewInvalidIndex++];
+            return new Response(new Uint8Array(content), { status: 200, headers });
+          };
+          _triggerBrowserDownload = () => {
+            window.__generatedReviewInvalidDownloads += 1;
+            return 'blob:should-not-exist';
+          };
+        }""",
+        {"content": list(content), "responseHeaders": [malformed, widened]},
+    )
+
+    button = page.locator(
+        '.generated-document-review-history [data-source-status="current"]'
+    )
+    button.click()
+    page.wait_for_function("() => window.__generatedReviewInvalidIndex === 1")
+    page.wait_for_timeout(50)
+    button.click()
+    page.wait_for_function("() => window.__generatedReviewInvalidIndex === 2")
+    page.wait_for_timeout(50)
+    assert page.evaluate("() => window.__generatedReviewInvalidDownloads") == 0
+
+
+def test_generated_document_review_project_drift_discards_late_packet_and_revokes_url(page):
+    content = b"generated-document-review-project-drift"
+    packet_sha256 = hashlib.sha256(content).hexdigest()
+    record = _generated_document_review_record(packet_sha256)
+    headers = _generated_document_review_headers(content, source_status="current")
+    _render_generated_document_review_project(page, reviews=[record])
+    page.evaluate(
+        """() => {
+          window.__generatedReviewDriftDownloads = 0;
+          window.__generatedReviewRevocations = 0;
+          const originalRevoke = URL.revokeObjectURL.bind(URL);
+          window.__generatedReviewOriginalRevoke = originalRevoke;
+          URL.revokeObjectURL = url => {
+            window.__generatedReviewRevocations += 1;
+            try { originalRevoke(url); } catch (_) {}
+          };
+          window.fetch = () => new Promise(resolve => {
+            window.__resolveGeneratedReviewDrift = resolve;
+          });
+          _triggerBrowserDownload = () => {
+            window.__generatedReviewDriftDownloads += 1;
+            return 'blob:generated-review-drift';
+          };
+        }"""
+    )
+    page.locator(
+        '.generated-document-review-history [data-source-status="current"]'
+    ).click()
+    page.wait_for_function("() => typeof window.__resolveGeneratedReviewDrift === 'function'")
+    _render_generated_document_review_project(
+        page,
+        reviews=[record],
+        request_id="replacement-request",
+    )
+    page.evaluate(
+        """({ content, headers }) => {
+          window.__resolveGeneratedReviewDrift(new Response(new Uint8Array(content), {
+            status: 200,
+            headers,
+          }));
+        }""",
+        {"content": list(content), "headers": headers},
+    )
+    page.wait_for_timeout(100)
+    assert page.evaluate("() => window.__generatedReviewDriftDownloads") == 0
+
+    page.evaluate(
+        """() => {
+          _generatedDocumentReviewState.objectUrls.add('blob:generated-review-existing');
+          clearLocalAuthSession();
+        }"""
+    )
+    assert page.evaluate("() => window.__generatedReviewRevocations") >= 1
+
+
+
 def test_procurement_review_completion_ui_uses_current_assignee_only(page):
     packet_sha256 = "a" * 64
     project_id = "project-h120-ui"

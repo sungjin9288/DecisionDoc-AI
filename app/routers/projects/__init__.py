@@ -71,6 +71,7 @@ from app.routers.projects.procurement import router as _procurement_router
 from app.routers.projects.decision_evidence import router as _decision_evidence_router
 from app.routers.projects.procurement_reviews import router as _procurement_reviews_router
 from app.routers.projects.procurement_review_packets import router as _procurement_review_packets_router
+from app.routers.projects.generated_document_reviews import router as _generated_document_reviews_router
 
 router = APIRouter(tags=["projects"])
 
@@ -80,3 +81,4 @@ router.include_router(_procurement_router)
 router.include_router(_decision_evidence_router)
 router.include_router(_procurement_reviews_router)
 router.include_router(_procurement_review_packets_router)
+router.include_router(_generated_document_reviews_router)
