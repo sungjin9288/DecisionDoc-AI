@@ -15,6 +15,10 @@ def _load_cd_workflow() -> dict:
     return yaml.safe_load(CD_WORKFLOW.read_text(encoding="utf-8"))
 
 
+def _workflow_triggers(workflow: dict) -> dict:
+    return workflow.get("on", workflow.get(True, {}))
+
+
 def _run_git(repo: Path, *args: str) -> str:
     completed = subprocess.run(
         ["git", *args],
@@ -100,7 +104,24 @@ def test_cd_production_tag_deploy_does_not_depend_on_staging_job():
 
     assert deploy_production["needs"] == "build-and-push"
     assert deploy_production["permissions"]["contents"] == "read"
-    assert deploy_production["if"] == "startsWith(github.ref, 'refs/tags/v')"
+    assert deploy_production["if"] == "github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')"
+
+
+def test_cd_publish_requires_release_tag_or_explicit_staging_dispatch():
+    workflow = _load_cd_workflow()
+    triggers = _workflow_triggers(workflow)
+    dispatch = triggers["workflow_dispatch"]
+    build = workflow["jobs"]["build-and-push"]
+
+    assert triggers["push"] == {"tags": ["v*.*.*"]}
+    assert dispatch["inputs"]["deploy_target"]["required"] is True
+    assert dispatch["inputs"]["deploy_target"]["type"] == "choice"
+    assert dispatch["inputs"]["deploy_target"]["options"] == ["staging"]
+    assert build["if"] == (
+        "(github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || "
+        "(github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' "
+        "&& inputs.deploy_target == 'staging')"
+    )
 
 
 def test_cd_release_tag_source_is_validated_before_image_publish():
@@ -280,7 +301,10 @@ def test_cd_staging_deploy_remains_main_branch_only_and_optional():
     step_names = [step.get("name", "") for step in deploy_staging["steps"]]
 
     assert deploy_staging["needs"] == "build-and-push"
-    assert deploy_staging["if"] == "github.ref == 'refs/heads/main'"
+    assert deploy_staging["if"] == (
+        "github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' "
+        "&& inputs.deploy_target == 'staging'"
+    )
     assert "Check staging deploy configuration" in step_names
     assert "Summarize staging deploy decision" in step_names
 
