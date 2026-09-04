@@ -3426,9 +3426,13 @@ def test_documentation_completion_snapshot_and_core_loop_contract():
 
     assert "## 0. Current Completion/Readiness Snapshot" in development_plan
     assert "유일한 volatile snapshot" in development_plan
-    assert "27523032d68d2b217f4537ab96ade23eb20ef38a" in development_plan
-    assert "final-tree backend (mock/local, non-live)" in development_plan
-    assert "final-tree E2E (mock/local, non-live)" in development_plan
+    assert "f993267e427678f0b1240c4fe4f19617ba362181" in development_plan
+    assert "GitHub Actions Test (Python 3.12)" in development_plan
+    assert "pytest tests/ -q --tb=short" in development_plan
+    assert "4,783 passed, 5 skipped, 1 warning" in development_plan
+    assert "both the actual staging" in development_plan
+    assert "deploy and smoke steps were skipped" in development_plan
+    assert "do not close M6 or authorize" in development_plan
     assert "M1은 historical OpenAI proof" in development_plan
     assert "M2는 local live G2B smoke" in development_plan
     assert "M6는 deployment/runtime evidence" in development_plan

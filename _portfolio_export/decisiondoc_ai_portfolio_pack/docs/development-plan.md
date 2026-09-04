@@ -1,6 +1,6 @@
 # DecisionDoc AI — 완성을 위한 기능 개발 계획 (Development Plan)
 
-> 기준일: **2026-08-18**. 현재 완료·readiness 결과의 유일한 기준은 아래 **Current Completion/Readiness Snapshot**이며, 이 문서의 이전 수치는 날짜가 붙은 historical evidence다.
+> 기준일: **2026-09-04**. 현재 완료·readiness 결과의 유일한 기준은 아래 **Current Completion/Readiness Snapshot**이며, 이 문서의 이전 수치는 날짜가 붙은 historical evidence다.
 > 원칙: AGENTS.md 정직성 규칙 준수 — 모든 정량 수치는 재현 커맨드를 병기하고, 검증되지 않은 성과·운영 표현은 사용하지 않는다.
 > 상위 방향 문서: [product_direction.md](./product_direction.md) · [product_execution_plan.md](./product_execution_plan.md) · [roadmap.md](./roadmap.md)
 
@@ -12,27 +12,36 @@
 evidence checklist와 procurement STATUS는 이 절을 링크만 하며 독립적인 현재
 pytest pass 수를 주장하지 않는다.
 
-- 기준 source commit: `27523032d68d2b217f4537ab96ade23eb20ef38a` (문서 동기화 전 clean source snapshot).
-- 기준일: 2026-08-18. 최종 tree의 mock/local backend 및 E2E 결과는 이 절의 아래 재현 명령과 함께 기록한다.
-- 범위: `DECISIONDOC_PROVIDER=mock`, `DECISIONDOC_STORAGE=local`, `-m 'not live'`의 local/mock 검증이다. provider API, AWS runtime, live G2B, upload, training, promotion, deploy, production service resume, approval, bid/legal/contractual action은 실행하거나 증명하지 않는다.
+- 기준 source commit: `f993267e427678f0b1240c4fe4f19617ba362181` (문서 동기화 전 clean `origin/main` snapshot).
+- 기준일: 2026-09-04. 최종 tree의 Python 3.12 GitHub Actions 결과는 이 절의 아래 재현 명령과 [CI run 33822098256](https://github.com/sungjin9288/DecisionDoc-AI/actions/runs/33822098256)에 함께 기록한다.
+- 범위: `ENVIRONMENT=test`, `DECISIONDOC_PROVIDER=mock`, `DECISIONDOC_STORAGE=local`, `DECISIONDOC_TEMPLATE_VERSION=v1`, `DECISIONDOC_ENV=dev`의 CI 전체 테스트다. 5개 skipped test는 실행 증거로 계산하지 않는다. provider API, AWS runtime, live G2B, upload, training, promotion, deploy, production service resume, approval, bid/legal/contractual action은 실행하거나 증명하지 않는다.
 - readiness: M1은 historical OpenAI proof가 있어도 Gemini/Claude/fallback external proof가 남아 **partial/blocked**다. M2는 local live G2B smoke가 완료됐지만 durable stage proof가 없어 **partial/blocked**다. M6는 deployment/runtime evidence가 없어 **blocked**다. human UAT와 external approval도 미증명이다.
 
 ```bash
-# final-tree backend (mock/local, non-live)
-DECISIONDOC_PROVIDER=mock DECISIONDOC_STORAGE=local PYTHONDONTWRITEBYTECODE=1 \
-  python3 -m pytest tests/ -q \
-  --ignore=tests/e2e -m 'not live' --tb=short --disable-warnings
-
-# final-tree E2E (mock/local, non-live)
-DECISIONDOC_PROVIDER=mock DECISIONDOC_STORAGE=local NODE_OPTIONS=--no-deprecation \
-  PYTHONDONTWRITEBYTECODE=1 \
-  python3 -m pytest tests/e2e -q \
-  -m 'not live' --tb=short --disable-warnings
+# GitHub Actions Test (Python 3.12), .github/workflows/ci.yml
+ENVIRONMENT=test \
+DECISIONDOC_PROVIDER=mock \
+DECISIONDOC_STORAGE=local \
+DECISIONDOC_TEMPLATE_VERSION=v1 \
+DECISIONDOC_ENV=dev \
+pytest tests/ -q --tb=short
 ```
 
-Final-tree command results (2026-08-18): backend **4,611 passed, 4 deselected**;
-E2E **121 passed, 1 skipped**. Both commands used the local/mock scope above;
-no runtime capability is changed by this documentation-only snapshot.
+Final-tree CI result (2026-09-04): **4,783 passed, 5 skipped, 1 warning** in
+`1187.14s`. Secret Hygiene, advisory Ruff lint, and advisory Security Scan jobs
+also completed successfully in the same run. This is GitHub-hosted local/mock
+test evidence, not live-provider or deployment-runtime evidence.
+
+The merged CD authority gate at source commit `f993267e...` caused the ordinary
+`main` push to run CI only; no CD run was created. Earlier [CD run
+33716106642](https://github.com/sungjin9288/DecisionDoc-AI/actions/runs/33716106642)
+built and published an image for `4b075fad...`, but both the actual staging
+deploy and smoke steps were skipped because the staging secrets were absent.
+The later [canceled legacy-triggered run
+33736731654](https://github.com/sungjin9288/DecisionDoc-AI/actions/runs/33736731654)
+left a mutable GHCR `main` tag for `b7873bb...` without a GitHub Deployment
+record. These registry and workflow observations do not close M6 or authorize
+a deployment.
 
 ---
 
@@ -44,10 +53,10 @@ no runtime capability is changed by this documentation-only snapshot.
 |----|------|-----------|
 | **기능 검증** | 현재 local/mock final-tree 결과와 외부 proof gap은 [Current Completion/Readiness Snapshot](#0-current-completionreadiness-snapshot) 기준. 2026-08-11 local live G2B smoke 1건은 historical local evidence | live LLM 잔여 provider와 G2B durable receipt/stage 경로도 실증 + 증적 |
 | **아키텍처 위생** | ✅ 달성 (2026-07-14: 829줄 상수 모듈을 604줄 facade + 314줄 foundation으로 분리하고 800줄 guard 추가 → 초과 0개). CI advisory Ruff E/F/W와 Bandit medium/high 0건 기준 유지 | 전 모듈 800줄 이하 (전역 코딩 가이드), 계층 간 의존 방향 일관 |
-| **운영 준비성** | Docker/SAM 설정 존재, CSP nonce 부채 해소, 과거 GitHub Actions CI/CD success 증적 존재. 2026-08-11 current-main dev deploy-smoke는 AWS 진입 전 OIDC role assume에서 실패 | OIDC trust 복구 + 배포 절차 재검증 + post-deploy smoke 증적 |
+| **운영 준비성** | Docker/SAM 설정과 explicit CD authority gate가 존재한다. 2026-09-03 Docker image publish 뒤 staging deploy/smoke는 secret 미설정으로 skip됐고, 2026-08-11 current-main dev deploy-smoke는 AWS 진입 전 OIDC role assume에서 실패했다 | OIDC trust 복구 + 배포 절차 재검증 + post-deploy smoke 증적 |
 
 ```bash
-# 현재 final-tree backend/E2E command와 result: section 0 Current Completion/Readiness Snapshot
+# 현재 final-tree CI command와 result: section 0 Current Completion/Readiness Snapshot
 
 # 재현: CI advisory lint/security 베이스라인
 ruff check app/ tests/ --select=E,F,W --ignore=E501
