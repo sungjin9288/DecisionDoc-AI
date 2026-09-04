@@ -315,10 +315,12 @@ Current connection status: opportunity, recommendation, hard filters, score, che
 ### Next feature admission
 
 This document does not select another capability by implication. A candidate
-enters implementation only after the Future Feature Gate records its target
-user, observed problem and evidence, current workaround, desired outcome,
-bounded acceptance criteria, affected boundaries, explicit authority scope,
-and local verification path. Missing evidence means defer, not implement.
+enters implementation only after the
+[Future Feature Gate](./future_feature_gate.md) records its target user,
+observed problem and evidence, current workaround, desired outcome, bounded
+acceptance criteria, affected boundaries, explicit authority scope, and local
+verification path and passes the approved-record validator. Missing evidence
+means defer, not implement.
 
 ## 11. Decision Checklist For Future Work
 

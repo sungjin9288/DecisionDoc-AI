@@ -79,6 +79,23 @@
 .venv/bin/bandit -r app/ -f json -o bandit_report.json
 ```
 
+### Future Feature Gate
+
+Feature-admission regression은 versioned JSON record의 exact key set, duplicate
+key와 non-finite value 거부, non-empty evidence·acceptance·boundary·authority·local
+verification 요구사항을 검증한다. 구조적으로 유효한 draft와 implementation에
+admitted된 approved record를 분리하고, `--require-approved`가 draft를 non-zero로
+종료하는지 확인한다. 성공 결과도 decision identity 검증과 operational authority를
+항상 false로 유지한다. Validator는 local file을 read-only로 검사하며 provider,
+storage, tenant, AWS, G2B 또는 deployment effect를 만들지 않는다.
+
+```bash
+python3 -m pytest -q tests/test_future_feature_gate.py --tb=short
+python3 scripts/validate_future_feature_gate.py \
+  docs/samples/future_feature_gate/template.json \
+  --json
+```
+
 ### DocumentOps comparison file intake
 
 `POST /api/agent/document-ops/comparison-documents/extract`는 API key/maintenance gate, multipart single-file input, safe basename, exact source/extracted-text SHA-256, exact response field set, `Cache-Control: no-store`, local parser errors와 false provider/persistence flags를 unit/API test로 확인한다. Infrastructure test는 dedicated service가 existing `extract_text`만 사용하고 fallback/provider/storage import가 없는지, browser validator와 baseline/candidate control의 task-scoped wiring을 고정한다. Chromium test는 real local endpoint의 text-file baseline/candidate fill, malformed response의 pre-mutation rejection, late response discard, edit provenance invalidation, existing comparison run/redaction, desktop과 390px overflow 및 console/page error 0건을 확인한다.

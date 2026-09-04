@@ -36,6 +36,7 @@ SOURCE_FILES = (
     "docs/development-plan.md",
     "docs/evidence-checklist.md",
     "docs/evidence-gallery.md",
+    "docs/future_feature_gate.md",
     "docs/implementation-evidence.md",
     "docs/inspection-20260630.md",
     "docs/interview-story.md",
@@ -48,6 +49,7 @@ SOURCE_FILES = (
     "docs/roadmap.md",
     "docs/specs/external_repo_integration/ANALYSIS_20260812.md",
     "docs/specs/report_quality_learning/PILOT_REVIEW_RUNBOOK.md",
+    "docs/samples/future_feature_gate/template.json",
     "evidence/evidence_manifest.md",
     "reports/eval/v1/eval_report.md",
 )

@@ -1,0 +1,46 @@
+{
+  "schema_version": "decisiondoc.future_feature_gate.v1",
+  "gate_id": "draft-feature-gate-id",
+  "title": "<replace> Candidate capability",
+  "target_user": "<replace> User or operator who has the problem",
+  "observed_problem": "<replace> Concrete problem without a proposed solution",
+  "evidence": [
+    {
+      "kind": "repository",
+      "reference": "<replace> path/to/evidence:line",
+      "observation": "<replace> What the evidence demonstrates"
+    }
+  ],
+  "current_workaround": "<replace> Current path and its limitation",
+  "desired_outcome": "<replace> Result the user needs",
+  "acceptance_criteria": [
+    "<replace> One bounded and observable completion condition"
+  ],
+  "affected_boundaries": [
+    "<replace> Affected route, service, schema, storage, provider, browser, or documentation boundary"
+  ],
+  "authority_scope": {
+    "review_only": true,
+    "allowed_effects": [
+      "<replace> Local or runtime effect this candidate may introduce"
+    ],
+    "excluded_effects": [
+      "<replace> Effect this candidate must not perform"
+    ],
+    "separate_approval_required_for": [
+      "<replace> Paid, external, production, destructive, or irreversible effect"
+    ]
+  },
+  "local_verification": [
+    {
+      "command": "<replace> python3 -m pytest -q path/to/focused_test.py",
+      "proves": "<replace> Behavior and boundary this command verifies"
+    }
+  ],
+  "decision": {
+    "status": "draft",
+    "rationale": "A draft is structurally valid but cannot enter implementation",
+    "decided_by": null,
+    "decided_at": null
+  }
+}
