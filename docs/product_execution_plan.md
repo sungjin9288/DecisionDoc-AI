@@ -1,6 +1,6 @@
 # DecisionDoc AI Product Execution Plan
 
-Updated: 2026-08-18
+Updated: 2026-09-04
 
 This document translates [DecisionDoc AI Product Direction](./product_direction.md) into an execution plan. It is an internal planning document and does not claim production readiness, customer adoption, measured business impact, or autonomous approval capability.
 
@@ -243,6 +243,13 @@ desired outcome; bounded acceptance criteria; affected boundaries; explicit auth
 and a local verification path. The authority scope must state
 whether the proposal remains review-only and what approval, provider, storage,
 browser, deployment, or external action is explicitly excluded.
+
+The versioned record contract, draft template, and validation commands are
+defined in [Future Feature Gate](./future_feature_gate.md). A structurally valid
+`draft`, `deferred`, or `rejected` record does not admit work. Implementation
+requires a successful local run with `--require-approved`; that result scopes
+only the implementation written in the record and does not grant external or
+operational authority.
 
 ## 8. Engineering Guardrails
 
