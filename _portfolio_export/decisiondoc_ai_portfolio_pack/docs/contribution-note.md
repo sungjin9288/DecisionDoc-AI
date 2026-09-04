@@ -1,6 +1,6 @@
 # DecisionDoc AI Contribution Note
 
-기준일: 2026-07-22
+기준일: 2026-09-04
 
 이 문서는 DecisionDoc AI를 포트폴리오나 면접에서 설명할 때 사용할 수 있는 직접 구현 범위와 검증 범위를 정리한다. 제품 성과나 운영 상태를 과장하기 위한 문서가 아니라, 코드와 증거로 설명 가능한 범위를 좁히기 위한 문서다.
 
@@ -58,9 +58,9 @@ Report Quality receiver inspection은 ZIP 무결성만 확인하지 않는다. �
 
 | 검증 | 현재 증거 |
 |---|---|
-| Non-live pytest gate | 외부 provider·search·G2B·Stripe·Statuspage·AWS key를 제거하고 mock provider를 강제한 `pytest tests/ -m "not live" -q` -> `4351 passed, 2 skipped, 4 deselected, 1 warning` (2026-07-22 H110 실측) |
-| GitHub Actions CI | 마지막으로 확인한 main 자동화 증적: commit `b09687e364dd4438107220a7185d5d78f5904b92`, CI `29918361619` success (`4340 passed, 5 skipped`) |
-| GitHub Actions CD | 마지막으로 확인한 main 자동화 증적: commit `b09687e364dd4438107220a7185d5d78f5904b92`, CD `29918361780` success. image digest는 `sha256:adb4cecbed90d52bf7ae3479ec18b62951b74f5e16a21014e48b9535097a59ef`이며 staging은 미설정으로 deploy/smoke가 skip됐고 production deploy도 skip되어 M6 proof로 보지 않는다 |
+| Historical non-live pytest gate | 외부 provider·search·G2B·Stripe·Statuspage·AWS key를 제거하고 mock provider를 강제한 `pytest tests/ -m "not live" -q` -> `4351 passed, 2 skipped, 4 deselected, 1 warning` (2026-07-22 H110 실측). 현재 결과가 아니라 날짜가 고정된 historical evidence다 |
+| Current completion/readiness | 현재 main CI command/result와 M1/M2/M6 상태는 [Development Plan의 canonical snapshot](./development-plan.md#0-current-completionreadiness-snapshot)만 갱신하며 이 문서에서 pass 수를 복제하지 않는다 |
+| GitHub Actions authority boundary | 일반 `main` push는 CI만 실행한다. Docker staging CD는 `main`의 명시적 dispatch, production CD는 numeric semver tag를 요구한다. Image publication과 skipped deploy/smoke는 M6 runtime proof가 아니다 |
 | README metric count | `python3 scripts/count_readme_metrics.py --json` |
 | Completion readiness receipt | `python3 scripts/check_completion_readiness.py --env-file .env.prod --json --output reports/completion-readiness/latest.json` |
 | Completion receipt contract | `python3 scripts/check_completion_readiness_result.py reports/completion-readiness/latest.json` |

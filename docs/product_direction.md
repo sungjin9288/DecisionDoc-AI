@@ -1,10 +1,12 @@
 # DecisionDoc AI Product Direction
 
-Updated: 2026-09-03
+Updated: 2026-09-04
 
 This document defines the product direction for DecisionDoc AI. It is an internal planning artifact, not a public performance claim or launch announcement.
 
 Execution plan: [DecisionDoc AI Product Execution Plan](./product_execution_plan.md).
+Current completion and external-readiness evidence is owned only by the
+[Development Plan snapshot](./development-plan.md#0-current-completionreadiness-snapshot).
 
 ## 1. Product Thesis
 
@@ -224,7 +226,12 @@ Focus on a narrow, demonstrable workflow:
 
 ### Next
 
-Connect this local reviewer foundation to explicitly approved external evaluation lanes without weakening the local evidence contract.
+No new product capability is admitted by this direction alone. While external
+evaluation lanes remain deferred, the next implementation must first satisfy
+the [Future Feature Gate](./product_execution_plan.md#7-future-feature-gate)
+with an observed user problem, bounded authority, and a local verification
+path. An explicitly approved external evaluation lane remains a separate option
+and must not weaken the local evidence contract.
 
 ### Later
 
@@ -268,11 +275,11 @@ Stop expanding into unrelated document categories until the first high-stakes wo
 
 Stop describing unverified deployment, customer, or performance outcomes as completed product facts.
 
-## 10. What To Build Next
+## 10. Current Core Workflow And Next Gate
 
-### Product artifact
+### Implemented product artifact
 
-Create a thin "Decision Package" abstraction that can contain:
+The current Decision Package abstraction can contain:
 
 - generated documents,
 - structured decision data,
@@ -281,9 +288,9 @@ Create a thin "Decision Package" abstraction that can contain:
 - reviewer status,
 - export metadata.
 
-### Workflow artifact
+### Implemented workflow surfaces
 
-Create a reviewer console or CLI summary that answers:
+The current reviewer console and CLI summaries answer:
 
 - Is the package valid?
 - What evidence was used?
@@ -292,9 +299,9 @@ Create a reviewer console or CLI summary that answers:
 - Is this only review evidence, or does it authorize an operational action?
 - Can the local evidence path be verified from a versioned `contract_version` manifest and persisted validation receipt?
 
-### Procurement artifact
+### Implemented procurement connection
 
-Connect the public procurement copilot into the package workflow:
+The public procurement copilot is connected to the package workflow through:
 
 - opportunity import,
 - hard filters,
@@ -303,7 +310,15 @@ Connect the public procurement copilot into the package workflow:
 - go / conditional go / no-go recommendation,
 - proposal handoff.
 
-Current connection status: opportunity, recommendation, hard filters, score, checklist, reviewer ownership, deterministic review packet export, packet-bound receipt completion, completed review history, verified reviewed-package re-download, current-review downstream provenance, and redacted DocumentOps governance read-access audit are connected. Any explicitly approved external evaluation lane remains a separate follow-up workflow.
+Current connection status: opportunity, recommendation, hard filters, score, checklist, reviewer ownership, deterministic review packet export, packet-bound receipt completion, completed review history, verified reviewed-package re-download, current-review downstream provenance, and redacted DocumentOps governance read-access audit are connected. These are local/mock implementation and verification claims; they do not complete human UAT or external runtime proof.
+
+### Next feature admission
+
+This document does not select another capability by implication. A candidate
+enters implementation only after the Future Feature Gate records its target
+user, observed problem and evidence, current workaround, desired outcome,
+bounded acceptance criteria, affected boundaries, explicit authority scope,
+and local verification path. Missing evidence means defer, not implement.
 
 ## 11. Decision Checklist For Future Work
 

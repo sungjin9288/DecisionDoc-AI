@@ -1,6 +1,6 @@
 # Development Roadmap
 
-분석 기준: 2026-08-18 저장소 코드, README, docs, local evidence, completion readiness boundary를 기준으로 업데이트했다. 현재 결과의 유일한 기준은 [Development Plan의 Current Completion/Readiness Snapshot](./development-plan.md#0-current-completionreadiness-snapshot)이며, 로드맵은 이를 복제한 volatile pass 수를 주장하지 않는다.
+분석 기준: 2026-09-04 저장소 코드, README, docs, local evidence, completion readiness boundary를 기준으로 업데이트했다. 현재 결과의 유일한 기준은 [Development Plan의 Current Completion/Readiness Snapshot](./development-plan.md#0-current-completionreadiness-snapshot)이며, 로드맵은 이를 복제한 volatile pass 수를 주장하지 않는다.
 
 제품 방향성 기준 문서: [DecisionDoc AI Product Direction](./product_direction.md), 실행 계획 문서: [DecisionDoc AI Product Execution Plan](./product_execution_plan.md), local demo scenario: [DecisionDoc AI Local Product Demo Scenario](./product_demo_scenario.md), local demo runbook: [DecisionDoc AI Local Demo Runbook](./product_local_demo_runbook.md). 이 roadmap은 해당 방향성 중 재현 가능한 검증 evidence, public procurement wedge, review/sign-off workflow, exportable decision package를 우선 실행 대상으로 둔다.
 
@@ -12,7 +12,7 @@ Completion readiness 기준: [development-plan.md](./development-plan.md)의 M1/
 
 - 현재 구현 완료: FastAPI 앱, 문서 생성 API, bundle catalog, provider/storage abstraction, export service, project/knowledge/approval/history/report workflow 일부, G2B search/fetch, health/metrics, Docker/AWS SAM 설정, pytest/smoke 기반 검증 경로
 - 로컬 완료: export 5종 대칭성(M3), CSP nonce 적용(M4), 800줄 초과 모듈 분할(M5)
-- 마지막으로 문서화한 main 자동화 증적: commit `d91915517d990e51ff0440a8b11d870257c05395` 기준 GitHub Actions CI `30010986939` success, CD `30010986748` success. CI는 `4445 passed, 5 skipped`, CD image digest는 `sha256:d3378b39591b875a4b0c0ae5b0abaf9eb73dbb85b029bfacea5d12de089ac3e5`이며 staging은 미설정으로 deploy/smoke가 skip됐고 production deploy도 skip되어 M6 proof는 아니다.
+- 현재 main CI 결과와 M1/M2/M6 readiness는 위 canonical snapshot만 갱신한다. 일반 `main` push는 CI만 실행하고, Docker staging CD는 `main`의 명시적 dispatch, production CD는 numeric semver tag를 요구한다. Image publication이나 GitHub environment record는 실제 deploy/smoke가 skipped된 경우 M6 runtime proof가 아니다.
 - 개발 중: report quality learning, document ops agent, correction artifact/training workflow, fine-tune/model registry, post-deploy evidence 자동화
 - 2026-08-17 verified project-linked generated review ZIP: existing `GET /generate/export-zip` is exposed only as one `검증된 검토 ZIP` action for a transient result or a project document with a non-empty server-loaded `request_id`; the shared browser path requests `docx,pdf,pptx,hwp,excel`, verifies ZIP/header/byte evidence before Blob download, and sends no project title, snapshot, approval, or tenant field as export authority. Project requests are single-flight and capture auth revision, tenant, signed user, project-detail generation, project/document ID, and request ID, so stale responses do not create a Blob/download/notice/current-page mutation; missing/expired source gives regeneration guidance without snapshot fallback, while `503`, malformed evidence, hash/crypto, and fetch failures remain non-disclosing. This remains local integrity/review evidence only (`review_only=true`, `packet_persisted=false`, human review false, operational approval false) and does not close M1/M2/M6, human UAT, deployment, or external-approval evidence gaps.
 - 2026-09-03 persisted generated-document reviewer handoff: a project document with a stored snapshot can create one immutable packet with up to five selected formats and a `pending` record under the selected local/S3 backend. Current session-bound admins may assign active tenant admins/members; members may self-assign only. A dedicated inbox and project history expose safe summaries and exact re-download, while source status is derived as `current`, `changed`, or `missing` without rewriting evidence. Browser download requires exact length/hash, reviewer-bound/review-only/persisted fields and all false authority headers before Blob creation, confirms changed/missing history, and rejects late auth/tenant/user/project/document/request/packet responses. This v1 does not complete review, reassign, notify, expire, delete, approve, call providers, submit to G2B, train, deploy, or close M1/M2/M6 and human/external evidence gaps.
@@ -114,11 +114,11 @@ python3 scripts/check_completion_readiness_result.py reports/completion-readines
 | 마일스톤 | 현재 상태 | 다음 조건 |
 |---|---|---|
 | M1 Live provider 실증 | 진행 중. 2026-07-13 OpenAI 1회 통과; Gemini HTTP 429, Claude credit 부족, fallback 성공 미달 | Gemini quota/billing과 Anthropic credits 복구 후 Gemini/Claude/fallback live test 재실행 |
-| M2 G2B 실데이터 end-to-end | 외부 실행 미착수. Runner-owned no-secret pass/fail/preflight receipt 계약은 로컬 완료 | stage URL/API key/G2B key 확보 후 `--proof-receipt`를 포함한 실제 smoke 실행 |
+| M2 G2B 실데이터 end-to-end | Local FastAPI와 mock provider를 사용한 live G2B smoke는 완료했지만 runner-owned durable stage receipt는 없음 | stage URL/API key/G2B key 확보 후 `--proof-receipt`를 포함한 실제 smoke 실행 |
 | M3 Export 5종 대칭성 | 완료 | README와 샘플 산출물의 수치가 코드와 계속 일치하는지 유지 |
 | M4 CSP nonce | 완료. inline `on*=` handler 0개, nonce 기본 on | 새 UI 이벤트 추가 시 inline handler 금지 guard 유지 |
 | M5 800줄 초과 모듈 분할 | 완료. 2026-07-14 상수 모듈 drift를 604줄 facade + 314줄 foundation으로 재분할하고 자동 guard 추가, 초과 0개 | infrastructure guard와 facade re-export 계약 유지 |
-| M6 배포/post-deploy smoke | 외부 실행 미착수. Runner-owned no-secret pass/fail/preflight receipt 계약은 로컬 완료 | 배포 환경 확보 후 `--proof-receipt`를 포함한 deployed/ops smoke 실행 |
+| M6 배포/post-deploy smoke | Explicit CD authority gate와 no-secret receipt 계약은 완료했지만 실제 staging/prod deploy와 smoke evidence는 없음 | 배포 환경 확보 후 `--proof-receipt`를 포함한 deployed/ops smoke 실행 |
 
 ## 3. Phase 1 - MVP 완성
 
