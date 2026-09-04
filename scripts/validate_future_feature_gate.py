@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -80,6 +81,8 @@ class GateDecision(StrictRecord):
 
         if self.decided_by is None or self.decided_at is None:
             raise ValueError("terminal decisions require decided_by and decided_at")
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", self.decided_at) is None:
+            raise ValueError("decided_at must use YYYY-MM-DDTHH:MM:SSZ")
         try:
             datetime.strptime(self.decided_at, "%Y-%m-%dT%H:%M:%SZ")
         except ValueError as exc:

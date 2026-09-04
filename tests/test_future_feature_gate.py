@@ -100,6 +100,12 @@ def test_require_approved_distinguishes_valid_draft_from_admitted_record() -> No
     assert invalid["record_valid"] is False
     assert any("decided_at must use YYYY-MM-DDTHH:MM:SSZ" in error for error in invalid["errors"])
 
+    unpadded_timestamp = _approved_record()
+    unpadded_timestamp["decision"]["decided_at"] = "2026-9-4T5:3:2Z"
+    invalid = validate_future_feature_gate(unpadded_timestamp, require_approved=True)
+    assert invalid["record_valid"] is False
+    assert any("decided_at must use YYYY-MM-DDTHH:MM:SSZ" in error for error in invalid["errors"])
+
 
 def test_validator_rejects_unknown_fields_and_incomplete_evidence() -> None:
     record = _approved_record()
