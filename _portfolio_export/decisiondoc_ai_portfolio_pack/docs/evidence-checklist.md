@@ -124,9 +124,9 @@
 | H56 procurement review 확장 회귀 | 완료 | review packet/package/state/project/procurement/approval/report/generation/security/infrastructure 묶음 -> `610 passed`; provider API와 외부 실행 없음 |
 | H57 approval CAS 확장 회귀 | 완료 | project/approval/report/security/state/infrastructure 묶음 -> `541 passed`; process lock 없는 fake-S3 conditional create/CAS 포함, provider API와 외부 실행 없음 |
 | H58 project CAS 확장 회귀 | 완료 | project/approval/report/security/state/infrastructure 묶음 -> `546 passed`; process lock 없는 fake-S3 project conditional create/CAS, bounded mutation receipt, disjoint update와 delete 경쟁 포함, provider API와 외부 실행 없음 |
-| Non-live 전체 pytest gate | 완료 | 외부 provider·search·G2B·Stripe·Statuspage·AWS key를 제거하고 capability별 mock provider와 local storage를 강제한 `pytest tests/ -m "not live" -q` -> `4448 passed, 2 skipped, 4 deselected` (2026-07-24 H122 실측) |
-| GitHub Actions CI | 완료 | 마지막으로 확인한 main 자동화 증적: commit `d91915517d990e51ff0440a8b11d870257c05395`, CI `30010986939` success (`4445 passed, 5 skipped`) |
-| GitHub Actions CD | 완료 | 마지막으로 확인한 main 자동화 증적: commit `d91915517d990e51ff0440a8b11d870257c05395`, CD `30010986748` success. image digest `sha256:d3378b39591b875a4b0c0ae5b0abaf9eb73dbb85b029bfacea5d12de089ac3e5`; staging은 미설정으로 deploy/smoke가 skip됐고 production deploy도 skip되어 배포 proof에서 제외 |
+| Historical non-live 전체 pytest gate | historical | 외부 provider·search·G2B·Stripe·Statuspage·AWS key를 제거하고 capability별 mock provider와 local storage를 강제한 `pytest tests/ -m "not live" -q` -> `4448 passed, 2 skipped, 4 deselected` (2026-07-24 H122 실측). 현재 결과가 아니라 날짜가 고정된 evidence다 |
+| Current completion/readiness | canonical source | 현재 main CI command/result와 M1/M2/M6 상태는 [Development Plan의 canonical snapshot](./development-plan.md#0-current-completionreadiness-snapshot)만 갱신한다 |
+| GitHub Actions CD authority gate | 완료 | 일반 `main` push는 CI만 실행한다. Docker staging CD는 `main`의 명시적 dispatch, production CD는 numeric semver tag를 요구한다. Image publication이나 skipped deploy/smoke는 배포 proof에서 제외한다 |
 | 직접 구현/설명 가능 범위 정리 | 완료 | `docs/contribution-note.md` |
 | OpenAI live provider 호출 | 완료 | 2026-07-13 `tests/test_live_providers.py::test_live_openai_generate_ok` -> `1 passed in 23.26s`; local JUnit receipt는 gitignored `reports/completion-readiness/m1-openai-junit.xml` |
 

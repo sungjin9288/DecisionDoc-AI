@@ -3416,9 +3416,11 @@ def test_documentation_completion_snapshot_and_core_loop_contract():
     root = Path(__file__).resolve().parents[1]
     snapshot_link = "development-plan.md#0-current-completionreadiness-snapshot"
     development_plan = (root / "docs/development-plan.md").read_text(encoding="utf-8")
+    product_direction = (root / "docs/product_direction.md").read_text(encoding="utf-8")
     product_plan = (root / "docs/product_execution_plan.md").read_text(encoding="utf-8")
     roadmap = (root / "docs/roadmap.md").read_text(encoding="utf-8")
     checklist = (root / "docs/evidence-checklist.md").read_text(encoding="utf-8")
+    contribution_note = (root / "docs/contribution-note.md").read_text(encoding="utf-8")
     procurement_status = (
         root / "docs/specs/public_procurement_copilot/STATUS.md"
     ).read_text(encoding="utf-8")
@@ -3449,9 +3451,32 @@ def test_documentation_completion_snapshot_and_core_loop_contract():
     ):
         assert boundary in development_plan
 
-    for document in (readme, roadmap, checklist, product_plan, procurement_status):
+    for document in (
+        readme,
+        roadmap,
+        checklist,
+        contribution_note,
+        product_direction,
+        product_plan,
+        procurement_status,
+    ):
         assert snapshot_link in document
     assert "현재 전체 no-cost backend baseline" not in readme
+
+    stale_current_evidence = (
+        "마지막으로 문서화한 main 자동화 증적",
+        "마지막으로 확인한 main 자동화 증적",
+    )
+    for document in (roadmap, checklist, contribution_note):
+        for marker in stale_current_evidence:
+            assert marker not in document
+
+    assert "## 10. Current Core Workflow And Next Gate" in product_direction
+    assert "## 10. What To Build Next" not in product_direction
+    assert (
+        "This document does not select another capability by implication"
+        in product_direction
+    )
 
     assert "## 6. Completed Core-Loop Evidence" in product_plan
     assert "## 6. Immediate Backlog" not in product_plan
