@@ -169,16 +169,21 @@ def live_server(tmp_path_factory):
     )
     os.environ.pop("DECISIONDOC_API_KEY", None)
 
+    from app.free_mode import is_free_mode
     from app.main import create_app
     from app.storage.billing_store import get_billing_store
     from app.storage.user_store import get_user_store
 
     app = create_app()
-    get_billing_store(
+    billing_store = get_billing_store(
         "system",
         data_dir=app.state.data_dir,
         backend=app.state.state_backend,
-    ).update_plan("enterprise")
+    )
+    if is_free_mode():
+        assert billing_store.get_account().plan_id == "free"
+    else:
+        billing_store.update_plan("enterprise")
     user_store = get_user_store(
         "system",
         data_dir=app.state.data_dir,

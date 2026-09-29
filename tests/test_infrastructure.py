@@ -1157,7 +1157,7 @@ def test_index_html_document_ops_agent_renders_only_allowlisted_provenance():
         assert forbidden not in renderer
 
 
-def test_index_html_exports_current_generated_docs_before_regenerating():
+def test_index_html_exports_current_generated_docs_without_regenerating():
     content = open("app/static/index.html", encoding="utf-8").read()
     export_blob_fn = re.search(
         r"async function _buildExportedBlob\(format\) \{(?P<body>[\s\S]*?)\n  \}",
@@ -1170,10 +1170,15 @@ def test_index_html_exports_current_generated_docs_before_regenerating():
     assert export_blob_fn is not None
     assert export_document_fn is not None
     assert "generatedDocs.length === 0" in export_blob_fn.group("body")
-    assert "preferEdited: hasEdits" in export_blob_fn.group("body")
+    assert "buildEditedExportDocsPayload(generatedDocs)" in export_blob_fn.group("body")
     assert "fetch('/generate/export-edited'" in export_blob_fn.group("body")
-    assert "No rendered docs yet" in export_document_fn.group("body")
-    assert "const endpoint = { docx: '/generate/docx'" in export_document_fn.group("body")
+    assert "generate_missing_visuals: false" in export_blob_fn.group("body")
+    batch_start = content.index("  async function downloadBatchResult(")
+    batch_export = content[batch_start:content.index("  $id('batch-mode-toggle')", batch_start)]
+    assert "generate_missing_visuals: false" in batch_export
+    assert "generatedDocs.length === 0" in export_document_fn.group("body")
+    assert "fetch(" not in export_document_fn.group("body")
+    assert "await _buildExportedBlob(format)" in export_document_fn.group("body")
 
 
 def test_index_html_keeps_blob_url_and_shows_download_fallback():

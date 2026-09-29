@@ -246,7 +246,7 @@
       box-shadow: var(--shadow-md);
     }
     .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.1rem; }
-    .form-group { display: flex; flex-direction: column; gap: 0.4rem; }
+    .form-group { display: flex; flex-direction: column; gap: 0.4rem; min-width: 0; }
     .form-group.full { grid-column: 1 / -1; }
     label {
       font-size: 0.8rem;
@@ -937,6 +937,22 @@
     }
     .doc-item-left { display: flex; align-items: center; gap: 8px; }
     .doc-item-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    #project-detail .doc-item-left {
+      flex-wrap: wrap;
+      min-width: 0;
+      max-width: 100%;
+    }
+    #project-detail .doc-item-left .doc-title {
+      flex: 1 1 12rem;
+      overflow-wrap: anywhere;
+    }
+    #project-detail .doc-item-left .tag {
+      flex-shrink: 0;
+      max-width: 100%;
+      overflow-wrap: anywhere;
+    }
+    #project-detail .doc-download-btns { flex-wrap: wrap; }
+    #project-detail .doc-download-btns button { white-space: nowrap; }
     .doc-bundle-badge {
       font-size: 0.75rem;
       padding: 2px 8px;
@@ -1938,6 +1954,7 @@
       font-weight: 700;
       color: var(--text, #111827);
       line-height: 1.4;
+      overflow-wrap: anywhere;
     }
     .procurement-badge {
       display: inline-flex;
@@ -1954,6 +1971,51 @@
       gap: 8px;
       flex-wrap: wrap;
       margin-top: 12px;
+    }
+    .procurement-opportunity-selector {
+      display: grid;
+      gap: 6px;
+      margin-bottom: 16px;
+      font-weight: 600;
+    }
+    .procurement-opportunity-selector select {
+      width: 100%;
+      min-width: 0;
+      height: 42px;
+      padding: 8px;
+      border: 1px solid var(--border, #d1d5db);
+      border-radius: 6px;
+      background: var(--surface, #fff);
+      color: inherit;
+    }
+    .procurement-requirements { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); letter-spacing: 0; min-width: 0; }
+    .procurement-requirements [hidden] { display: none; }
+    .procurement-requirements h5, .procurement-requirements h6 { margin: 0; font-size: .92rem; }
+    .procurement-requirement-toolbar, .procurement-requirement-counts { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+    .procurement-requirement-toolbar { justify-content: space-between; }
+    .procurement-requirement-counts { margin: 12px 0; font-size: .8rem; }
+    .procurement-requirements p { margin: 8px 0; font-size: .8rem; line-height: 1.6; }
+    .procurement-requirements button { min-height: 36px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: inherit; font: inherit; font-size: .8rem; cursor: pointer; white-space: normal; }
+    .procurement-requirements button:disabled { opacity: .55; cursor: not-allowed; }
+    .procurement-requirement-list { list-style: none; margin: 0; padding: 0; }
+    .procurement-requirement-row { padding: 16px 0; border-top: 1px solid var(--border); overflow-wrap: anywhere; }
+    .procurement-requirement-meta { color: var(--muted); font-size: .76rem; }
+    .procurement-requirement-quote { margin: 10px 0; padding-left: 12px; border-left: 2px solid var(--border); white-space: pre-wrap; overflow-wrap: anywhere; font-size: .82rem; }
+    .procurement-requirement-row details { margin-top: 10px; font-size: .8rem; }
+    .procurement-requirement-row summary { cursor: pointer; }
+    .procurement-requirement-row ol { padding-left: 22px; }
+    .procurement-requirement-row li { margin: 8px 0; }
+    .procurement-requirement-form { display: grid; gap: 12px; padding: 16px 0; border-block: 1px solid var(--border); }
+    .procurement-requirement-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+    .procurement-requirement-form label { display: grid; gap: 6px; min-width: 0; font-size: .8rem; }
+    .procurement-requirement-form input, .procurement-requirement-form select, .procurement-requirement-form textarea { box-sizing: border-box; width: 100%; min-width: 0; padding: 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: inherit; font: inherit; }
+    .procurement-requirement-form textarea { resize: vertical; line-height: 1.6; }
+    .procurement-requirement-form textarea[readonly] { min-height: 180px; }
+    .procurement-requirement-error { color: var(--danger, #b91c1c); }
+    @media (max-width: 640px) {
+      .procurement-requirement-fields { grid-template-columns: minmax(0, 1fr); }
+      .procurement-review-export { grid-template-columns: minmax(0, 1fr); }
+      .procurement-review-export button { white-space: normal; overflow-wrap: anywhere; }
     }
     .procurement-actions button,
     .project-doc-actions button {
@@ -2253,6 +2315,18 @@
       font-size: 1rem;
       line-height: 1.3;
     }
+    .generated-document-review-heading-actions,
+    .generated-document-review-status-controls {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .generated-document-review-status-controls button.active {
+      border-color: var(--p1, #4f46e5);
+      background: var(--p1, #4f46e5);
+      color: #fff;
+    }
     .generated-document-review-list {
       display: grid;
     }
@@ -2295,6 +2369,10 @@
       color: #92400e;
       font-size: 0.75rem;
       font-weight: 700;
+    }
+    .generated-document-review-status.completed {
+      background: #dcfce7;
+      color: #166534;
     }
     .generated-document-review-source.changed,
     .generated-document-review-source.missing {
@@ -2356,6 +2434,20 @@
       font-size: 0.82rem;
       font-weight: 700;
     }
+    .generated-document-review-dialog-form select,
+    .generated-document-review-dialog-form textarea {
+      width: 100%;
+      border: 1px solid var(--border, #e5e7eb);
+      border-radius: 6px;
+      background: var(--surface, #fff);
+      color: inherit;
+      font: inherit;
+      padding: 9px 10px;
+    }
+    .generated-document-review-dialog-form textarea {
+      min-height: 120px;
+      resize: vertical;
+    }
     .generated-document-review-format-grid {
       display: grid;
       grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -2400,6 +2492,7 @@
       color: var(--muted, #6b7280);
       font-size: 0.82rem;
       line-height: 1.5;
+      overflow-wrap: anywhere;
     }
     .procurement-summary-list li + li { margin-top: 4px; }
     .procurement-override-panel {
@@ -3365,15 +3458,21 @@
       position: fixed; inset: 0;
       background: rgba(0,0,0,0.6);
       display: flex; align-items: center; justify-content: center;
+      padding: 16px;
+      overflow-y: auto;
       z-index: 99999;
       backdrop-filter: blur(4px);
     }
     .onboarding-modal {
-      background: var(--color-surface);
+      background: var(--surface-solid);
+      color: var(--text);
       border-radius: 20px;
       padding: 40px;
-      max-width: 480px;
-      width: 90%;
+      width: min(100%, 480px);
+      max-height: calc(100vh - 32px);
+      max-height: calc(100dvh - 32px);
+      overflow-y: auto;
+      overflow-wrap: anywhere;
       box-shadow: 0 24px 64px rgba(0,0,0,0.2);
     }
     .onboarding-progress {
@@ -3381,52 +3480,63 @@
     }
     .onboarding-dot {
       width: 8px; height: 8px; border-radius: 50%;
-      background: var(--color-border); transition: all 0.3s;
+      background: var(--border); transition: all 0.3s;
     }
-    .onboarding-dot.active { background: var(--color-primary); width: 24px; border-radius: 4px; }
-    .onboarding-dot.done { background: var(--color-primary); opacity: 0.4; }
+    .onboarding-dot.active { background: var(--p1); width: 24px; border-radius: 4px; }
+    .onboarding-dot.done { background: var(--p1); opacity: 0.4; }
     .onboarding-title {
       font-size: 1.2rem; font-weight: 700; margin-bottom: 16px; text-align: center;
     }
     .onboarding-body { margin-bottom: 24px; }
     .onboarding-actions {
       display: flex; justify-content: space-between; align-items: center;
+      flex-wrap: wrap; gap: 12px;
     }
     .onboard-features {
       display: flex; gap: 12px; justify-content: center; margin-top: 16px;
+      flex-wrap: wrap;
     }
     .onboard-feature {
       display: flex; flex-direction: column; align-items: center;
       gap: 6px; padding: 12px; border-radius: 10px;
-      background: var(--color-bg); font-size: 0.8rem; flex: 1;
+      background: var(--bg); font-size: 0.8rem; flex: 1 1 120px;
+      min-width: 0;
     }
     .onboard-icon { font-size: 1.5rem; }
     .onboard-use-cases { display: flex; flex-direction: column; gap: 8px; }
     .onboard-choice {
       display: flex; align-items: center; gap: 12px;
       padding: 14px 16px; border-radius: 10px;
-      border: 2px solid var(--color-border);
-      background: var(--color-bg); cursor: pointer;
+      border: 2px solid var(--border);
+      background: var(--bg); cursor: pointer;
       text-align: left; transition: all 0.2s; color: inherit;
+      min-width: 0; overflow-wrap: anywhere;
     }
-    .onboard-choice:hover { border-color: var(--color-primary); }
-    .onboard-choice.selected { border-color: var(--color-primary); background: rgba(99,102,241,0.08); }
+    .onboard-choice:hover { border-color: var(--p1); }
+    .onboard-choice.selected { border-color: var(--p1); background: rgba(99,102,241,0.08); }
     .onboard-choice span:first-child { font-size: 1.5rem; }
     .onboard-choice strong { display: block; }
     .onboard-choice small { color: var(--muted); font-size: 0.8rem; }
     .onboard-styles { display: flex; flex-direction: column; gap: 8px; }
     .onboard-style-choice {
       padding: 14px 16px; border-radius: 10px;
-      border: 2px solid var(--color-border);
-      background: var(--color-bg); cursor: pointer;
+      border: 2px solid var(--border);
+      background: var(--bg); cursor: pointer;
       text-align: left; transition: all 0.2s; color: inherit;
+      min-width: 0; overflow-wrap: anywhere;
     }
-    .onboard-style-choice:hover { border-color: var(--color-primary); }
-    .onboard-style-choice.selected { border-color: var(--color-primary); background: rgba(99,102,241,0.08); }
+    .onboard-style-choice:hover { border-color: var(--p1); }
+    .onboard-style-choice.selected { border-color: var(--p1); background: rgba(99,102,241,0.08); }
     .onboard-style-choice strong { display: block; margin-bottom: 2px; }
     .onboard-style-choice small { color: var(--muted); font-size: 0.8rem; }
     .onboard-quick-start ol { padding-left: 20px; margin: 8px 0; }
     .onboard-quick-start li { margin-bottom: 4px; font-size: 0.9rem; }
+    @media (max-width: 480px) {
+      #onboarding-overlay { align-items: flex-start; }
+      .onboarding-modal { padding: 24px 20px; }
+      .onboarding-progress { margin-bottom: 20px; }
+      .onboarding-actions > button { max-width: 100%; }
+    }
 
     /* ── G2B deadline badge ──────────────────────────────────────── */
     .deadline-badge {
@@ -3449,6 +3559,7 @@
     }
     .download-btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
     .download-fallback {
+      min-width: 0; overflow-wrap: anywhere;
       margin-top: 10px; padding: 10px 12px; border-radius: 10px;
       background: rgba(99,102,241,.08); border: 1px solid rgba(99,102,241,.18);
       color: var(--text); font-size: .84rem;
@@ -4227,18 +4338,26 @@
     #notification-container {
       position: fixed; top: 1rem; right: 1rem; z-index: 9999;
       display: flex; flex-direction: column; gap: 8px;
+      width: min(380px, calc(100vw - 2rem));
+      max-height: min(320px, 40dvh);
+      overflow-x: hidden;
+      overflow-y: auto;
+      overscroll-behavior: contain;
       pointer-events: none;
     }
+    #notification-container:not(:empty) { pointer-events: auto; }
     .notification {
       padding: 12px 16px; border-radius: 10px;
-      display: flex; align-items: center; gap: 12px;
-      min-width: 280px; max-width: 380px;
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+      min-width: 0; max-width: 100%; flex-shrink: 0;
+      box-sizing: border-box;
       box-shadow: 0 4px 12px rgba(0,0,0,.15);
       animation: notif-in .2s ease;
       pointer-events: all;
       font-size: .88rem; font-weight: 500;
     }
-    .notification span { flex: 1; }
+    .notification span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+    .notification-actions > span { flex-basis: 100%; }
     .notification button {
       background: none; border: none; cursor: pointer;
       color: inherit; opacity: .7; font-size: 1rem; padding: 0;
@@ -4684,6 +4803,19 @@
       position: fixed; inset: 0; background: rgba(0,0,0,.5);
       z-index: 2000; display: flex; align-items: center; justify-content: center;
     }
+    .style-create-modal { z-index: 5000; }
+    .style-create-modal .modal-box {
+      width: min(480px, 100%);
+      max-height: calc(100dvh - 2rem);
+      overflow-y: auto;
+      box-sizing: border-box;
+      padding: 1.25rem;
+      padding-bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
+      background: var(--surface-solid);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
     .doc-type-check {
       display: flex; align-items: center; gap: 4px; cursor: pointer;
       padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px;
@@ -4714,7 +4846,11 @@
       font-family: inherit;
     }
     h2:hover .section-rewrite-btn,
-    h3:hover .section-rewrite-btn { opacity: 1; }
+    h3:hover .section-rewrite-btn,
+    .section-rewrite-btn:focus { opacity: 1; }
+    @media (hover: none), (max-width: 768px) {
+      .section-rewrite-btn { opacity: 1; }
+    }
     .rewrite-modal-overlay {
       position: fixed; inset: 0; z-index: 9000;
       background: rgba(0,0,0,.5); display: flex;
@@ -5378,6 +5514,7 @@
     /* ── Style management ─────────────────────────────────────────── */
     .style-toolbar {
       display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;
+      flex-wrap: wrap; gap: 12px;
     }
     .style-card {
       border: 1px solid var(--border, #e5e7eb); border-radius: 10px;
@@ -5411,6 +5548,23 @@
     }
     .tone-words-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
     .style-upload-area { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+    .style-manual-example {
+      display: grid; gap: 10px; margin-bottom: 16px; padding-bottom: 16px;
+      border-bottom: 1px solid var(--border, #e5e7eb);
+    }
+    .style-manual-example label {
+      display: grid; gap: 4px; min-width: 0;
+      color: var(--muted, #6b7280); font-size: 0.8rem;
+    }
+    .style-manual-example input,
+    .style-manual-example textarea {
+      width: 100%; min-width: 0; padding: 8px; border-radius: 6px;
+      border: 1px solid var(--border, #e5e7eb);
+      background: var(--surface, #fff); color: inherit; font: inherit;
+    }
+    .style-manual-example-actions {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    }
     .style-bundle-select {
       padding: 7px 10px; border-radius: 6px; border: 1px solid var(--border, #e5e7eb);
       background: var(--surface, #fff); color: inherit;
@@ -6292,10 +6446,13 @@
         <input type="hidden" id="f-audience" value="mixed">
         <div style="margin-top:0.75rem;">
           <label style="font-size:0.78rem;color:var(--muted);display:block;margin-bottom:0.4rem;">✍️ 스타일 프로필 <span style="font-size:.72rem;color:var(--muted)">(선택)</span></label>
+          <div style="display:flex;gap:8px;align-items:center;">
           <select id="inline-style-select"
-            style="width:100%;padding:.35rem .6rem;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-solid);color:var(--text);font-size:.82rem;font-family:inherit;">
+            style="flex:1;min-width:0;padding:.35rem .6rem;border:1.5px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-solid);color:var(--text);font-size:.82rem;font-family:inherit;">
             <option value="">기본 스타일</option>
           </select>
+          <button id="style-manage-btn" type="button" class="btn-outline btn-sm">스타일 관리</button>
+          </div>
           <div id="inline-style-desc" style="font-size:0.78rem;color:var(--muted);margin-top:4px;min-height:1.2em;"></div>
         </div>
         <div style="margin-top:0.75rem;">
@@ -6310,7 +6467,7 @@
         <div id="project-selector-row" style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;">
           <label style="font-size:0.875rem;color:var(--muted,#6b7280);white-space:nowrap;">프로젝트:</label>
           <select id="project-select"
-            style="flex:1;min-width:140px;padding:6px;border-radius:6px;border:1px solid var(--border,#e5e7eb);background:var(--surface,#fff);color:inherit;">
+            style="flex:1 1 140px;min-width:0;max-width:100%;padding:6px;border-radius:6px;border:1px solid var(--border,#e5e7eb);background:var(--surface,#fff);color:inherit;">
             <option value="">연결 안 함</option>
           </select>
           <span id="knowledge-badge" style="display:none; font-size:.75rem; background:#dcfce7; color:#16a34a;
@@ -6482,12 +6639,13 @@
         <button class="action-btn" id="ppt-doc-btn" title="현재 입력을 발표 자료 번들로 다시 구성합니다">📊 PPT 문서로 재구성</button>
         <button class="action-btn" id="knowledge-promote-btn" title="현재 결과를 프로젝트 지식 학습 라이브러리로 승격합니다" style="display:none">🧠 승인본으로 학습</button>
         <button class="action-btn" id="knowledge-promote-docs-btn" title="이번 결과에서 학습 라이브러리로 저장된 문서를 확인합니다" style="display:none">📚 학습 문서 보기</button>
-        <button class="action-btn" id="export-btn">📥 내보내기</button>
+        <button class="action-btn" id="export-btn" title="현재 탭의 Markdown 다운로드">📥 Markdown</button>
         <button class="action-btn" id="ppt-btn" style="display:none">📊 PPT 다운로드</button>
         <button class="action-btn" id="docx-btn">📄 Word</button>
         <button class="action-btn" id="excel-btn">📊 Excel</button>
         <button class="action-btn" id="hwp-btn">📝 HWP</button>
         <button class="action-btn" id="edit-btn">✏️ 편집</button>
+        <button class="action-btn" id="save-edited-copy-btn" type="button">편집본 저장</button>
         <button class="action-btn" id="pdf-btn">🖨️ PDF</button>
         <button class="action-btn" id="share-btn">🔗 공유</button>
         <button class="action-btn" id="compare-btn" style="display:none">🔄 비교하기</button>
@@ -6685,7 +6843,13 @@
         <h2 id="generated-document-review-inbox-title">문서 검토 전달</h2>
         <p class="generated-document-review-boundary">검토 증빙이며 운영 승인 아님</p>
       </div>
-      <button type="button" data-generated-document-review-inbox-refresh aria-label="문서 검토 전달함 새로고침">새로고침</button>
+      <div class="generated-document-review-heading-actions">
+        <div class="generated-document-review-status-controls" role="group" aria-label="문서 검토 상태 필터">
+          <button type="button" class="active" data-generated-document-review-status="pending">대기</button>
+          <button type="button" data-generated-document-review-status="completed">완료</button>
+        </div>
+        <button type="button" data-generated-document-review-inbox-refresh aria-label="문서 검토 전달함 새로고침">새로고침</button>
+      </div>
     </div>
     <div id="generated-document-review-inbox-summary" class="generated-document-review-boundary"></div>
     <div id="generated-document-review-inbox-list" class="generated-document-review-list" aria-live="polite"></div>
@@ -7326,6 +7490,7 @@
 <div id="style-page" style="display:none; max-width:900px; margin:0 auto; padding:1.5rem 1rem;">
   <div class="style-toolbar">
     <h3 style="font-size:1.2rem;font-weight:800;margin:0;">✍️ 문체 및 스타일 관리</h3>
+    <button id="style-return-btn" type="button" class="btn-outline btn-sm">문서 생성으로</button>
     <button id="style-create-btn" type="button" class="btn-primary">+ 새 스타일 프로필</button>
   </div>
   <div id="style-list"></div>
@@ -8073,6 +8238,8 @@
   let _procurementReviewInboxPayload = null;
   let _procurementReviewInboxLoadId = 0;
   let _projectDetailLoadId = 0;
+  let _procurementRequirementsState = null;
+  let _procurementReviewPacketPending = false;
   let _guidedDecisionReviewHandoffRequestId = 0;
   let _guidedDecisionReviewRecheckRequestId = 0;
   let _guidedDecisionReviewDispositionRequestId = 0;
@@ -8123,6 +8290,10 @@
 
   /* ── Tab page switcher ─────────────────────────────────────────── */
   window.switchPage = function switchPage(page) {
+    if (page !== 'project-page') {
+      _projectDetailLoadId += 1;
+      invalidateProcurementRequirements();
+    }
     document.body.classList.toggle('document-ops-active', page === 'document-ops-page');
     document.querySelectorAll('.page-tab').forEach(b => {
       const match = b.dataset.page === page;
@@ -8196,6 +8367,17 @@
       if (locationsPage) locationsPage.style.display = 'none';
       loadDocumentOpsTrajectories({ resetPage: true });
       if (readDocumentOpsPendingRunMarker()) void recoverDocumentOpsAgentRun();
+    } else if (page === 'style-page') {
+      if (main) main.style.display = 'none';
+      if (perfDash) perfDash.style.display = 'none';
+      if (approvalPage) approvalPage.style.display = 'none';
+      if (projectPage) projectPage.style.display = 'none';
+      if (reportWorkflowPage) reportWorkflowPage.style.display = 'none';
+      if (documentOpsPage) documentOpsPage.style.display = 'none';
+      if (knowledgePage) knowledgePage.style.display = 'none';
+      if (locationsPage) locationsPage.style.display = 'none';
+      if (stylePage) stylePage.style.display = 'block';
+      loadStyleProfiles();
     } else if (page === 'knowledge-page') {
       if (main) main.style.display = 'none';
       if (perfDash) perfDash.style.display = 'none';
@@ -13877,6 +14059,8 @@
 
   function knowledgeSelectProject(projectId) {
     _knowledgeCurrentProject = projectId;
+    const uploadStatus = $id('knowledge-upload-status');
+    if (uploadStatus) uploadStatus.style.display = 'none';
     if (projectId) loadKnowledgeDocs(projectId);
     else {
       $id('knowledge-doc-list').innerHTML =
@@ -13887,12 +14071,19 @@
 
   async function loadKnowledgeDocs(projectId) {
     const list = $id('knowledge-doc-list');
-    if (!list) return;
+    if (!list || projectId !== _knowledgeCurrentProject) return;
+    const headers = getAuthHeaders();
+    const authContext = JSON.stringify(headers);
+    const sequence = (list._knowledgeRequest || 0) + 1;
+    list._knowledgeRequest = sequence;
+    const isCurrent = () => list.isConnected && list._knowledgeRequest === sequence
+      && _knowledgeCurrentProject === projectId && JSON.stringify(getAuthHeaders()) === authContext;
     list.innerHTML = '<div style="color:var(--muted);font-size:.88rem;text-align:center;padding:1.5rem 0;">불러오는 중...</div>';
     try {
-      const res = await fetch(`/knowledge/${encodeURIComponent(projectId)}/documents`, { headers: getAuthHeaders() });
+      const res = await fetch(`/knowledge/${encodeURIComponent(projectId)}/documents`, { headers });
       if (!res.ok) throw new Error(res.statusText);
       const data = await res.json();
+      if (!isCurrent()) return;
       const docs = data.documents || [];
       $id('knowledge-doc-count').textContent = docs.length;
       if (docs.length === 0) {
@@ -13938,6 +14129,7 @@
       `).join('');
       wireKnowledgeDocActions(list);
     } catch(e) {
+      if (!isCurrent()) return;
       list.innerHTML = `<div style="color:#ef4444;font-size:.88rem;padding:1rem;">불러오기 실패: ${escapeHtml(String(e))}</div>`;
     }
   }
@@ -14173,7 +14365,7 @@
     const docs = (Array.isArray(raw.docs) ? raw.docs : [])
       .map(doc => ({
         doc_type: String(doc?.doc_type || '').trim(),
-        markdown: String(doc?._editedMarkdown || doc?.markdown || '').trim(),
+        markdown: String(doc?._editedMarkdown ?? doc?.markdown ?? '').trim(),
       }))
       .filter(doc => doc.doc_type && doc.markdown);
     const projectId = String(raw.projectId || raw.project_id || '').trim();
@@ -14203,7 +14395,7 @@
     const docs = (Array.isArray(generatedDocs) ? generatedDocs : [])
       .map(doc => ({
         doc_type: String(doc.doc_type || '').trim(),
-        markdown: String(doc._editedMarkdown || doc.markdown || '').trim(),
+        markdown: String(doc._editedMarkdown ?? doc.markdown ?? '').trim(),
       }))
       .filter(doc => doc.doc_type && doc.markdown);
     return {
@@ -14393,49 +14585,66 @@
   }
 
   async function knowledgeUploadFiles(files) {
-    if (!_knowledgeCurrentProject) {
+    const projectId = _knowledgeCurrentProject;
+    if (!projectId) {
       showNotification('프로젝트를 먼저 선택해주세요.', 'error');
       return;
     }
     const analyzeStyle = $id('knowledge-analyze-style')?.checked ? '1' : '0';
     const statusEl = $id('knowledge-upload-status');
+    if (!statusEl || statusEl.dataset.uploading === 'true') return;
+    const headers = {...getAuthHeaders()};
+    const authContext = JSON.stringify(getAuthHeaders());
+    delete headers['Content-Type'];
+    const isCurrent = () => statusEl.isConnected && _knowledgeCurrentProject === projectId
+      && JSON.stringify(getAuthHeaders()) === authContext;
+    const input = $id('knowledge-file-input');
+    const button = $id('knowledge-file-pick-btn');
+    statusEl.dataset.uploading = 'true';
+    if (input) input.disabled = true;
+    if (button) button.disabled = true;
     statusEl.style.display = 'block';
     statusEl.innerHTML = '';
 
-    for (const file of Array.from(files)) {
-      const row = document.createElement('div');
-      row.style.cssText = 'display:flex;align-items:center;gap:.5rem;padding:.4rem .75rem;background:var(--surface);border-radius:8px;border:1px solid var(--border);margin-bottom:.4rem;font-size:.85rem;';
-      row.innerHTML = `<span>${_knowledgeFileIcon(file.name)}</span><span style="flex:1;">${escapeHtml(file.name)}</span><span class="upload-state">업로드 중...</span>`;
-      statusEl.appendChild(row);
-      const stateEl = row.querySelector('.upload-state');
+    try {
+      for (const file of Array.from(files)) {
+        if (!isCurrent()) break;
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:.5rem;padding:.4rem .75rem;background:var(--surface);border-radius:8px;border:1px solid var(--border);margin-bottom:.4rem;font-size:.85rem;';
+        row.innerHTML = `<span>${_knowledgeFileIcon(file.name)}</span><span style="flex:1;min-width:0;overflow-wrap:anywhere;">${escapeHtml(file.name)}</span><span class="upload-state">업로드 중...</span>`;
+        statusEl.appendChild(row);
+        const stateEl = row.querySelector('.upload-state');
 
-      try {
-        const fd = new FormData();
-        fd.append('file', file);
-        fd.append('analyze_style', analyzeStyle);
-        const headers = getAuthHeaders();
-        delete headers['Content-Type'];
-        const res = await fetch(`/knowledge/${encodeURIComponent(_knowledgeCurrentProject)}/documents`, {
-          method: 'POST', headers, body: fd
-        });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({ detail: res.statusText }));
-          stateEl.textContent = `❌ ${err.detail || '실패'}`;
+        try {
+          const fd = new FormData();
+          fd.append('file', file);
+          fd.append('analyze_style', analyzeStyle);
+          const res = await fetch(`/knowledge/${encodeURIComponent(projectId)}/documents`, {
+            method: 'POST', headers, body: fd
+          });
+          if (!isCurrent()) break;
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({ detail: res.statusText }));
+            if (!isCurrent()) break;
+            stateEl.textContent = `❌ ${err.detail || '실패'}`;
+            stateEl.style.color = '#ef4444';
+          } else {
+            stateEl.textContent = '✅ 완료';
+            stateEl.style.color = '#22c55e';
+          }
+        } catch(e) {
+          if (!isCurrent()) break;
+          stateEl.textContent = `❌ ${e.message}`;
           stateEl.style.color = '#ef4444';
-        } else {
-          stateEl.textContent = '✅ 완료';
-          stateEl.style.color = '#22c55e';
         }
-      } catch(e) {
-        stateEl.textContent = `❌ ${e.message}`;
-        stateEl.style.color = '#ef4444';
       }
+      if (isCurrent()) await loadKnowledgeDocs(projectId);
+    } finally {
+      statusEl.dataset.uploading = 'false';
+      if (!isCurrent()) statusEl.style.display = 'none';
+      if (input) { input.disabled = false; input.value = ''; }
+      if (button) button.disabled = false;
     }
-    // 업로드 완료 후 목록 갱신
-    setTimeout(() => {
-      statusEl.style.display = 'none';
-      loadKnowledgeDocs(_knowledgeCurrentProject);
-    }, 1800);
   }
 
   async function deleteKnowledgeDoc(projectId, docId) {
@@ -15282,8 +15491,29 @@
   function splitMarkdownTableRow(line) {
     let row = String(line || '').trim();
     if (row.startsWith('|')) row = row.slice(1);
-    if (row.endsWith('|')) row = row.slice(0, -1);
-    return row.split('|').map(cell => renderMarkdownInline(cell.trim()));
+    const punctuation = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~";
+    const cells = [];
+    let current = '';
+    let escaped = false;
+    for (let index = 0; index < row.length; index += 1) {
+      const char = row[index];
+      if (escaped) {
+        if (!punctuation.includes(char)) current += '\\';
+        current += char;
+        escaped = false;
+      } else if (char === '\\') {
+        escaped = true;
+      } else if (char === '|') {
+        cells.push(renderMarkdownInline(current.trim()));
+        if (index === row.length - 1) return cells;
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    if (escaped) current += '\\';
+    cells.push(renderMarkdownInline(current.trim()));
+    return cells;
   }
 
   function renderMarkdown(text) {
@@ -15342,7 +15572,7 @@
       const headingMatch = trimmed.match(/^(#{1,6})\s+(.*)$/);
       if (headingMatch) {
         const level = headingMatch[1].length;
-        html.push(`<h${level}>${renderMarkdownInline(headingMatch[2])}</h${level}>`);
+        html.push(`<h${level} data-markdown-line="${i}">${renderMarkdownInline(headingMatch[2])}</h${level}>`);
         i += 1;
         continue;
       }
@@ -15659,13 +15889,20 @@
   function showNotification(message, type = 'info') {
     const container = $id('notification-container');
     if (!container) return;
+    const text = String(message);
+    if (Array.from(container.children).some(item =>
+      item.dataset.message === text && item.dataset.type === type
+    )) return;
     const notif = document.createElement('div');
+    notif.dataset.message = text;
+    notif.dataset.type = type;
     notif.className = `notification notif-${type}`;
     notif.setAttribute('role', type === 'error' ? 'alert' : 'status');
     notif.setAttribute('aria-atomic', 'true');
     notif.innerHTML = `<span>${escapeHtml(message)}</span><button aria-label="닫기">✕</button>`;
     notif.querySelector('button').addEventListener('click', () => notif.remove());
     container.appendChild(notif);
+    container.scrollTop = container.scrollHeight;
     setTimeout(() => { if (notif.parentNode) notif.remove(); }, 5000);
   }
 
@@ -15731,7 +15968,7 @@
     const container = $id('notification-container');
     if (!container) return;
     const notif = document.createElement('div');
-    notif.className = 'notification notif-success';
+    notif.className = 'notification notif-success notification-actions';
     const span = document.createElement('span');
     span.textContent = `${format} 다운로드 완료! `;
     const closeBtn = document.createElement('button');
@@ -15756,6 +15993,7 @@
     notif.appendChild(newDocBtn);
     notif.appendChild(closeBtn);
     container.appendChild(notif);
+    container.scrollTop = container.scrollHeight;
     setTimeout(() => { if (notif.parentNode) notif.remove(); }, 5000);
   }
 
@@ -17005,7 +17243,10 @@
   });
 
   /* ── runSketch: Step 1 — fetch /generate/sketch ─────────────── */
+  let _sketchRequestSequence = 0;
   async function runSketch(payloadJson) {
+    const requestSequence = ++_sketchRequestSequence;
+    const isCurrentRequest = () => requestSequence === _sketchRequestSequence;
     _sketchPayloadJson = payloadJson;
     _lastSketchResult = null;
     setStatus('⏳ 문서 구성을 분석하는 중...', 'loading');
@@ -17020,6 +17261,7 @@
         }),
         { label: 'AI 스케치 생성' },
       );
+      if (!isCurrentRequest()) return;
       _lastSketchResult = sketch;
       renderSketch(sketch);
       $id('sketch-panel').style.display = 'block';
@@ -17027,10 +17269,10 @@
       updateStepProgress(3);
       setStatus('', '');
     } catch (e) {
-      setStatus(`❌ 스케치 실패: ${e.message}`, 'error');
+      if (isCurrentRequest()) setStatus(`❌ 스케치 실패: ${e.message}`, 'error');
     } finally {
       const btn = $id('generate-btn');
-      if (btn) { btn.disabled = false; btn.textContent = `${selectedBundle?.icon || ''} ${selectedBundle?.name_ko || ''} 문서 생성하기`; }
+      if (btn && isCurrentRequest()) { btn.disabled = false; btn.textContent = `${selectedBundle?.icon || ''} ${selectedBundle?.name_ko || ''} 문서 생성하기`; }
     }
   }
 
@@ -17079,8 +17321,8 @@
     if (sectionsEl && sketch.sections?.length) {
       sectionsEl.innerHTML = sketch.sections.map(s => `
         <div class="sketch-section">
-          <div class="sketch-heading" contenteditable="true" spellcheck="false">${s.heading}</div>
-          <ul>${(s.bullets || []).map(b => `<li contenteditable="true" spellcheck="false">${b}</li>`).join('')}</ul>
+          <div class="sketch-heading" contenteditable="true" spellcheck="false">${escapeHtml(s.heading)}</div>
+          <ul>${(s.bullets || []).map(b => `<li contenteditable="true" spellcheck="false">${escapeHtml(b)}</li>`).join('')}</ul>
         </div>
       `).join('');
     } else if (sectionsEl) {
@@ -17093,9 +17335,9 @@
       if (pageCardsEl) {
         pageCardsEl.innerHTML = pageCards.map(item => `
           <div class="slide-card">
-            <div class="slide-page-num">페이지 ${item.page}</div>
-            <div class="slide-title">${item.title}</div>
-            <div class="slide-content">${item.key_content}</div>
+            <div class="slide-page-num">페이지 ${escapeHtml(item.page)}</div>
+            <div class="slide-title">${escapeHtml(item.title)}</div>
+            <div class="slide-content">${escapeHtml(item.key_content)}</div>
           </div>
         `).join('');
       }
@@ -17108,9 +17350,9 @@
       if (cardsEl) {
         cardsEl.innerHTML = sketch.ppt_slides.map(s => `
           <div class="slide-card">
-            <div class="slide-page-num">슬라이드 ${s.page}</div>
-            <div class="slide-title">${s.title}</div>
-            <div class="slide-content">${s.key_content}</div>
+            <div class="slide-page-num">슬라이드 ${escapeHtml(s.page)}</div>
+            <div class="slide-title">${escapeHtml(s.title)}</div>
+            <div class="slide-content">${escapeHtml(s.key_content)}</div>
           </div>
         `).join('');
       }
@@ -17123,7 +17365,7 @@
       const snippetsList = $id('sketch-snippets-list');
       if (snippetsList) {
         snippetsList.innerHTML = sketch.search_snippets
-          .map(s => `<div class="snippet-item">${s}</div>`)
+          .map(s => `<div class="snippet-item">${escapeHtml(s)}</div>`)
           .join('');
       }
       if (snippetsEl) snippetsEl.style.display = 'block';
@@ -17840,6 +18082,7 @@
           }
         }
       }
+      if (!resolved) throw new Error('완료 응답 없이 문서 생성 스트림이 종료되었습니다.');
     } catch (e) {
       clearTimeout(timeoutId);
       if (progressWrap) progressWrap.style.display = 'none';
@@ -17914,7 +18157,10 @@
       const hit      = lastMeta.cache_hit === true;
       const tokens   = lastMeta.llm_total_tokens;
       const provider = lastMeta.provider || '';
-      if (hit) {
+      if (lastMeta.source_kind === 'edited_copy') {
+        metaEl.textContent = '저장된 편집본 · AI 재생성 없음';
+        metaEl.className = 'cost-meta';
+      } else if (hit) {
         metaEl.innerHTML = '⚡ <strong>캐시 히트</strong> — LLM 미호출, 토큰 비용 없음';
         metaEl.className = 'cost-meta cache-hit';
       } else {
@@ -17984,18 +18230,46 @@
     }
   }
 
+  function captureCurrentDocumentEdits() {
+    const content = $id('doc-pane')?.querySelector('.doc-pane-content');
+    if (!content?._documentDraft || !(content instanceof HTMLTextAreaElement)) return;
+    content._documentDraft._editedMarkdown = content.value;
+  }
+
+  function applyDocumentEditingState() {
+    const content = $id('doc-pane')?.querySelector('.doc-pane-content');
+    if (!content) return;
+    if (isEditing) {
+      content.value = content._documentDraft?._editedMarkdown ?? content._documentDraft?.markdown ?? '';
+      content.style.width = '100%';
+      content.style.boxSizing = 'border-box';
+      content.style.resize = 'vertical';
+      content.style.font = 'inherit';
+    }
+    content.style.outline = isEditing ? '2px dashed var(--p1)' : 'none';
+    content.style.padding = isEditing ? '4px' : '';
+  }
+
   function showDoc(i) {
+    if (isEditing) captureCurrentDocumentEdits();
     const pane = $id('doc-pane');
-    pane.innerHTML = `<div class="doc-pane-content">${safeMarkdown(generatedDocs[i]?.markdown || '')}</div>`;
+    const doc = generatedDocs[i];
+    pane.innerHTML = isEditing
+      ? '<textarea class="doc-pane-content" rows="16" aria-label="문서 원문 편집"></textarea>'
+      : `<div class="doc-pane-content">${safeMarkdown(doc?._editedMarkdown ?? doc?.markdown ?? '')}</div>`;
     const paneEl = pane.querySelector('.doc-pane-content');
-    if (paneEl && selectedBundle?.id) {
-      addSectionRewriteButtons(paneEl, selectedBundle.id, generatedDocs[i]?.doc_type || '');
+    paneEl._documentDraft = doc;
+    if (isEditing) paneEl.addEventListener('input', captureCurrentDocumentEdits);
+    applyDocumentEditingState();
+    const bundleType = lastRequestPayload?.bundle_type || selectedBundle?.id;
+    if (!isEditing && paneEl && bundleType) {
+      addSectionRewriteButtons(paneEl, bundleType, generatedDocs[i]?.doc_type || '');
     }
   }
 
   /* ── Copy ──────────────────────────────────────────────────────── */
   $id('copy-btn').addEventListener('click', () => {
-    const md = generatedDocs[activeTab]?.markdown || '';
+    const md = _getMarkdownContent() ?? '';
     navigator.clipboard.writeText(md).then(() => {
       showNotification('📋 마크다운이 클립보드에 복사되었습니다.', 'success');
     }).catch(() => {
@@ -18005,7 +18279,7 @@
 
   /* ── Summary ─────────────────────────────────────────────────── */
   $id('summary-btn').addEventListener('click', async () => {
-    const md = generatedDocs[activeTab]?.markdown || '';
+    const md = _getMarkdownContent() ?? '';
     if (!md) { showNotification('요약할 문서가 없습니다.', 'warn'); return; }
     const btn = $id('summary-btn');
     btn.disabled = true;
@@ -18088,7 +18362,7 @@
 
   function _getMarkdownContent() {
     const currentDoc = generatedDocs[activeTab];
-    if (currentDoc?._editedMarkdown) return currentDoc._editedMarkdown;
+    if (currentDoc?._editedMarkdown != null) return currentDoc._editedMarkdown;
     if (currentDoc?.markdown) return currentDoc.markdown;
     const pane = document.querySelector('#doc-pane .doc-pane-content');
     if (pane) return pane.innerText;
@@ -18303,25 +18577,17 @@
   };
 
   /* ── Export ──────────────────────────────────────────────────── */
-  $id('export-btn').addEventListener('click', async () => {
-    if (!lastRequestPayload) return;
-    const btn = $id('export-btn');
-    btn.disabled = true;
-    btn.textContent = '⏳ 내보내기 중…';
+  $id('export-btn').addEventListener('click', () => {
+    const doc = generatedDocs[activeTab];
+    if (!doc) { showNotification('내보낼 문서가 없습니다.', 'warn'); return; }
     try {
-      const res = await fetch('/generate/export', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeaders()},
-        body: JSON.stringify(lastRequestPayload),
-      });
-      if (!res.ok) throw new Error(`서버 오류 ${res.status}`);
-      const data = await res.json();
-      const n = data.files ? data.files.length : 0;
-      btn.textContent = `✅ 내보내기 완료 (${n}개 파일)`;
-      setTimeout(() => { btn.textContent = '📥 내보내기'; btn.disabled = false; }, 3000);
+      const title = lastRequestPayload?.title || lastMeta?.title || 'document';
+      const filename = `${title}-${doc.doc_type || 'document'}`.replace(/[\\/:*?"<>|\x00-\x1f]/g, '_') + '.md';
+      const blob = new Blob([_getMarkdownContent() ?? ''], { type: 'text/markdown;charset=utf-8' });
+      _triggerBrowserDownload(blob, filename, 'Markdown');
+      showNotification('Markdown 다운로드를 요청했습니다.', 'success');
     } catch {
-      btn.textContent = '❌ 내보내기 실패';
-      setTimeout(() => { btn.textContent = '📥 내보내기'; btn.disabled = false; }, 2000);
+      showNotification('Markdown 다운로드에 실패했습니다. 편집 내용은 유지됩니다.', 'error');
     }
   });
 
@@ -19318,17 +19584,9 @@
   /* ── Edit button (#13 + PU-2/M-6 _editedMarkdown capture) ────── */
   let isEditing = false;
   $id('edit-btn').addEventListener('click', () => {
+    if (isEditing) captureCurrentDocumentEdits();
     isEditing = !isEditing;
-    document.querySelectorAll('.doc-pane-content').forEach((p, i) => {
-      p.contentEditable = isEditing ? 'true' : 'false';
-      p.style.outline   = isEditing ? '2px dashed var(--p1)' : 'none';
-      p.style.padding   = isEditing ? '4px' : '';
-      // Save edits back to generatedDocs (HTML for display; innerText for export)
-      if (!isEditing && generatedDocs[i]) {
-        generatedDocs[i]._editedHtml     = p.innerHTML;
-        generatedDocs[i]._editedMarkdown = p.innerText;
-      }
-    });
+    showDoc(activeTab);
     const editBtn = $id('edit-btn');
     editBtn.textContent       = isEditing ? '✅ 편집 완료' : '✏️ 편집';
     editBtn.style.background  = isEditing ? 'var(--p1)' : '';
@@ -19548,7 +19806,23 @@
   ════════════════════════════════════════════════════════════════ */
 
   function addSectionRewriteButtons(paneEl, bundleId, docType) {
-    paneEl.querySelectorAll('h2, h3').forEach(heading => {
+    const doc = paneEl._documentDraft;
+    if (!doc) return;
+    const source = doc._editedMarkdown ?? doc.markdown ?? '';
+    const lines = [...source.matchAll(/[^\r\n]*(?:\r\n|\r|\n|$)/g)];
+    // Use renderer positions, not heading text: titles may repeat or appear inside code.
+    const headings = [...paneEl.children].filter(el => /^H[1-3]$/.test(el.tagName));
+    headings.forEach((heading, index) => {
+      if (heading.tagName === 'H1') return;
+      const line = lines[Number(heading.dataset.markdownLine)];
+      const next = headings[index + 1];
+      const end = next ? lines[Number(next.dataset.markdownLine)]?.index : source.length;
+      if (!line || end == null) return;
+      const section = {
+        doc, source, start: line.index + line[0].length, end,
+        title: heading.textContent.trim(),
+        newline: line[0].match(/(\r\n|\r|\n)$/)?.[0] || '\n',
+      };
       const btn = document.createElement('button');
       btn.className = 'section-rewrite-btn';
       btn.innerHTML = '✏️ 다시 쓰기';
@@ -19556,26 +19830,27 @@
       heading.appendChild(btn);
       btn.addEventListener('click', e => {
         e.stopPropagation();
-        showSectionRewriteModal(heading, bundleId);
+        showSectionRewriteModal(heading, bundleId, section);
       });
     });
   }
 
-  function showSectionRewriteModal(headingEl, bundleId) {
-    // Collect section content (text until next heading)
-    let content = '';
-    let el = headingEl.nextElementSibling;
-    while (el && !['H2', 'H3'].includes(el.tagName)) {
-      content += (el.innerText || '') + '\n';
-      el = el.nextElementSibling;
-    }
-    const sectionTitle = (headingEl.innerText || '').replace('✏️ 다시 쓰기', '').trim();
+  function showSectionRewriteModal(headingEl, bundleId, section) {
+    const { doc, source, start, end, title: sectionTitle, newline } = section;
+    const headers = getAuthHeaders();
+    const identity = JSON.stringify(headers);
+    const pane = headingEl.parentElement;
+    const isCurrent = () => modal.isConnected && headingEl.isConnected
+      && pane === $id('doc-pane')?.querySelector('.doc-pane-content') && pane.checkVisibility()
+      && generatedDocs[activeTab] === doc && !isEditing
+      && (doc._editedMarkdown ?? doc.markdown ?? '') === source
+      && JSON.stringify(getAuthHeaders()) === identity;
 
     const modal = document.createElement('div');
     modal.className = 'rewrite-modal-overlay';
     modal.innerHTML = `
       <div class="rewrite-modal">
-        <h4>✏️ "${sectionTitle}" 다시 쓰기</h4>
+        <h4>✏️ "${escapeHtml(sectionTitle)}" 다시 쓰기</h4>
         <p class="muted-text">어떻게 수정할지 지시해주세요.</p>
         <textarea id="rewrite-instruction" rows="3"
           placeholder="예: 더 구체적인 수치를 포함해서 설명해줘 / 더 간결하게 요약해줘 / 임원 대상으로 다시 써줘"></textarea>
@@ -19593,10 +19868,12 @@
     modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
 
     modal.querySelector('#rewrite-confirm').onclick = async () => {
+      const confirmBtn = modal.querySelector('#rewrite-confirm');
+      if (confirmBtn.disabled) return;
+      if (!isCurrent()) { modal.remove(); return; }
       const instruction = modal.querySelector('#rewrite-instruction').value.trim();
       if (!instruction) { modal.querySelector('#rewrite-instruction').focus(); return; }
 
-      const confirmBtn = modal.querySelector('#rewrite-confirm');
       const loadingEl  = modal.querySelector('#rewrite-loading');
       confirmBtn.disabled = true;
       loadingEl.style.display = 'block';
@@ -19604,30 +19881,27 @@
       try {
         const res = await fetch('/generate/rewrite-section', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...getAuthHeaders()},
+          headers: { 'Content-Type': 'application/json', ...headers },
           body: JSON.stringify({
             bundle_id:       bundleId,
             section_title:   sectionTitle,
-            current_content: content.trim(),
+            current_content: source.slice(start, end).trim(),
             instruction,
           }),
         });
         if (!res.ok) throw new Error(await res.text());
         const { rewritten } = await res.json();
-
-        // Replace section content in DOM
-        let toRemove = headingEl.nextElementSibling;
-        while (toRemove && !['H2', 'H3'].includes(toRemove.tagName)) {
-          const next = toRemove.nextElementSibling;
-          toRemove.remove();
-          toRemove = next;
-        }
-        const newContent = document.createElement('div');
-        newContent.innerHTML = safeMarkdown(rewritten);
-        headingEl.insertAdjacentElement('afterend', newContent);
+        if (!isCurrent()) { modal.remove(); return; }
+        if (typeof rewritten !== 'string' || !rewritten.trim()) throw new Error('다시 쓴 내용이 비어 있습니다.');
+        const prefix = source.slice(0, start);
+        const body = rewritten.trim().replace(/\r\n?|\n/g, newline);
+        doc._editedMarkdown = prefix + (/[\r\n]$/.test(prefix) ? '' : newline)
+          + body + newline + (end < source.length ? newline : '') + source.slice(end);
+        showDoc(activeTab);
         modal.remove();
         showNotification('✅ 섹션이 다시 작성되었습니다.', 'success');
       } catch (e) {
+        if (!isCurrent()) { modal.remove(); return; }
         showNotification('❌ 다시 쓰기 실패: ' + (e.message || '서버 오류'), 'error');
         confirmBtn.disabled = false;
         loadingEl.style.display = 'none';
@@ -19767,7 +20041,7 @@
         if (!evM || !dtM) continue;
         let data; try { data = JSON.parse(dtM[1]); } catch { continue; }
         if (evM[1] === 'complete') return data;
-        if (evM[1] === 'error') throw new Error(data.message || '생성 실패');
+        if (evM[1] === 'error') throw Object.assign(new Error(data.message || '생성 실패'), { code: data.code });
       }
     }
     throw new Error('스트림이 예상치 않게 종료되었습니다.');
@@ -19908,6 +20182,7 @@
           format,
           docs: buildEditedExportDocsPayload(result.docs, { preferEdited: true }),
           visual_assets: _normalizeVisualAssets(result.visual_assets),
+          generate_missing_visuals: false,
         }),
       });
       if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.message || `서버 오류 ${res.status}`); }
@@ -20129,11 +20404,9 @@
 
   /* ── exportDocument (PU-2/M-6) — unified export function ────────── */
   async function _buildExportedBlob(format) {
-    /* Export the currently rendered result, including document-upload flows.
-       Only fall back to provider re-generation when there is no current result. */
+    /* Export the current draft without provider re-generation. */
     if (!Array.isArray(generatedDocs) || generatedDocs.length === 0) return null;
-    const hasEdits = generatedDocs.some(d => d._editedMarkdown);
-    const docs = buildEditedExportDocsPayload(generatedDocs, { preferEdited: hasEdits });
+    const docs = buildEditedExportDocsPayload(generatedDocs);
     const govOpts = getGovOptions();
     const body = JSON.stringify({
       bundle_id: lastMeta?.bundle_id || '',
@@ -20142,6 +20415,7 @@
       format,
       docs,
       visual_assets: Array.isArray(lastVisualAssets) ? lastVisualAssets : [],
+      generate_missing_visuals: false,
       gov_options: govOpts,
     });
     const res = await fetch('/generate/export-edited', {
@@ -20158,24 +20432,17 @@
 
   async function exportDocument(format, btnId, icon, ext, label) {
     const btn = $id(btnId);
-    if (!btn) return;
-    if (!lastRequestPayload) return;
-    btn.disabled = true; btn.textContent = '⏳ 생성 중…';
+    if (!btn || btn.disabled) return;
+    if (!Array.isArray(generatedDocs) || generatedDocs.length === 0) {
+      showNotification('내보낼 문서가 없습니다.', 'warn');
+      return;
+    }
+    const title = lastRequestPayload?.title || lastMeta?.title || 'document';
+    btn.disabled = true; btn.textContent = '⏳ 변환 중…';
     try {
-      let blob = await _buildExportedBlob(format);
-      if (!blob) {
-        // No rendered docs yet: keep the legacy re-generation endpoint as a fallback.
-        const endpoint = { docx: '/generate/docx', pdf: '/generate/pdf', excel: '/generate/excel', hwp: '/generate/hwp', pptx: '/generate/pptx' }[format];
-        if (!endpoint) throw new Error('알 수 없는 형식');
-        const res = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...getAuthHeaders()},
-          body: JSON.stringify(lastRequestPayload),
-        });
-        if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.message || `서버 오류 ${res.status}`); }
-        blob = await res.blob();
-      }
-      const filename = `${lastRequestPayload.title || 'document'}.${ext}`;
+      const blob = await _buildExportedBlob(format);
+      if (!blob) throw new Error('내보낼 문서가 없습니다.');
+      const filename = `${title}.${ext}`;
       _triggerBrowserDownload(blob, filename, label);
       btn.textContent = '✅ 다운로드 요청됨';
       showPostDownloadPrompt(label);
@@ -22358,6 +22625,108 @@
     if (btn) btn.style.display = 'inline-flex';
   }
 
+  const editedProjectDrafts = new WeakMap();
+  let editedProjectOpenSequence = 0;
+
+  async function openEditedProjectDocument(projectId, docId) {
+    const headers = getAuthHeaders();
+    const identity = JSON.stringify(headers);
+    const sequence = ++editedProjectOpenSequence;
+    const projectContext = _currentProjectDetail;
+    const canOpen = () => sequence === editedProjectOpenSequence
+      && JSON.stringify(getAuthHeaders()) === identity && _currentProjectDetail === projectContext
+      && $id('project-page')?.style.display !== 'none';
+    try {
+      const response = await fetch(`/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(docId)}/editable-source`, { headers });
+      if (!response.ok) throw new Error('문서를 열 수 없습니다.');
+      const source = await response.json();
+      if (!canOpen()) return;
+      const docs = JSON.parse(source.document.doc_snapshot);
+      if (!Array.isArray(docs) || !docs.length) throw new Error('저장된 문서가 비어 있습니다.');
+      if (isEditing) captureCurrentDocumentEdits();
+      isEditing = false;
+      $id('edit-btn').textContent = '✏️ 편집';
+      generatedDocs = docs;
+      editedProjectDrafts.set(docs, { source, identity, pending: null });
+      lastMeta = { title: source.document.title, bundle_id: source.document.bundle_id, request_id: '', source_kind: source.document.source_kind };
+      lastRequestPayload = { title: source.document.title, bundle_type: source.document.bundle_id, project_id: projectId };
+      lastVisualAssets = [];
+      switchPage('generate');
+      renderResults();
+      renderDownloadButtons('', source.document.title);
+      $id('results').style.display = 'block';
+      $id('results').scrollIntoView({ behavior: 'smooth' });
+    } catch (error) {
+      if (canOpen()) showNotification(error.message, 'error');
+    }
+  }
+
+  async function saveEditedProjectCopy() {
+    const button = $id('save-edited-copy-btn');
+    if (button.disabled) return;
+    if (isEditing) captureCurrentDocumentEdits();
+    const docs = generatedDocs;
+    const identity = JSON.stringify(getAuthHeaders());
+    const projectId = lastRequestPayload?.project_id || '';
+    const requestId = lastMeta?.request_id || '';
+    const current = () => generatedDocs === docs && JSON.stringify(getAuthHeaders()) === identity
+      && lastRequestPayload?.project_id === projectId;
+    button.disabled = true;
+    try {
+      if (!projectId) throw new Error('프로젝트에 저장된 문서를 먼저 열어 주세요.');
+      let draft = editedProjectDrafts.get(docs);
+      if (draft && draft.identity !== identity) throw new Error('현재 계정으로 프로젝트 문서를 다시 열어 주세요.');
+      if (!draft) {
+        const response = await fetch(`/projects/${encodeURIComponent(projectId)}`, { headers: getAuthHeaders() });
+        if (!response.ok) throw new Error('프로젝트를 확인할 수 없습니다.');
+        const project = await response.json();
+        const matches = (project.documents || []).filter(doc => requestId && doc.request_id === requestId);
+        if (matches.length !== 1) throw new Error('원본 문서를 특정할 수 없습니다. 프로젝트 목록에서 문서를 열어 주세요.');
+        const sourceResponse = await fetch(`/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(matches[0].doc_id)}/editable-source`, { headers: getAuthHeaders() });
+        if (!sourceResponse.ok) throw new Error('원본 문서를 확인할 수 없습니다.');
+        draft = { source: await sourceResponse.json(), identity, pending: null };
+        if (!current()) return;
+        editedProjectDrafts.set(docs, draft);
+      }
+      if (!current()) return;
+      if (!draft.pending) {
+        draft.pending = {
+          operation_id: crypto.randomUUID(), parent_sha256: draft.source.parent_sha256,
+          title: lastRequestPayload.title || draft.source.document.title,
+          docs: buildEditedExportDocsPayload(docs),
+        };
+      }
+      const pending = draft.pending;
+      const response = await fetch(`/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(draft.source.document.doc_id)}/edited-copies`, {
+        method: 'POST', headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(pending),
+      });
+      if (!current()) return;
+      if (!response.ok) {
+        if ([401, 403, 404, 409, 422].includes(response.status)) draft.pending = null;
+        throw new Error(`저장하지 못했습니다 (${response.status}). 입력 내용은 유지됩니다.`);
+      }
+      const saved = await response.json();
+      if (!current()) return;
+      if (saved.operation_id !== pending.operation_id || saved.project_id !== projectId
+          || saved.document?.edited_copy?.parent_id !== draft.source.document.doc_id
+          || saved.document?.edited_copy?.parent_sha256 !== pending.parent_sha256
+          || saved.document?.title !== pending.title || saved.document?.request_id !== ''
+          || saved.document?.source_kind !== 'edited_copy'
+          || JSON.stringify(JSON.parse(saved.document.doc_snapshot)) !== JSON.stringify(pending.docs)
+          || saved.operational_approval !== false) throw new Error('저장 응답을 확인할 수 없습니다. 같은 요청으로 다시 확인해 주세요.');
+      if (isEditing) captureCurrentDocumentEdits();
+      const changed = JSON.stringify(buildEditedExportDocsPayload(docs)) !== JSON.stringify(pending.docs);
+      draft.source = saved;
+      draft.pending = null;
+      showNotification(changed ? '전송한 편집본을 저장했습니다. 이후 변경은 아직 저장되지 않았습니다.' : '편집본을 프로젝트에 저장했습니다.', 'success');
+    } catch (error) {
+      if (current()) showNotification(error.message || '저장 응답이 없습니다. 다시 누르면 같은 요청을 확인합니다.', 'error');
+    } finally {
+      button.disabled = false;
+    }
+  }
+  $id('save-edited-copy-btn')?.addEventListener('click', saveEditedProjectCopy);
+
   function buildGeneratedApprovalSource() {
     if (!lastMeta?.request_id || !Array.isArray(generatedDocs) || !generatedDocs.length) {
       return null;
@@ -22369,7 +22738,7 @@
       title: lastRequestPayload?.title || lastMeta?.title || '문서',
       docs: generatedDocs.map(d => ({
         doc_type: d.doc_type,
-        markdown: d._editedMarkdown || d.markdown || '',
+        markdown: d._editedMarkdown ?? d.markdown ?? '',
       })),
       govOptions: getGovOptions(),
       projectId: lastRequestPayload?.project_id || '',
@@ -22379,7 +22748,7 @@
   function buildEditedExportDocsPayload(docs, { preferEdited = true } = {}) {
     return (Array.isArray(docs) ? docs : []).map(doc => ({
       doc_type: doc?.doc_type || '',
-      markdown: preferEdited ? (doc?._editedMarkdown || doc?.markdown || '') : (doc?.markdown || ''),
+      markdown: preferEdited ? (doc?._editedMarkdown ?? doc?.markdown ?? '') : (doc?.markdown ?? ''),
       total_slides: Number(doc?.total_slides) > 0 ? Number(doc.total_slides) : null,
       slide_outline: Array.isArray(doc?.slide_outline) ? doc.slide_outline : [],
     }));
@@ -22729,7 +23098,7 @@
       ? source.docs
       : generatedDocs.map(d => ({
           doc_type: d.doc_type,
-          markdown: d._editedMarkdown || d.markdown || '',
+          markdown: d._editedMarkdown ?? d.markdown ?? '',
         }));
     try {
       const res = await fetch('/approvals', {
@@ -22879,6 +23248,7 @@
   const _generatedDocumentReviewState = {
     requestEpoch: 0,
     activeInbox: 'procurement',
+    inboxStatus: 'pending',
     inboxReviews: [],
     projectReviews: [],
     pendingOperations: new Set(),
@@ -22922,6 +23292,7 @@
     projectId = '',
     documentId = '',
     packetSha256 = '',
+    operationId = '',
   }) {
     const requestEpoch = ++_generatedDocumentReviewState.requestEpoch;
     const currentDocument = _currentProjectDetail?.project?.project_id === projectId
@@ -22936,6 +23307,7 @@
       projectId: String(projectId || ''),
       documentId: String(documentId || ''),
       packetSha256: String(packetSha256 || ''),
+      operationId: String(operationId || ''),
       requestId: String(currentDocument?.request_id || ''),
       documentPresent: Boolean(currentDocument),
       projectDetailLoadId: _projectDetailLoadId,
@@ -22952,7 +23324,7 @@
     ) return false;
 
     if (context.operation === 'inbox-load') return true;
-    if (context.operation === 'inbox-download') {
+    if (context.operation.startsWith('inbox-')) {
       return _generatedDocumentReviewState.inboxReviews.some(review => (
         review?.project_id === context.projectId
         && review?.project_document_id === context.documentId
@@ -23074,6 +23446,88 @@
     };
   }
 
+  async function readVerifiedGeneratedDocumentReviewedPackage(
+    response,
+    { requestIsCurrent, expectedPacketSha256 = '', expectedSourceStatus = '' },
+  ) {
+    if (!requestIsCurrent()) return null;
+    const contentType = String(response.headers.get('Content-Type') || '')
+      .split(';', 1)[0]
+      .trim()
+      .toLowerCase();
+    const contentLengthValue = String(response.headers.get('Content-Length') || '');
+    const contentLength = Number(contentLengthValue);
+    const packetSha256 = String(response.headers.get('X-DecisionDoc-Packet-SHA256') || '');
+    const reviewedPackageSha256 = String(response.headers.get('X-DecisionDoc-Reviewed-Package-SHA256') || '');
+    const completionReceiptSha256 = String(response.headers.get('X-DecisionDoc-Completion-Receipt-SHA256') || '');
+    const reviewStatus = response.headers.get('X-DecisionDoc-Review-Status');
+    const reviewDecision = response.headers.get('X-DecisionDoc-Review-Decision');
+    const reviewerIdentityBound = response.headers.get('X-DecisionDoc-Reviewer-Identity-Bound');
+    const replay = response.headers.get('X-DecisionDoc-Replay');
+    const reviewOnly = response.headers.get('X-DecisionDoc-Review-Only');
+    const packetPersisted = response.headers.get('X-DecisionDoc-Packet-Persisted');
+    const humanReviewCompleted = response.headers.get('X-DecisionDoc-Human-Review-Completed');
+    const operationalApproval = response.headers.get('X-DecisionDoc-Operational-Approval');
+    const sourceStatus = String(response.headers.get('X-DecisionDoc-Source-Status') || '');
+    const contentDisposition = String(response.headers.get('Content-Disposition') || '');
+    const cacheControl = String(response.headers.get('Cache-Control') || '');
+    const contentTypeOptions = String(response.headers.get('X-Content-Type-Options') || '');
+    const authorityIsClosed = GENERATED_DOCUMENT_REVIEW_AUTHORITY_HEADERS.every(
+      header => response.headers.get(header) === 'false',
+    );
+    if (
+      contentType !== 'application/zip'
+      || !/^\d+$/.test(contentLengthValue)
+      || !Number.isSafeInteger(contentLength)
+      || contentLength <= 0
+      || !/^[0-9a-f]{64}$/.test(packetSha256)
+      || !/^[0-9a-f]{64}$/.test(reviewedPackageSha256)
+      || !/^[0-9a-f]{64}$/.test(completionReceiptSha256)
+      || (expectedPacketSha256 && packetSha256 !== expectedPacketSha256)
+      || reviewStatus !== 'completed'
+      || !['accepted', 'changes_requested', 'rejected'].includes(reviewDecision)
+      || !['current', 'changed', 'missing'].includes(sourceStatus)
+      || reviewerIdentityBound !== 'true'
+      || !['true', 'false'].includes(replay)
+      || reviewOnly !== 'true'
+      || packetPersisted !== 'true'
+      || humanReviewCompleted !== 'true'
+      || operationalApproval !== 'false'
+      || !authorityIsClosed
+      || cacheControl.toLowerCase() !== 'no-store'
+      || contentTypeOptions.toLowerCase() !== 'nosniff'
+      || !/^attachment;/i.test(contentDisposition)
+      || (expectedSourceStatus && sourceStatus !== expectedSourceStatus)
+    ) {
+      throw new Error('generated document reviewed package verification headers are invalid');
+    }
+    const packageBytes = await response.arrayBuffer();
+    if (!requestIsCurrent()) return null;
+    if (contentLength !== packageBytes.byteLength) {
+      throw new Error('generated document reviewed package content length mismatch');
+    }
+    const digest = await crypto.subtle.digest('SHA-256', packageBytes);
+    if (!requestIsCurrent()) return null;
+    const actualPackageSha256 = Array.from(
+      new Uint8Array(digest),
+      value => value.toString(16).padStart(2, '0'),
+    ).join('');
+    if (actualPackageSha256 !== reviewedPackageSha256) {
+      throw new Error('generated document reviewed package hash mismatch');
+    }
+    if (!requestIsCurrent()) return null;
+    const blob = new Blob([packageBytes], { type: 'application/zip' });
+    return {
+      blob,
+      packetSha256,
+      reviewedPackageSha256,
+      completionReceiptSha256,
+      reviewDecision,
+      replay: replay === 'true',
+      sourceStatus,
+    };
+  }
+
   function generatedDocumentReviewSourceStatusMeta(sourceStatus) {
     if (sourceStatus === 'changed') {
       return {
@@ -23094,22 +23548,27 @@
 
   function renderGeneratedDocumentReviewRows(reviews, { surface }) {
     if (!Array.isArray(reviews) || !reviews.length) {
-      return '<p class="generated-document-review-empty">대기 중인 문서 검토 전달이 없습니다.</p>';
+      return '<p class="generated-document-review-empty">해당 상태의 문서 검토 전달이 없습니다.</p>';
     }
     return reviews.map(review => {
       const projectId = String(review?.project_id || '');
       const documentId = String(review?.project_document_id || '');
       const packetSha256 = String(review?.packet_sha256 || '');
       const sourceStatus = String(review?.source_status || 'current');
+      const reviewStatus = String(review?.review_status || 'pending');
       const sourceMeta = generatedDocumentReviewSourceStatusMeta(sourceStatus);
       const formatCount = Array.isArray(review?.formats) ? review.formats.length : Number(review?.artifact_count || 0);
       const projectLabel = surface === 'project'
         ? String(_currentProjectDetail?.project?.name || projectId)
         : projectId;
+      const canComplete = (
+        review?.assigned_to_current_user === true
+        && reviewStatus === 'pending' && sourceStatus === 'current'
+      );
       return `
         <article class="generated-document-review-row" data-generated-document-review-packet="${escapeHtml(packetSha256)}">
           <div class="generated-document-review-primary">
-            <span class="generated-document-review-status">검토 대기</span>
+            <span class="generated-document-review-status ${reviewStatus === 'completed' ? 'completed' : ''}">${reviewStatus === 'completed' ? '검토 완료' : '검토 대기'}</span>
             <strong>${escapeHtml(String(review?.title || '프로젝트 문서'))}</strong>
             <span>${escapeHtml(projectLabel)} · document ${escapeHtml(documentId)}</span>
           </div>
@@ -23117,6 +23576,7 @@
             <span>reviewer ${escapeHtml(String(review?.reviewer?.username || ''))} · creator ${escapeHtml(String(review?.creator?.username || ''))}</span>
             <span>${formatCount}개 형식 · ${escapeHtml(String(review?.prepared_at || '').replace('T', ' ').slice(0, 16))}</span>
             <span>packet ${escapeHtml(packetSha256.slice(0, 12))}</span>
+            ${reviewStatus === 'completed' ? `<span>decision ${escapeHtml(String(review?.review_decision || ''))} · ${escapeHtml(String(review?.reviewed_at || '').replace('T', ' ').slice(0, 16))}</span>` : ''}
             <span class="generated-document-review-source ${escapeHtml(sourceStatus)}">${escapeHtml(sourceMeta.label)} · ${escapeHtml(sourceMeta.copy)}</span>
           </div>
           <div class="generated-document-review-actions">
@@ -23129,6 +23589,21 @@
               data-packet-sha256="${escapeHtml(packetSha256)}"
               data-source-status="${escapeHtml(sourceStatus)}"
             >검증된 패킷 ZIP</button>
+            ${canComplete ? `<button
+              type="button"
+              ${surface === 'project' ? 'data-project-detail-action="generated-document-review-complete"' : 'data-generated-document-review-complete'}
+              data-project-id="${escapeHtml(projectId)}"
+              data-doc-id="${escapeHtml(documentId)}"
+              data-packet-sha256="${escapeHtml(packetSha256)}"
+            >검토 완료</button>` : ''}
+            ${reviewStatus === 'completed' ? `<button
+              type="button"
+              ${surface === 'project' ? 'data-project-detail-action="generated-document-reviewed-download"' : 'data-generated-document-reviewed-download'}
+              data-project-id="${escapeHtml(projectId)}"
+              data-doc-id="${escapeHtml(documentId)}"
+              data-packet-sha256="${escapeHtml(packetSha256)}"
+              data-source-status="${escapeHtml(sourceStatus)}"
+            >완료 패키지 ZIP</button>` : ''}
           </div>
         </article>`;
     }).join('');
@@ -23157,7 +23632,13 @@
     section.style.display = visible ? 'grid' : 'none';
     if (!visible) return;
     const reviews = _generatedDocumentReviewState.inboxReviews;
-    summary.textContent = `대기 ${reviews.length}건 · 검토 증빙이며 운영 승인 아님`;
+    section.querySelectorAll('[data-generated-document-review-status]').forEach(button => {
+      const active = button.dataset.generatedDocumentReviewStatus === _generatedDocumentReviewState.inboxStatus;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    const statusLabel = _generatedDocumentReviewState.inboxStatus === 'completed' ? '완료' : '대기';
+    summary.textContent = `${statusLabel} ${reviews.length}건 · 검토 증빙이며 운영 승인 아님`;
     list.innerHTML = renderGeneratedDocumentReviewRows(reviews, { surface: 'inbox' });
     wireGeneratedDocumentReviewInboxActions(section);
   }
@@ -23170,7 +23651,7 @@
         <div class="generated-document-review-heading">
           <div>
             <h4 id="project-generated-document-review-title">문서 검토 전달</h4>
-            <p class="generated-document-review-boundary">pending 전달 이력입니다. 검토 증빙이며 운영 승인 아님</p>
+            <p class="generated-document-review-boundary">대기와 완료 이력입니다. 검토 증빙이며 운영 승인 아님</p>
           </div>
         </div>
         <div class="generated-document-review-list" data-generated-document-review-project="${escapeHtml(projectId)}">
@@ -23193,8 +23674,11 @@
       list.innerHTML = '<p class="generated-document-review-empty">문서 검토 전달함을 불러오는 중입니다.</p>';
     }
     try {
+      const inboxPath = _generatedDocumentReviewState.inboxStatus === 'completed'
+        ? '/generated-document-reviews?review_status=completed&limit=50&offset=0'
+        : '/generated-document-reviews?review_status=pending&limit=50&offset=0';
       const response = await fetch(
-        '/generated-document-reviews?review_status=pending&limit=50&offset=0',
+        inboxPath,
         { headers: getAuthHeaders() },
       );
       if (!requestIsCurrent()) return;
@@ -23214,6 +23698,13 @@
         list.innerHTML = `<p class="generated-document-review-empty">${escapeHtml(error.message || '문서 검토 전달함을 불러오지 못했습니다.')}</p>`;
       }
     }
+  }
+
+  function setGeneratedDocumentReviewInboxStatus(status) {
+    const nextStatus = status === 'completed' ? 'completed' : 'pending';
+    if (_generatedDocumentReviewState.inboxStatus === nextStatus) return;
+    _generatedDocumentReviewState.inboxStatus = nextStatus;
+    loadGeneratedDocumentReviewInbox();
   }
 
   function setReviewInboxTab(tab) {
@@ -23296,6 +23787,223 @@
     }
   }
 
+  function findGeneratedDocumentReview({ surface, projectId, documentId, packetSha256 }) {
+    const reviews = surface === 'inbox'
+      ? _generatedDocumentReviewState.inboxReviews
+      : _generatedDocumentReviewState.projectReviews;
+    return (Array.isArray(reviews) ? reviews : []).find(review => (
+      review?.project_id === projectId
+      && review?.project_document_id === documentId
+      && review?.packet_sha256 === packetSha256
+    ));
+  }
+
+  function openGeneratedDocumentReviewCompletionDialog({
+    surface,
+    projectId,
+    documentId,
+    packetSha256,
+  }) {
+    const review = findGeneratedDocumentReview({
+      surface,
+      projectId,
+      documentId,
+      packetSha256,
+    });
+    if (
+      !canUseGeneratedDocumentReviews()
+      || review?.assigned_to_current_user !== true
+      || review?.review_status !== 'pending'
+      || review?.source_status !== 'current'
+    ) return;
+    closeGeneratedDocumentReviewDialog();
+    const context = captureGeneratedDocumentReviewContext({
+      operation: surface === 'inbox' ? 'inbox-complete' : 'project-complete',
+      projectId,
+      documentId,
+      packetSha256,
+      operationId: crypto.randomUUID(),
+    });
+    _generatedDocumentReviewState.dialogContext = context;
+    const backdrop = document.createElement('div');
+    backdrop.className = 'generated-document-review-dialog-backdrop';
+    backdrop.innerHTML = `
+      <section class="generated-document-review-dialog" role="dialog" aria-modal="true" aria-labelledby="generated-document-review-complete-title">
+        <h3 id="generated-document-review-complete-title">문서 검토 완료</h3>
+        <p class="generated-document-review-boundary">${escapeHtml(String(review?.title || '프로젝트 문서'))}의 전달 패킷과 현재 원본이 일치할 때만 완료 기록을 남깁니다.</p>
+        <div class="generated-document-review-dialog-form">
+          <label>
+            검토 결정
+            <select data-generated-document-review-decision>
+              <option value="accepted">승인</option>
+              <option value="changes_requested">수정 요청</option>
+              <option value="rejected">반려</option>
+            </select>
+          </label>
+          <label>
+            검토 근거
+            <textarea data-generated-document-review-rationale maxlength="4000" required placeholder="패킷에서 확인한 근거와 후속 조치를 기록하세요."></textarea>
+          </label>
+          <p class="generated-document-review-boundary">이 기록은 human review 증빙이며 운영 승인, 제출, 배포 권한을 부여하지 않습니다.</p>
+          <div class="generated-document-review-dialog-actions">
+            <button type="button" data-generated-document-review-cancel>취소</button>
+            <button type="button" data-generated-document-review-submit>완료 기록</button>
+          </div>
+        </div>
+      </section>`;
+    document.body.appendChild(backdrop);
+    backdrop.querySelector('[data-generated-document-review-cancel]')?.addEventListener(
+      'click',
+      () => closeGeneratedDocumentReviewDialog(),
+    );
+    backdrop.addEventListener('click', event => {
+      if (event.target === backdrop) closeGeneratedDocumentReviewDialog();
+    });
+    backdrop.querySelector('[data-generated-document-review-submit]')?.addEventListener(
+      'click',
+      event => submitGeneratedDocumentReviewCompletion(context, event.currentTarget),
+    );
+    backdrop.querySelector('[data-generated-document-review-rationale]')?.focus();
+  }
+
+  async function submitGeneratedDocumentReviewCompletion(context, button) {
+    if (!isGeneratedDocumentReviewContextCurrent(context)) return;
+    const dialog = document.querySelector('.generated-document-review-dialog');
+    const decision = String(dialog?.querySelector('[data-generated-document-review-decision]')?.value || '');
+    const rationale = String(dialog?.querySelector('[data-generated-document-review-rationale]')?.value || '').trim();
+    if (!['accepted', 'changes_requested', 'rejected'].includes(decision) || !rationale) {
+      showNotification('검토 결정과 근거를 입력하세요.', 'error');
+      return;
+    }
+    const operationKey = generatedDocumentReviewOperationKey(context);
+    if (_generatedDocumentReviewState.pendingOperations.has(operationKey)) return;
+    const requestIsCurrent = () => isGeneratedDocumentReviewContextCurrent(context);
+    _generatedDocumentReviewState.pendingOperations.add(operationKey);
+    if (button) button.disabled = true;
+    try {
+      const response = await fetch(
+        `/projects/${encodeURIComponent(context.projectId)}/generated-document-reviews/${encodeURIComponent(context.packetSha256)}/complete`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+          body: JSON.stringify({
+            operation_id: context.operationId,
+            decision,
+            rationale,
+          }),
+        },
+      );
+      if (!requestIsCurrent()) return;
+      if (!response.ok) {
+        const error = await resolveApiErrorResponse(response);
+        if (!requestIsCurrent()) return;
+        throw new Error(error.message);
+      }
+      const verified = await readVerifiedGeneratedDocumentReviewedPackage(response, {
+        requestIsCurrent,
+        expectedPacketSha256: context.packetSha256,
+        expectedSourceStatus: 'current',
+      });
+      if (!verified || !requestIsCurrent()) return;
+      clearGeneratedDocumentReviewObjectUrls();
+      const url = _triggerBrowserDownload(
+        verified.blob,
+        `generated-document-reviewed-${verified.reviewedPackageSha256}.zip`,
+        '문서 검토 완료 패키지 ZIP',
+        {
+          fallbackContainerId: context.operation === 'inbox-complete'
+            ? 'generated-document-review-inbox-download-fallback'
+            : 'project-generated-document-review-download-fallback',
+          scope: GENERATED_DOCUMENT_REVIEW_DOWNLOAD_SCOPE,
+        },
+      );
+      _generatedDocumentReviewState.objectUrls.add(url);
+      if (!requestIsCurrent()) {
+        clearGeneratedDocumentReviewObjectUrls();
+        return;
+      }
+      closeGeneratedDocumentReviewDialog({ invalidate: false });
+      showNotification(
+        verified.replay
+          ? '기존 검토 완료 패키지를 검증해 다시 다운로드했습니다.'
+          : '문서 검토 완료를 기록하고 검증된 패키지를 다운로드했습니다. 운영 승인은 실행되지 않았습니다.',
+        'success',
+      );
+      if (context.operation === 'project-complete') {
+        await loadProjectDetail(context.projectId);
+      }
+      await loadGeneratedDocumentReviewInbox();
+    } catch (error) {
+      if (!requestIsCurrent()) return;
+      showNotification(error.message || '문서 검토 완료를 기록하지 못했습니다.', 'error');
+    } finally {
+      _generatedDocumentReviewState.pendingOperations.delete(operationKey);
+      if (button && requestIsCurrent()) button.disabled = false;
+    }
+  }
+
+  async function downloadGeneratedDocumentReviewedPackage({
+    surface,
+    projectId,
+    documentId,
+    packetSha256,
+    sourceStatus,
+    button,
+  }) {
+    const operation = surface === 'inbox'
+      ? 'inbox-reviewed-download'
+      : 'project-reviewed-download';
+    const operationKey = [operation, projectId, documentId, packetSha256].join(':');
+    if (_generatedDocumentReviewState.pendingOperations.has(operationKey)) return;
+    const context = captureGeneratedDocumentReviewContext({
+      operation,
+      projectId,
+      documentId,
+      packetSha256,
+    });
+    const requestIsCurrent = () => isGeneratedDocumentReviewContextCurrent(context);
+    _generatedDocumentReviewState.pendingOperations.add(operationKey);
+    if (button) button.disabled = true;
+    try {
+      const response = await fetch(
+        `/projects/${encodeURIComponent(context.projectId)}/generated-document-reviews/${encodeURIComponent(context.packetSha256)}/reviewed-package`,
+        { headers: getAuthHeaders() },
+      );
+      if (!requestIsCurrent()) return;
+      if (!response.ok) throw new Error('generated document reviewed package download failed');
+      const verified = await readVerifiedGeneratedDocumentReviewedPackage(response, {
+        requestIsCurrent,
+        expectedPacketSha256: context.packetSha256,
+        expectedSourceStatus: sourceStatus,
+      });
+      if (!verified || !requestIsCurrent()) return;
+      clearGeneratedDocumentReviewObjectUrls();
+      const url = _triggerBrowserDownload(
+        verified.blob,
+        `generated-document-reviewed-${verified.reviewedPackageSha256}.zip`,
+        '문서 검토 완료 패키지 ZIP',
+        {
+          fallbackContainerId: surface === 'inbox'
+            ? 'generated-document-review-inbox-download-fallback'
+            : 'project-generated-document-review-download-fallback',
+          scope: GENERATED_DOCUMENT_REVIEW_DOWNLOAD_SCOPE,
+        },
+      );
+      _generatedDocumentReviewState.objectUrls.add(url);
+      if (!requestIsCurrent()) {
+        clearGeneratedDocumentReviewObjectUrls();
+        return;
+      }
+      showNotification('검증된 문서 검토 완료 패키지 다운로드를 요청했습니다.', 'success');
+    } catch (_) {
+      if (!requestIsCurrent()) return;
+      showNotification('문서 검토 완료 패키지를 검증하지 못했습니다.', 'error');
+    } finally {
+      _generatedDocumentReviewState.pendingOperations.delete(operationKey);
+      if (button && requestIsCurrent()) button.disabled = false;
+    }
+  }
+
   function wireGeneratedDocumentReviewInboxActions(section) {
     section?.querySelectorAll('[data-generated-document-review-open-project]').forEach(button => {
       button.addEventListener('click', () => openProjectDetailFromList(
@@ -23304,6 +24012,24 @@
     });
     section?.querySelectorAll('[data-generated-document-review-download]').forEach(button => {
       button.addEventListener('click', () => downloadGeneratedDocumentReviewPacket({
+        surface: 'inbox',
+        projectId: button.dataset.projectId || '',
+        documentId: button.dataset.docId || '',
+        packetSha256: button.dataset.packetSha256 || '',
+        sourceStatus: button.dataset.sourceStatus || '',
+        button,
+      }));
+    });
+    section?.querySelectorAll('[data-generated-document-review-complete]').forEach(button => {
+      button.addEventListener('click', () => openGeneratedDocumentReviewCompletionDialog({
+        surface: 'inbox',
+        projectId: button.dataset.projectId || '',
+        documentId: button.dataset.docId || '',
+        packetSha256: button.dataset.packetSha256 || '',
+      }));
+    });
+    section?.querySelectorAll('[data-generated-document-reviewed-download]').forEach(button => {
+      button.addEventListener('click', () => downloadGeneratedDocumentReviewedPackage({
         surface: 'inbox',
         projectId: button.dataset.projectId || '',
         documentId: button.dataset.docId || '',
@@ -23474,6 +24200,11 @@
     'click',
     loadGeneratedDocumentReviewInbox,
   );
+  document.querySelectorAll('[data-generated-document-review-status]').forEach(button => {
+    button.addEventListener('click', () => setGeneratedDocumentReviewInboxStatus(
+      button.dataset.generatedDocumentReviewStatus || 'pending',
+    ));
+  });
 
   function getProcurementReviewInboxStatusLabel(status) {
     return status === 'completed' ? '완료' : '검토 대기';
@@ -23614,6 +24345,7 @@
   }
 
   function invalidateProcurementReviewViews() {
+    invalidateProcurementRequirements();
     _procurementReviewInboxLoadId += 1;
     _procurementReviewInboxPayload = null;
     _projectDetailLoadId += 1;
@@ -24013,6 +24745,10 @@
         return '현재 환경에서는 Public Procurement Go/No-Go Copilot이 비활성화되어 있습니다.';
       case 'procurement_opportunity_not_attached':
         return '먼저 공고를 프로젝트에 연결한 뒤 판단을 갱신하세요.';
+      case 'procurement_context_changed':
+        return '공고 상태가 변경되었습니다. 프로젝트를 다시 열어 최신 상태를 확인하세요.';
+      case 'procurement_opportunity_selection_required':
+        return '문서의 기준이 될 공고를 먼저 선택하세요.';
       case 'procurement_override_reason_required':
         return fallbackMessage || 'NO_GO recommendation 상태에서 downstream 문서를 진행하려면 override 사유를 먼저 저장하세요.';
       case 'procurement_review_packet_context_required':
@@ -25427,7 +26163,7 @@
   window.selectProcurementRoleBrief = function selectProcurementRoleBrief(roleKey) {
     const detail = _currentProjectDetail;
     if (!detail?.project) return;
-    const docs = Object.values(detail.docsById || {});
+    const docs = detail.procurementDocuments || Object.values(detail.docsById || {});
     if (!getVisibleProcurementRoleItems(detail.project, detail.procurementDecision, docs).some(item => item.key === roleKey)) {
       return;
     }
@@ -25453,7 +26189,21 @@
     const opportunity = decision.opportunity || {};
     const recommendation = getProcurementRecommendationMeta(decision?.recommendation?.value || '');
     const missingData = Array.isArray(decision?.missing_data) ? decision.missing_data : [];
-    const actionItems = (decision?.checklist_items || []).filter(item => item?.status === 'action_needed');
+    const hasEvaluation = Boolean(decision?.hard_filters?.length);
+    const hasRecommendation = Boolean(decision?.recommendation?.value);
+    const checklist = Array.isArray(decision?.checklist_items) ? decision.checklist_items : [];
+    const statusOrder = { blocked: 0, unknown: 1, action_needed: 2 };
+    const statusLabels = { blocked: '차단', unknown: '확인 필요', action_needed: '조치 필요' };
+    const actionItems = checklist.filter(item => item?.status !== 'ready')
+      .sort((a, b) => (statusOrder[a?.status] ?? 1) - (statusOrder[b?.status] ?? 1));
+    let priorityText = '판단 갱신 필요';
+    if (hasRecommendation) {
+      priorityText = !checklist.length ? '체크리스트 미확인'
+        : actionItems.length ? actionItems.slice(0, 3)
+          .map(item => `${statusLabels[item?.status] || '확인 필요'}: ${item?.title || item?.category || '체크리스트 항목'}`)
+          .join(', ')
+        : '현재 평가상 즉시 조치 항목 없음';
+    }
     const blockingCount = getProcurementBlockingHardFilterCount(decision);
     const scoreText = typeof decision?.soft_fit_score === 'number'
       ? `${Math.round(decision.soft_fit_score)}점`
@@ -25489,17 +26239,17 @@
         </div>
         <div class="procurement-summary-card">
           <div class="procurement-summary-label">Blocking Hard Filter</div>
-          <div class="procurement-summary-value">${blockingCount}건</div>
+          <div class="procurement-summary-value">${hasEvaluation ? `${blockingCount}건` : '미평가'}</div>
         </div>
         <div class="procurement-summary-card">
           <div class="procurement-summary-label">Action Needed</div>
-          <div class="procurement-summary-value">${getProcurementActionNeededCount(decision)}건</div>
+          <div class="procurement-summary-value">${hasRecommendation ? `${getProcurementActionNeededCount(decision)}건` : '미확정'}</div>
         </div>
       </div>
       <ul class="procurement-summary-list">
-        <li><strong>누락 정보:</strong> ${escapeHtml(missingData.length ? missingData.join(', ') : '없음')}</li>
+        <li><strong>누락 정보:</strong> ${escapeHtml(missingData.length ? missingData.join(', ') : hasEvaluation ? '없음' : '평가 전')}</li>
         <li><strong>권고 요약:</strong> ${escapeHtml(decision?.recommendation?.summary || '아직 판단 요약이 없습니다. "판단 갱신"을 먼저 실행하세요.')}</li>
-        <li><strong>우선 조치:</strong> ${escapeHtml(actionItems.length ? actionItems.slice(0, 3).map(item => item.title || item.category || '조치 필요').join(', ') : '즉시 조치 항목 없음')}</li>
+        <li><strong>우선 조치:</strong> ${escapeHtml(priorityText)}</li>
         <li><strong>최근 override 사유:</strong> ${escapeHtml(latestOverride ? `${latestOverride.reason} (${latestOverride.actor || 'unknown'}, ${formatProcurementActivityTime(latestOverride.timestamp, '최근 저장')})` : '아직 기록 없음')}</li>
       </ul>`;
   }
@@ -25810,7 +26560,7 @@
     const latestOverride = getLatestProcurementOverrideReason(decision);
     const overrideHistory = getRecentProcurementOverrideReasons(decision);
     const docs = _currentProjectDetail?.project?.project_id === project?.project_id
-      ? Object.values(_currentProjectDetail?.docsById || {})
+      ? (_currentProjectDetail.procurementDocuments || Object.values(_currentProjectDetail.docsById || {}))
       : [];
     const guidance = getProcurementOverrideGuidance(decision, docs);
     const hasOpportunity = Boolean(decision?.opportunity);
@@ -25914,22 +26664,37 @@
       return;
     }
 
+    const detail = _currentProjectDetail;
+    const context = captureProcurementReviewRequestContext();
+    const requestIsCurrent = () => isProcurementReviewRequestCurrent(context);
+    const payload = { url_or_number: urlOrNumber };
+    if (detail?.procurementSelection) {
+      const existing = detail.procurementSelection.items.find(item => item.source_id === urlOrNumber);
+      const current = detail.procurementDecision?.opportunity;
+      payload.expected_selection_revision = detail.procurementSelection.selection_revision;
+      payload.expected_decision_revision = current && [current.source_id, current.source_url].includes(urlOrNumber)
+        ? detail.procurementDecisionRevision : (existing?.decision_revision || 0);
+      payload.operation_id = crypto.randomUUID();
+    }
     submitBtn.disabled = true;
     setProcurementActionStatus('공고를 프로젝트에 연결하는 중입니다...', 'loading');
     try {
       const res = await fetch(`/projects/${encodeURIComponent(projectId)}/imports/g2b-opportunity`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({ url_or_number: urlOrNumber }),
+        body: JSON.stringify(payload),
       });
+      if (!requestIsCurrent()) return;
       if (!res.ok) {
         const err = await resolveApiErrorResponse(res);
         throw Object.assign(new Error(err.message), { code: err.code });
       }
       const data = await res.json();
+      if (!requestIsCurrent()) return;
       showNotification(`공고 연결 완료: ${data?.opportunity?.title || urlOrNumber}`, 'success');
       await loadProjectDetail(projectId);
     } catch (e) {
+      if (!requestIsCurrent()) return;
       const message = getProcurementErrorMessage(e.code, e.message);
       setProcurementActionStatus(message, 'error');
       showNotification(message, 'error');
@@ -25941,28 +26706,42 @@
   async function refreshProjectProcurementDecision(projectId) {
     const refreshBtn = document.getElementById('project-procurement-refresh-submit');
     if (!refreshBtn) return;
+    const detail = _currentProjectDetail;
+    const context = captureProcurementReviewRequestContext();
+    const requestIsCurrent = () => isProcurementReviewRequestCurrent(context);
+    const scoped = Boolean(detail?.procurementSelection);
+    if (scoped && !detail.procurementDecision) return;
+    const base = `/projects/${encodeURIComponent(projectId)}/procurement${scoped ? '/opportunities/' + encodeURIComponent(detail.procurementDecision.decision_id) : ''}`;
     refreshBtn.disabled = true;
     setProcurementActionStatus('Hard filter와 score를 계산하고 권고안을 갱신하는 중입니다...', 'loading');
     try {
-      const evaluateRes = await fetch(`/projects/${encodeURIComponent(projectId)}/procurement/evaluate`, {
+      const evaluateRes = await fetch(`${base}/evaluate`, {
         method: 'POST',
-        headers: getAuthHeaders(),
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        ...(scoped ? {body: JSON.stringify({expected_decision_revision: detail.procurementDecisionRevision, operation_id: crypto.randomUUID()})} : {}),
       });
+      if (!requestIsCurrent()) return;
       if (!evaluateRes.ok) {
         const err = await resolveApiErrorResponse(evaluateRes);
         throw Object.assign(new Error(err.message), { code: err.code });
       }
-      const recommendRes = await fetch(`/projects/${encodeURIComponent(projectId)}/procurement/recommend`, {
+      const evaluation = scoped ? await evaluateRes.json() : null;
+      if (!requestIsCurrent()) return;
+      const recommendRes = await fetch(`${base}/recommend`, {
         method: 'POST',
-        headers: getAuthHeaders(),
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        ...(scoped ? {body: JSON.stringify({expected_decision_revision: evaluation.receipt.decision_revision, operation_id: crypto.randomUUID()})} : {}),
       });
+      if (!requestIsCurrent()) return;
       if (!recommendRes.ok) {
         const err = await resolveApiErrorResponse(recommendRes);
         throw Object.assign(new Error(err.message), { code: err.code });
       }
+      if (!requestIsCurrent()) return;
       showNotification('공공조달 판단을 갱신했습니다.', 'success');
       await loadProjectDetail(projectId);
     } catch (e) {
+      if (!requestIsCurrent()) return;
       const message = getProcurementErrorMessage(e.code, e.message);
       setProcurementActionStatus(message, 'error');
       showNotification(message, 'error');
@@ -26083,7 +26862,7 @@
   async function downloadProjectProcurementReviewPacket(projectId) {
     const reviewerInput = document.getElementById('project-procurement-reviewer-input');
     const downloadButton = document.getElementById('project-procurement-review-packet-submit');
-    if (!reviewerInput || !downloadButton) return;
+    if (!reviewerInput || !downloadButton || downloadButton.disabled || _procurementReviewPacketPending) return;
 
     const reviewer = reviewerInput.value.trim();
     if (!reviewer) {
@@ -26094,24 +26873,35 @@
 
     const requestContext = captureProcurementReviewRequestContext();
     const requestIsCurrent = () => isProcurementReviewRequestCurrent(requestContext);
+    if (!requestIsCurrent() || requestContext.projectId !== projectId) return;
+    const requirements = _procurementRequirementsState;
+    if (requirements && (!isProcurementRequirementsCurrent(requirements) || requirements.status !== 'ready' || !requirements.exportAvailable)) return;
+    let responseStatus = null;
+    _procurementReviewPacketPending = true;
     downloadButton.disabled = true;
     setProcurementActionStatus('검토 패킷을 로컬에서 조립하고 검증하는 중입니다...', 'loading');
     try {
       const res = await fetch(
-        `/projects/${encodeURIComponent(projectId)}/procurement/review-packet`,
+        `/projects/${encodeURIComponent(projectId)}/procurement/review-packet${procurementScopeQuery()}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
           body: JSON.stringify({ reviewer }),
         },
       );
+      responseStatus = res.status;
       if (!requestIsCurrent()) return;
       if (!res.ok) {
         const err = await resolveApiErrorResponse(res);
         if (!requestIsCurrent()) return;
+        if (requirements) setProcurementRequirementsFailure(requirements, res.status, true);
         throw Object.assign(new Error(err.message), { code: err.code });
       }
 
+      if (res.headers.get('Content-Type')?.split(';')[0].trim() !== 'application/zip'
+          || res.headers.get('X-DecisionDoc-Operational-Approval') !== 'false') {
+        throw new Error('검토 패키지의 응답 형식을 확인할 수 없습니다.');
+      }
       const blob = await res.blob();
       if (!requestIsCurrent()) return;
       const fallback = `procurement_review_packet_${projectId}.zip`;
@@ -26120,11 +26910,17 @@
         fallback,
       );
       const packetSha256 = res.headers.get('X-DecisionDoc-Packet-SHA256') || '';
+      const decisionRevision = _currentProjectDetail?.procurementDecisionRevision;
+      const refreshedContext = {...requestContext, projectDetailLoadId: requestContext.projectDetailLoadId + 1};
+      if (!await refreshProcurementRequestView(projectId, requestContext)) return;
+      if (decisionRevision !== _currentProjectDetail?.procurementDecisionRevision) return;
+      if (requirements && (!_procurementRequirementsState || _procurementRequirementsState.status !== 'ready'
+          || !_procurementRequirementsState.exportAvailable || !isProcurementRequirementsCurrent(_procurementRequirementsState))) return;
+      if (!isProcurementReviewRequestCurrent(refreshedContext)) return;
       _triggerBrowserDownload(blob, filename, 'Procurement 검토 패킷 ZIP', {
         fallbackContainerId: 'project-procurement-download-fallback',
         scope: PROCUREMENT_REVIEW_DOWNLOAD_SCOPE,
       });
-      await loadProjectDetail(projectId);
       setProcurementActionStatus('검토 패킷 ZIP을 검증하고 다운로드했습니다.', 'success');
       showNotification(
         `검토 패킷 다운로드 시작: ${filename}${packetSha256 ? ` · SHA256 ${packetSha256.slice(0, 12)}` : ''}. 운영 승인이나 입찰 제출은 실행되지 않았습니다.`,
@@ -26132,11 +26928,16 @@
       );
     } catch (error) {
       if (!requestIsCurrent()) return;
+      if (requirements && isProcurementRequirementsCurrent(requirements) && requirements.status === 'ready') {
+        setProcurementRequirementsFailure(requirements, 503, true);
+      }
       const message = getProcurementErrorMessage(error.code, error.message);
       setProcurementActionStatus(message, 'error');
       showNotification(message, 'error');
     } finally {
-      downloadButton.disabled = false;
+      _procurementReviewPacketPending = false;
+      if (requestIsCurrent() && !requirements) downloadButton.disabled = responseStatus === 401;
+      if (isProcurementRequirementsCurrent(_procurementRequirementsState)) renderProcurementRequirements(_procurementRequirementsState);
     }
   }
 
@@ -26194,7 +26995,7 @@
         fallbackContainerId: 'project-procurement-download-fallback',
         scope: PROCUREMENT_REVIEW_DOWNLOAD_SCOPE,
       });
-      await loadProjectDetail(projectId);
+      if (!await refreshProcurementRequestView(projectId, requestContext)) return;
       setProcurementActionStatus('검토 결과를 기록하고 완료 패키지를 다운로드했습니다.', 'success');
       showNotification(
         `검토 완료 패키지 다운로드 시작: ${filename}${packageSha256 ? ` · SHA256 ${packageSha256.slice(0, 12)}` : ''}. 운영 승인은 부여되지 않았습니다.`,
@@ -26377,12 +27178,338 @@
     }
   }
 
+  const PROCUREMENT_REQUIREMENT_CATEGORIES = {
+    eligibility_and_compliance: '입찰참가자격 및 참여제한',
+    certifications_and_licenses: '인증 및 라이선스',
+    domain_capability_fit: '도메인 수행역량',
+    reference_cases_and_proof_points: '유사사업 실적 및 증빙',
+    staffing_and_partner_readiness: '인력 및 파트너',
+    schedule_and_deadline_readiness: '일정 및 마감',
+    deliverables_and_scope_clarity: '산출물 및 과업 범위',
+    security_data_infrastructure_obligations: '보안·데이터·인프라',
+    pricing_budget_contract_risk: '가격·예산·계약',
+    executive_approval_internal_readiness: '내부 의사결정 및 준비',
+  };
+  const PROCUREMENT_APPLICABILITY_LABELS = { applies: '적용', not_applicable: '해당 없음 (N/A)', unknown: '미확인' };
+
+  function invalidateProcurementRequirements() {
+    _procurementRequirementsState = null;
+    const section = $id('project-procurement-requirements');
+    if (section) { section.replaceChildren(); section.hidden = true; }
+    _clearScopedExportDownloadUrls(PROCUREMENT_REVIEW_DOWNLOAD_SCOPE);
+  }
+
+  function isProcurementRequirementsCurrent(state) {
+    return Boolean(state && state === _procurementRequirementsState
+      && isProcurementReviewRequestCurrent(state.context)
+      && state.revision === _currentProjectDetail?.procurementDecisionRevision);
+  }
+
+  function canEditProcurementRequirements(state) {
+    const claims = readAccessTokenClaims(localStorage.getItem('dd_access_token'));
+    return isProcurementRequirementsCurrent(state) && state.status === 'ready'
+      && state.exportAvailable === true && !_procurementReviewPacketPending && _currentUser?.role === 'admin'
+      && claims?.role === 'admin' && typeof claims?.session_id === 'string'
+      && /^[a-f0-9]{32}$/.test(claims.session_id);
+  }
+
+  function procurementRequirementsBase(state) {
+    return `/projects/${encodeURIComponent(state.context.projectId)}/procurement/opportunities/${encodeURIComponent(state.context.decisionId)}/requirements`;
+  }
+
+  function procurementRequirementsQuery(state) {
+    return '?' + new URLSearchParams({ expected_decision_revision: state.revision });
+  }
+
+  function isProcurementRequirementQuote(item) {
+    return typeof item?.snapshot_id === 'string' && item.snapshot_id.length > 0
+      && /^[a-f0-9]{64}$/.test(item.snapshot_sha256)
+      && Number.isSafeInteger(item.quote_start) && item.quote_start >= 0
+      && Number.isSafeInteger(item.quote_end) && item.quote_end > item.quote_start
+      && typeof item.quote === 'string' && Array.from(item.quote).length === item.quote_end - item.quote_start;
+  }
+
+  function isProcurementRequirement(item) {
+    return typeof item?.requirement_id === 'string' && item.requirement_id.length > 0
+      && typeof item.title === 'string' && item.title.trim().length > 0
+      && Object.hasOwn(PROCUREMENT_REQUIREMENT_CATEGORIES, item.category)
+      && Object.hasOwn(PROCUREMENT_APPLICABILITY_LABELS, item.applicability)
+      && typeof item.stale === 'boolean' && (!item.stale || item.applicability === 'unknown')
+      && isProcurementRequirementQuote(item) && Array.isArray(item.annotations)
+      && item.annotations.every(event => isProcurementRequirementQuote(event)
+        && Object.hasOwn(PROCUREMENT_APPLICABILITY_LABELS, event.applicability)
+        && typeof event.rationale === 'string' && event.rationale.trim().length > 0
+        && typeof event.created_at === 'string' && event.created_at.length > 0);
+  }
+
+  function setProcurementRequirementsFailure(state, status, write = false) {
+    if (!isProcurementRequirementsCurrent(state)) return;
+    if ([401, 403, 404].includes(status)) {
+      invalidateProcurementRequirements();
+      const exportButton = $id('project-procurement-review-packet-submit');
+      if (exportButton) {
+        exportButton.textContent = '검토 패킷 ZIP';
+        exportButton.disabled = status === 401 || !Boolean(
+          _currentProjectDetail?.procurementDecision?.opportunity && _currentProjectDetail?.procurementDecision?.recommendation,
+        );
+      }
+      return;
+    }
+    state.status = 'error';
+    state.editor = null;
+    state.requirements = [];
+    state.exportAvailable = false;
+    state.error = status === 409
+      ? '공고 또는 원문 상태가 변경되었거나 적용 조건을 충족하지 않습니다. 새로고침 후 확인하세요.'
+      : write ? '저장 결과를 확인할 수 없습니다. 다시 제출하기 전에 새로고침하세요.'
+        : '요구사항 상태를 확인할 수 없습니다. 새로고침 후 확인하세요.';
+    renderProcurementRequirements(state);
+  }
+
+  async function loadProcurementRequirements() {
+    const detail = _currentProjectDetail;
+    if (!detail?.procurementEnabled || !detail.procurementSelection || !detail.procurementDecision?.decision_id
+        || !['admin', 'member'].includes(_currentUser?.role)
+        || !Number.isSafeInteger(detail.procurementDecisionRevision) || detail.procurementDecisionRevision < 1) return;
+    const state = { context: captureProcurementReviewRequestContext(), revision: detail.procurementDecisionRevision,
+      status: 'loading', requirements: [], exportAvailable: false, editor: null, pending: false };
+    _procurementRequirementsState = state;
+    renderProcurementRequirements(state);
+    try {
+      if (!isProcurementRequirementsCurrent(state)) return;
+      const response = await fetch(procurementRequirementsBase(state) + procurementRequirementsQuery(state), {
+        headers: getAuthHeaders(), cache: 'no-store',
+      });
+      if (!isProcurementRequirementsCurrent(state)) return;
+      if (!response.ok) { setProcurementRequirementsFailure(state, response.status); return; }
+      const payload = await response.json();
+      if (!isProcurementRequirementsCurrent(state)) return;
+      if (payload.project_id !== state.context.projectId || payload.decision_id !== state.context.decisionId
+          || payload.decision_revision !== state.revision || payload.operational_approval !== false
+          || typeof payload.export_available !== 'boolean' || !Array.isArray(payload.requirements)
+          || !payload.requirements.every(isProcurementRequirement)
+          || new Set(payload.requirements.map(item => item.requirement_id)).size !== payload.requirements.length) {
+        throw new Error('Invalid requirements response');
+      }
+      state.requirements = payload.requirements;
+      state.exportAvailable = payload.export_available;
+      state.status = 'ready';
+      renderProcurementRequirements(state);
+    } catch (_) { setProcurementRequirementsFailure(state, 503); }
+  }
+
+  function renderProcurementRequirements(state) {
+    const section = $id('project-procurement-requirements');
+    if (!section || !isProcurementRequirementsCurrent(state)) return;
+    section.hidden = false;
+    const ready = state.status === 'ready';
+    const editable = canEditProcurementRequirements(state);
+    const rows = state.requirements;
+    const exportButton = $id('project-procurement-review-packet-submit');
+    if (exportButton) {
+      exportButton.textContent = ready && state.exportAvailable ? '요구사항 포함 검토 패키지' : '검토 패킷 ZIP';
+      exportButton.disabled = !ready || !state.exportAvailable || state.pending || Boolean(state.editor) || _procurementReviewPacketPending
+        || !_currentProjectDetail?.procurementDecision?.recommendation;
+    }
+    section.innerHTML = `
+      <div class="procurement-requirement-toolbar">
+        <h5 id="procurement-requirements-title">요구사항 적용 검토</h5>
+        <div class="procurement-requirement-toolbar">
+          ${editable ? `<button type="button" data-requirement-action="add" ${state.pending || state.editor ? 'disabled' : ''}>요구사항 추가</button>` : ''}
+          <button type="button" data-requirement-action="refresh" ${state.pending || state.status === 'loading' ? 'disabled' : ''}>새로고침</button>
+        </div>
+      </div>
+      <p class="procurement-requirement-meta">사람의 적용 판단이며 운영 승인이 아닙니다. 상위 체크리스트와 추천은 별도로 유지됩니다.</p>
+      ${ready ? `
+        <div class="procurement-requirement-counts" aria-label="요구사항 검토 현황">
+          <span>전체 ${rows.length}</span>
+          <span data-requirement-count="unknown">미확인 ${rows.filter(item => item.applicability === 'unknown').length}</span>
+          <span data-requirement-count="stale">원문 변경 ${rows.filter(item => item.stale).length}</span>
+          <span data-requirement-count="not_applicable">해당 없음 (N/A) ${rows.filter(item => item.applicability === 'not_applicable').length}</span>
+        </div>` : `<p role="${state.status === 'error' ? 'alert' : 'status'}" class="${state.status === 'error' ? 'procurement-requirement-error' : ''}">${escapeHtml(state.error || '요구사항 조회 중입니다.')}</p>`}
+      <div id="procurement-requirement-editor"></div>
+      ${ready ? `<ul class="procurement-requirement-list">${rows.map(item => `
+        <li class="procurement-requirement-row" data-requirement-id="${escapeHtml(item.requirement_id)}" data-requirement-stale="${item.stale}">
+          <div class="procurement-requirement-toolbar"><h6>${escapeHtml(item.title)}</h6>
+            <span>${escapeHtml(PROCUREMENT_APPLICABILITY_LABELS[item.applicability])}${item.stale ? ' · 원문 변경' : ''}</span></div>
+          <p class="procurement-requirement-meta">${escapeHtml(PROCUREMENT_REQUIREMENT_CATEGORIES[item.category])} · 원문 ${escapeHtml(item.snapshot_id)} · 인용 ${item.quote_start}–${item.quote_end}</p>
+          <blockquote class="procurement-requirement-quote">${escapeHtml(item.quote)}</blockquote>
+          ${item.stale ? '<p>이전 원문에 대한 기록입니다. 새 근거는 새 요구사항으로 작성해야 합니다.</p>' : ''}
+          <details><summary>판단 이력 (${item.annotations.length})</summary>
+            ${item.annotations.length ? `<ol>${item.annotations.map(event => `<li><strong>${escapeHtml(PROCUREMENT_APPLICABILITY_LABELS[event.applicability])}</strong> · <time>${escapeHtml(event.created_at)}</time><p>${escapeHtml(event.rationale)}</p></li>`).join('')}</ol>` : '<p>아직 기록된 판단이 없습니다.</p>'}
+          </details>
+          ${editable ? `<button type="button" data-requirement-action="edit" data-requirement-id="${escapeHtml(item.requirement_id)}" ${item.stale || state.pending || state.editor ? 'disabled' : ''}>적용 여부 기록</button>` : ''}
+        </li>`).join('')}</ul>${!rows.length ? '<p>등록된 요구사항이 없습니다.</p>' : ''}` : ''}`;
+    section.querySelectorAll('[data-requirement-action]').forEach(button => button.addEventListener('click', async () => {
+      if (!isProcurementRequirementsCurrent(state) || state.pending || button.disabled) return;
+      const action = button.dataset.requirementAction;
+      if (action === 'refresh') {
+        state.pending = true;
+        button.disabled = true;
+        await refreshProcurementRequestView(state.context.projectId, state.context);
+      } else if (action === 'add') {
+        await openProcurementRequirementEditor(state);
+      } else if (action === 'edit') {
+        const item = state.requirements.find(row => row.requirement_id === button.dataset.requirementId);
+        if (item && !item.stale) await openProcurementRequirementEditor(state, item);
+      }
+    }));
+  }
+
+  // Textarea normalizes CR/CRLF; map its UTF-16 boundaries back to original code points.
+  function procurementRequirementSelectedQuote(rawText, selectionStart, selectionEnd) {
+    const points = Array.from(rawText);
+    const boundaries = new Map([[0, 0]]);
+    let visibleOffset = 0;
+    for (let index = 0; index < points.length; index += 1) {
+      const point = points[index];
+      if (point === '\r' && points[index + 1] === '\n') index += 1;
+      visibleOffset += point === '\r' ? 1 : point.length;
+      boundaries.set(visibleOffset, index + 1);
+    }
+    const quote_start = boundaries.get(selectionStart);
+    const quote_end = boundaries.get(selectionEnd);
+    if (quote_start === undefined || quote_end === undefined || quote_end <= quote_start) return null;
+    return { quote_start, quote_end, quote: points.slice(quote_start, quote_end).join('') };
+  }
+
+  async function openProcurementRequirementEditor(state, requirement = null) {
+    if (!canEditProcurementRequirements(state) || state.pending || state.editor || requirement?.stale) return;
+    const editor = { requirement, sources: [], quote: null };
+    state.editor = editor;
+    renderProcurementRequirements(state);
+    const host = $id('procurement-requirement-editor');
+    host.innerHTML = '<p role="status">원문을 확인하는 중입니다.</p>';
+    if (!requirement) {
+      try {
+        if (!canEditProcurementRequirements(state)) return;
+        const response = await fetch(procurementRequirementsBase(state) + '/sources' + procurementRequirementsQuery(state), {
+          headers: getAuthHeaders(), cache: 'no-store',
+        });
+        if (!canEditProcurementRequirements(state) || state.editor !== editor) return;
+        if (!response.ok) { setProcurementRequirementsFailure(state, response.status); return; }
+        const payload = await response.json();
+        if (!canEditProcurementRequirements(state) || state.editor !== editor) return;
+        if (payload.decision_id !== state.context.decisionId || payload.decision_revision !== state.revision
+            || payload.operational_approval !== false || !Array.isArray(payload.sources)
+            || !payload.sources.every(source => typeof source.snapshot_id === 'string' && source.snapshot_id
+              && /^[a-f0-9]{64}$/.test(source.snapshot_sha256) && typeof source.raw_text === 'string')
+            || new Set(payload.sources.map(source => source.snapshot_id)).size !== payload.sources.length) {
+          throw new Error('Invalid sources response');
+        }
+        editor.sources = payload.sources;
+      } catch (_) { setProcurementRequirementsFailure(state, 503); return; }
+    }
+    if (!canEditProcurementRequirements(state) || state.editor !== editor) return;
+    host.innerHTML = `<form class="procurement-requirement-form" id="procurement-requirement-form">
+      <h6>${requirement ? escapeHtml(requirement.title) : '요구사항 추가'}</h6>
+      ${requirement ? `
+        <blockquote class="procurement-requirement-quote">${escapeHtml(requirement.quote)}</blockquote>
+        <label>적용 여부<select id="procurement-requirement-applicability">${Object.entries(PROCUREMENT_APPLICABILITY_LABELS).map(([key, label]) => `<option value="${key}" ${key === requirement.applicability ? 'selected' : ''}>${label}</option>`).join('')}</select></label>
+        <label>판단 근거<textarea id="procurement-requirement-rationale" rows="3" maxlength="4000" required></textarea></label>` : `
+        <div class="procurement-requirement-fields">
+          <label>요구사항 제목<input id="procurement-requirement-title" maxlength="500" required></label>
+          <label>범주<select id="procurement-requirement-category" required><option value="">범주 선택</option>${Object.entries(PROCUREMENT_REQUIREMENT_CATEGORIES).map(([key, label]) => `<option value="${key}">${escapeHtml(label)}</option>`).join('')}</select></label>
+        </div>
+        <label>원문<select id="procurement-requirement-source" required><option value="">원문 선택</option>${editor.sources.map((source, index) => `<option value="${index}">${escapeHtml(source.snapshot_id)}</option>`).join('')}</select></label>
+        ${!editor.sources.length ? '<p>인용 가능한 원문이 없습니다.</p>' : ''}
+        <label>원문 내용<textarea id="procurement-requirement-raw-text" rows="8" readonly></textarea></label>
+        <div><button type="button" id="procurement-requirement-use-selection">선택 구간 인용</button></div>
+        <blockquote id="procurement-requirement-selected-quote" class="procurement-requirement-quote" aria-live="polite"></blockquote>`}
+      <p id="procurement-requirement-form-status" role="status" aria-live="polite"></p>
+      <div class="procurement-requirement-toolbar"><button type="submit" id="procurement-requirement-save" ${!requirement ? 'disabled' : ''}>${requirement ? '판단 기록' : '요구사항 저장'}</button><button type="button" id="procurement-requirement-cancel">취소</button></div>
+    </form>`;
+    const form = host.querySelector('form');
+    const status = form.querySelector('#procurement-requirement-form-status');
+    const editorIsCurrent = () => canEditProcurementRequirements(state) && state.editor === editor;
+    form.querySelector('#procurement-requirement-cancel').addEventListener('click', () => {
+      if (!editorIsCurrent() || state.pending) return;
+      state.editor = null;
+      renderProcurementRequirements(state);
+      $id('project-procurement-requirements')?.querySelector('[data-requirement-action="add"]')?.focus();
+    });
+    if (!requirement) {
+      const sourceInput = form.querySelector('#procurement-requirement-source');
+      const rawInput = form.querySelector('#procurement-requirement-raw-text');
+      const quoteOutput = form.querySelector('#procurement-requirement-selected-quote');
+      sourceInput.addEventListener('change', () => {
+        if (!editorIsCurrent() || state.pending) return;
+        editor.quote = null;
+        rawInput.value = sourceInput.value === '' ? '' : editor.sources[Number(sourceInput.value)].raw_text;
+        quoteOutput.textContent = '';
+        form.querySelector('#procurement-requirement-save').disabled = true;
+      });
+      form.querySelector('#procurement-requirement-use-selection').addEventListener('click', () => {
+        if (!editorIsCurrent() || state.pending || sourceInput.value === '') return;
+        const source = editor.sources[Number(sourceInput.value)];
+        const quote = procurementRequirementSelectedQuote(source.raw_text, rawInput.selectionStart, rawInput.selectionEnd);
+        if (!quote) { status.textContent = '원문에서 인용 구간을 선택해주세요.'; return; }
+        editor.quote = { snapshot_id: source.snapshot_id, snapshot_sha256: source.snapshot_sha256, ...quote };
+        quoteOutput.textContent = quote.quote;
+        status.textContent = '';
+        form.querySelector('#procurement-requirement-save').disabled = false;
+      });
+    }
+    form.addEventListener('submit', event => {
+      event.preventDefault();
+      if (!editorIsCurrent() || state.pending || !form.reportValidity()) return;
+      const source = requirement || editor.quote;
+      if (!source || requirement?.stale) return;
+      const payload = { snapshot_id: source.snapshot_id, snapshot_sha256: source.snapshot_sha256,
+        quote_start: source.quote_start, quote_end: source.quote_end, quote: source.quote,
+        expected_decision_revision: state.revision, operation_id: crypto.randomUUID() };
+      if (requirement) {
+        payload.applicability = form.querySelector('#procurement-requirement-applicability').value;
+        payload.rationale = form.querySelector('#procurement-requirement-rationale').value.trim();
+        if (!payload.rationale) { status.textContent = '판단 근거를 입력해주세요.'; return; }
+      } else {
+        payload.title = form.querySelector('#procurement-requirement-title').value.trim();
+        payload.category = form.querySelector('#procurement-requirement-category').value;
+        if (!payload.title || !payload.category) { status.textContent = '제목과 범주를 입력해주세요.'; return; }
+      }
+      void submitProcurementRequirement(state, editor, payload, form);
+    });
+    form.querySelector('input, select, textarea')?.focus();
+  }
+
+  async function submitProcurementRequirement(state, editor, payload, form) {
+    if (!canEditProcurementRequirements(state) || state.editor !== editor || state.pending || editor.requirement?.stale) return;
+    state.pending = true;
+    form.querySelectorAll('input, select, textarea, button').forEach(control => { control.disabled = true; });
+    const status = form.querySelector('#procurement-requirement-form-status');
+    status.textContent = '저장 중입니다.';
+    const exportButton = $id('project-procurement-review-packet-submit');
+    if (exportButton) exportButton.disabled = true;
+    try {
+      if (!canEditProcurementRequirements(state)) return;
+      const suffix = editor.requirement ? `/${encodeURIComponent(editor.requirement.requirement_id)}/applicability` : '';
+      const response = await fetch(procurementRequirementsBase(state) + suffix, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() }, body: JSON.stringify(payload),
+      });
+      if (!isProcurementRequirementsCurrent(state)) return;
+      if (!response.ok) { setProcurementRequirementsFailure(state, response.status, true); return; }
+      const refreshedContext = {...state.context, projectDetailLoadId: state.context.projectDetailLoadId + 1};
+      if (!await refreshProcurementRequestView(state.context.projectId, state.context)) return;
+      if (!isProcurementReviewRequestCurrent(refreshedContext)) return;
+      setProcurementActionStatus('요구사항 검토 기록을 저장했습니다. 운영 승인은 부여되지 않았습니다.', 'success');
+    } catch (_) { setProcurementRequirementsFailure(state, 503, true); }
+    finally {
+      if (isProcurementRequirementsCurrent(state)) {
+        state.pending = false;
+        if (state.status === 'error') renderProcurementRequirements(state);
+      }
+    }
+  }
+
   function captureProcurementReviewRequestContext() {
     return {
       authRevision: _authSessionRevision,
       tenantId: _currentTenantId,
       userId: String(_currentUser?.sub || _currentUser?.user_id || ''),
       projectDetailLoadId: _projectDetailLoadId,
+      projectId: _currentProjectDetail?.project?.project_id || '',
+      decisionId: _currentProjectDetail?.procurementDecision?.decision_id || '',
+      selectionRevision: _currentProjectDetail?.procurementSelection?.selection_revision ?? null,
     };
   }
 
@@ -26392,7 +27519,62 @@
       && context?.tenantId === _currentTenantId
       && context?.userId === String(_currentUser?.sub || _currentUser?.user_id || '')
       && context?.projectDetailLoadId === _projectDetailLoadId
+      && context?.projectId === (_currentProjectDetail?.project?.project_id || '')
+      && context?.decisionId === (_currentProjectDetail?.procurementDecision?.decision_id || '')
+      && context?.selectionRevision === (_currentProjectDetail?.procurementSelection?.selection_revision ?? null)
     );
+  }
+
+  function procurementScopeQuery(detail = _currentProjectDetail) {
+    if (!detail?.procurementSelection || !detail.procurementDecision) return '';
+    return '?' + new URLSearchParams({
+      decision_id: detail.procurementDecision.decision_id,
+      expected_decision_revision: detail.procurementDecisionRevision,
+    });
+  }
+
+  async function refreshProcurementRequestView(projectId, context) {
+    const refreshedContext = {...context, projectDetailLoadId: context.projectDetailLoadId + 1};
+    await loadProjectDetail(projectId);
+    return isProcurementReviewRequestCurrent(refreshedContext);
+  }
+
+  async function selectProjectProcurementOpportunity(projectId, decisionId) {
+    const detail = _currentProjectDetail;
+    if (detail?.project?.project_id !== projectId || !detail.procurementSelection) return;
+    if (decisionId === detail.procurementSelection.active_decision_id) return;
+    invalidateProcurementRequirements();
+    const payload = {
+      decision_id: decisionId,
+      expected_selection_revision: detail.procurementSelection.selection_revision,
+      operation_id: crypto.randomUUID(),
+    };
+    _projectDetailLoadId += 1;
+    _currentProjectDetail = null;
+    clearGuidedDecisionReviewHandoffSource();
+    _clearScopedExportDownloadUrls(PROCUREMENT_REVIEW_DOWNLOAD_SCOPE);
+    const container = document.getElementById('project-detail');
+    container.innerHTML = '<p role="status">공고 선택을 저장하는 중입니다.</p>';
+    const context = captureProcurementReviewRequestContext();
+    try {
+      const response = await fetch(`/projects/${encodeURIComponent(projectId)}/procurement/selection`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify(payload),
+      });
+      if (!isProcurementReviewRequestCurrent(context)) return;
+      if (!response.ok) {
+        const error = await resolveApiErrorResponse(response);
+        if (!isProcurementReviewRequestCurrent(context)) return;
+        showNotification(getProcurementErrorMessage(error.code, error.message), 'error');
+      }
+      // Read the authoritative selection; a replay receipt may describe an older selection.
+      await loadProjectDetail(projectId);
+    } catch (error) {
+      if (!isProcurementReviewRequestCurrent(context)) return;
+      showNotification('선택 결과를 확인할 수 없습니다. 프로젝트를 다시 열어 확인하세요.', 'error');
+      container.innerHTML = '<p role="alert">공고 선택 상태를 확인할 수 없습니다.</p><button type="button" data-project-detail-action="hide">목록으로</button>';
+      wireProjectDetailActions(container, projectId);
+    }
   }
 
   async function saveProjectProcurementOverrideReason(projectId) {
@@ -26406,6 +27588,15 @@
       return;
     }
 
+    const detail = _currentProjectDetail;
+    const context = captureProcurementReviewRequestContext();
+    const requestIsCurrent = () => isProcurementReviewRequestCurrent(context);
+    const payload = { reason };
+    if (detail?.procurementSelection) {
+      payload.decision_id = detail.procurementDecision?.decision_id;
+      payload.expected_decision_revision = detail.procurementDecisionRevision;
+      payload.operation_id = crypto.randomUUID();
+    }
     button.disabled = true;
     setProcurementActionStatus('override 사유를 저장하는 중입니다...', 'loading');
     try {
@@ -26413,14 +27604,16 @@
       const res = await fetch(`/projects/${encodeURIComponent(projectId)}/procurement/override-reason`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({ reason }),
+        body: JSON.stringify(payload),
       });
+      if (!requestIsCurrent()) return;
       if (!res.ok) {
         const err = await resolveApiErrorResponse(res);
         throw Object.assign(new Error(err.message), { code: err.code });
       }
+      if (!requestIsCurrent()) return;
       showNotification('override 사유를 저장했습니다.', 'success');
-      await loadProjectDetail(projectId);
+      if (!await refreshProcurementRequestView(projectId, context)) return;
       if (remediationContext?.kind === 'blocked_event' && remediationContext.bundleType) {
         setProcurementActionStatus(
           `${getProcurementBundleLabel(remediationContext.bundleType)} 차단 이슈가 해소되었습니다. 같은 화면에서 다시 시도할 수 있습니다.`,
@@ -26428,6 +27621,7 @@
         );
       }
     } catch (e) {
+      if (!requestIsCurrent()) return;
       const message = getProcurementErrorMessage(e.code, e.message);
       setProcurementActionStatus(message, 'error');
       showNotification(message, 'error');
@@ -26463,27 +27657,32 @@
       return;
     }
 
+    const requestContext = captureProcurementReviewRequestContext();
+    const requestIsCurrent = () => isProcurementReviewRequestCurrent(requestContext);
     if (button) button.disabled = true;
     setDecisionCouncilActionStatus('Decision Council이 역할별 분석과 drafting handoff를 정리하는 중입니다...', 'loading');
     try {
-      const res = await fetch(`/projects/${encodeURIComponent(projectId)}/decision-council/run`, {
+      const res = await fetch(`/projects/${encodeURIComponent(projectId)}/decision-council/run${procurementScopeQuery(detail)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ goal, context, constraints }),
       });
+      if (!requestIsCurrent()) return;
       if (!res.ok) {
         const err = await resolveApiErrorResponse(res);
         throw Object.assign(new Error(err.message), { code: err.code });
       }
       const data = await res.json();
+      if (!requestIsCurrent()) return;
       const operationLabel = data.operation === 'updated' ? '업데이트' : '저장';
-      await loadProjectDetail(projectId);
+      if (!await refreshProcurementRequestView(projectId, requestContext)) return;
       setDecisionCouncilActionStatus(
         `Decision Council 결과를 ${operationLabel}했습니다. 최신 handoff가 bid_decision_kr / proposal_kr 생성에 자동 반영됩니다.`,
         'success',
       );
       showNotification(`Decision Council ${operationLabel} 완료`, 'success');
     } catch (e) {
+      if (!requestIsCurrent()) return;
       const message = getDecisionCouncilErrorMessage(e.code, e.message);
       setDecisionCouncilActionStatus(message, 'error');
       showNotification(message, 'error');
@@ -26499,6 +27698,8 @@
       return;
     }
     const decision = detail.procurementDecision;
+    const requestContext = captureProcurementReviewRequestContext();
+    const requestIsCurrent = () => isProcurementReviewRequestCurrent(requestContext);
     const isDownstream = ['rfp_analysis_kr', 'proposal_kr', 'performance_plan_kr'].includes(bundleId);
     if (!decision?.recommendation && bundleId === 'bid_decision_kr') {
       showNotification('먼저 "판단 갱신"을 실행해 권고안을 생성하세요.', 'warn');
@@ -26523,16 +27724,22 @@
         )
       );
       const payload = getProcurementBundleDefaults(bundleId, detail.project, decision);
+      if (detail.procurementSelection) {
+        payload.procurement_decision_id = decision.decision_id;
+        payload.expected_procurement_decision_revision = detail.procurementDecisionRevision;
+      }
       const result = await generateSingle(payload);
+      if (!requestIsCurrent()) return;
       showNotification(`${(_bundleNameMap[bundleId] || bundleId)} 생성 완료`, 'success');
       lastMeta = result || {};
       lastRequestPayload = payload;
-      await loadProjectDetail(projectId);
+      if (!await refreshProcurementRequestView(projectId, requestContext)) return;
       if (clearsRemediation) {
         dismissProjectProcurementRemediationContext(projectId);
         setProcurementActionStatus(`${getProcurementBundleLabel(bundleId)} 재시도를 완료했습니다.`, 'success');
       }
     } catch (e) {
+      if (!requestIsCurrent()) return;
       const message = getProcurementErrorMessage(e.code, e.message);
       if (e.code === 'procurement_override_reason_required') {
         focusProcurementOverrideReason();
@@ -28095,7 +29302,7 @@
       detail.procurementDecision,
       detail.procurementReviews,
       detail.decisionCouncilSession,
-      Object.values(detail.docsById || {}),
+      detail.procurementDocuments || Object.values(detail.docsById || {}),
       map,
     );
     return (
@@ -28224,7 +29431,7 @@
       detail.procurementDecision,
       detail.procurementReviews,
       detail.decisionCouncilSession,
-      Object.values(detail.docsById || {}),
+      detail.procurementDocuments || Object.values(detail.docsById || {}),
       map,
     );
     clearGuidedDecisionReviewVerifiedRecheck();
@@ -29751,6 +30958,7 @@
   }
 
   async function loadProjectDetail(projectId) {
+    invalidateProcurementRequirements();
     const loadId = ++_projectDetailLoadId;
     _clearScopedExportDownloadUrls(GENERATION_EXPORT_PROJECT_DOWNLOAD_SCOPE);
     const authRevision = _authSessionRevision;
@@ -29772,6 +30980,8 @@
       if (!requestIsCurrent()) return;
       let generatedDocumentReviews = [];
       let procurementDecision = null;
+      let procurementSelection = null;
+      let procurementDecisionRevision = null;
       let procurementReviews = [];
       let decisionCouncilSession = null;
       let decisionEvidenceMap = null;
@@ -29794,18 +31004,47 @@
         }
       }
       if (isProcurementCopilotEnabled()) {
-        const procurementRes = await fetch(`/projects/${projectId}/procurement`, { headers: getAuthHeaders() });
+        const listUrl = `/projects/${encodeURIComponent(projectId)}/procurement/opportunities`;
+        const listResponse = await fetch(`${listUrl}?limit=100`, { headers: getAuthHeaders() });
         if (!requestIsCurrent()) return;
-        if (procurementRes.ok) {
+        if (listResponse.ok) {
+          procurementSelection = await listResponse.json();
+          if (!requestIsCurrent()) return;
+          while (procurementSelection.items.length < procurementSelection.total) {
+            const offset = procurementSelection.items.length;
+            const nextResponse = await fetch(`${listUrl}?limit=100&offset=${offset}`, { headers: getAuthHeaders() });
+            if (!requestIsCurrent()) return;
+            if (!nextResponse.ok) throw new Error('공고 목록을 확인할 수 없습니다.');
+            const next = await nextResponse.json();
+            if (!requestIsCurrent()) return;
+            if (next.selection_revision !== procurementSelection.selection_revision
+                || next.active_decision_id !== procurementSelection.active_decision_id
+                || next.total !== procurementSelection.total || !next.items.length) {
+              throw new Error('공고 목록이 변경되었습니다.');
+            }
+            procurementSelection.items.push(...next.items);
+          }
+        } else if (listResponse.status !== 404) {
+          throw new Error('공고 목록을 확인할 수 없습니다.');
+        }
+        const decisionId = procurementSelection?.active_decision_id;
+        const procurementRes = procurementSelection && !decisionId ? null : await fetch(
+          decisionId ? `${listUrl}/${encodeURIComponent(decisionId)}` : `/projects/${projectId}/procurement`,
+          { headers: getAuthHeaders() },
+        );
+        if (!requestIsCurrent()) return;
+        if (procurementRes?.ok) {
           const procurementPayload = await procurementRes.json();
           if (!requestIsCurrent()) return;
           procurementDecision = procurementPayload?.decision || null;
-        } else {
+          procurementDecisionRevision = procurementPayload?.decision_revision ?? null;
+        } else if (procurementRes) {
+          if (procurementSelection) throw new Error('선택한 공고를 확인할 수 없습니다.');
           const err = await resolveApiErrorResponse(procurementRes);
           if (!requestIsCurrent()) return;
           showNotification('조달 의사결정 상태 로드 실패: ' + err.message, 'error');
         }
-        const reviewsRes = await fetch(`/projects/${projectId}/procurement/reviews`, { headers: getAuthHeaders() });
+        const reviewsRes = await fetch(`/projects/${projectId}/procurement/reviews${decisionId ? '?decision_id=' + encodeURIComponent(decisionId) : ''}`, { headers: getAuthHeaders() });
         if (!requestIsCurrent()) return;
         if (reviewsRes.ok) {
           const reviewsPayload = await reviewsRes.json();
@@ -29817,7 +31056,8 @@
           showNotification('조달 검토 이력 로드 실패: ' + err.message, 'error');
         }
         if (procurementDecision?.opportunity && procurementDecision?.recommendation?.value) {
-          const councilRes = await fetch(`/projects/${projectId}/decision-council`, { headers: getAuthHeaders() });
+          const councilQuery = procurementScopeQuery({procurementSelection, procurementDecision, procurementDecisionRevision});
+          const councilRes = await fetch(`/projects/${projectId}/decision-council${councilQuery}`, { headers: getAuthHeaders() });
           if (!requestIsCurrent()) return;
           if (councilRes.ok) {
             decisionCouncilSession = await councilRes.json();
@@ -29845,12 +31085,23 @@
             showNotification('Decision Evidence Map 로드 실패: ' + err.message, 'error');
           }
         }
+        if (procurementSelection) {
+          const check = await fetch(`${listUrl}?limit=1`, { headers: getAuthHeaders() });
+          if (!requestIsCurrent()) return;
+          if (!check.ok) throw new Error('공고 선택을 확인할 수 없습니다.');
+          const latest = await check.json();
+          if (!requestIsCurrent()) return;
+          if (latest.selection_revision !== procurementSelection.selection_revision
+              || latest.active_decision_id !== decisionId) throw new Error('공고 선택이 변경되었습니다.');
+        }
       }
       if (!requestIsCurrent()) return;
       renderProjectDetail(project, procurementDecision, {
         generatedDocumentReviews,
         procurementEnabled: isProcurementCopilotEnabled(),
         procurementReviews,
+        procurementSelection,
+        procurementDecisionRevision,
         decisionCouncilSession,
         decisionEvidenceMap,
       });
@@ -29858,13 +31109,21 @@
       const detailEl = document.getElementById('project-detail');
       if (listEl) listEl.style.display = 'none';
       if (detailEl) detailEl.style.display = 'block';
+      await loadProcurementRequirements();
     } catch(e) {
       if (!requestIsCurrent()) return;
+      _currentProjectDetail = null;
+      const container = document.getElementById('project-detail');
+      if (container) {
+        container.innerHTML = '<p role="alert">프로젝트 상태를 확인할 수 없습니다. 다시 열어주세요.</p><button type="button" data-project-detail-action="hide">목록으로</button>';
+        wireProjectDetailActions(container, projectId);
+      }
       showNotification('프로젝트 상세 로드 실패', 'error');
     }
   }
 
   window.hideProjectDetail = function hideProjectDetail() {
+    invalidateProcurementRequirements();
     _projectDetailLoadId += 1;
     invalidateGeneratedDocumentReviewProjectContext();
     clearGuidedDecisionReviewHandoffSource();
@@ -29909,18 +31168,27 @@
     const procurementReviews = Array.isArray(options.procurementReviews) ? options.procurementReviews : [];
     const decisionCouncilSession = options.decisionCouncilSession || null;
     const decisionEvidenceMap = options.decisionEvidenceMap || null;
+    const procurementSelection = options.procurementSelection || null;
+    const procurementDecisionRevision = options.procurementDecisionRevision ?? null;
+    const decisionDocs = procurementSelection ? docs.filter(doc => (
+      doc.source_procurement_binding?.decision_id === procurementDecision?.decision_id
+    )) : docs;
     const docsById = Object.fromEntries(docs.map(doc => [doc.doc_id, doc]));
-    const defaultProcurementRoleBrief = getProcurementOwnerState(p, procurementDecision, docs).currentOwner;
-    _activeProcurementRoleBrief = previousProjectId === p.project_id
+    const defaultProcurementRoleBrief = getProcurementOwnerState(p, procurementDecision, decisionDocs).currentOwner;
+    const sameDecision = _currentProjectDetail?.procurementDecision?.decision_id === procurementDecision?.decision_id;
+    _activeProcurementRoleBrief = previousProjectId === p.project_id && sameDecision
       ? (_activeProcurementRoleBrief || defaultProcurementRoleBrief)
       : defaultProcurementRoleBrief;
     _currentProjectDetail = {
       project: p,
       procurementDecision,
       procurementReviews,
+      procurementSelection,
+      procurementDecisionRevision,
       decisionCouncilSession,
       decisionEvidenceMap,
       procurementEnabled,
+      procurementDocuments: decisionDocs,
       generatedDocumentReviews,
       docsById,
     };
@@ -29970,7 +31238,7 @@
         </div>
         ${p.description ? `<p class="muted-text" style="margin:0;">${p.description}</p>` : ''}
       </div>
-      ${procurementEnabled ? renderGuidedDecisionReview(p, procurementDecision, procurementReviews, decisionCouncilSession, docs, decisionEvidenceMap) : ''}
+      ${procurementEnabled ? renderGuidedDecisionReview(p, procurementDecision, procurementReviews, decisionCouncilSession, decisionDocs, decisionEvidenceMap) : ''}
       <div class="bundle-breakdown">${_renderBundleBreakdown(docs)}</div>
       <div class="project-import-panel">
         <div class="project-import-header">
@@ -30018,13 +31286,22 @@
         <div id="voice-brief-import-status" class="project-import-status" aria-live="polite"></div>
       </div>
       ${procurementEnabled ? `
-      <div id="project-decision-area" class="project-import-panel" tabindex="-1">
+      <div id="project-decision-area" class="project-import-panel" tabindex="-1" ${procurementSelection ? `data-active-decision="${escapeHtml(procurementDecision?.decision_id || '')}"` : ''}>
         <div class="project-import-header">
           <div>
             <h4 class="project-import-title">🏛️ Public Procurement Go/No-Go Copilot</h4>
             <p class="project-import-help">공고를 프로젝트에 연결하고, deterministic 판단과 Decision Council v1를 거쳐 기존 문서/결재/공유 흐름으로 바로 넘깁니다.</p>
           </div>
         </div>
+        ${procurementSelection ? `
+          <label class="procurement-opportunity-selector" for="project-procurement-selection">공고
+            <select id="project-procurement-selection" ${procurementSelection.items.length ? '' : 'disabled'}>
+              ${procurementSelection.items.length ? procurementSelection.items.map(item => `
+                <option value="${escapeHtml(item.decision_id)}" ${item.decision_id === procurementSelection.active_decision_id ? 'selected' : ''}>${escapeHtml(item.title || item.source_id || item.decision_id)}</option>
+              `).join('') : '<option value="">연결된 공고 없음</option>'}
+            </select>
+          </label>
+        ` : ''}
         <div class="project-import-form">
           <label>
             URL / 공고번호
@@ -30042,7 +31319,7 @@
         <div class="procurement-review-export">
           <label>
             검토 담당자 사용자명
-            <input id="project-procurement-reviewer-input" type="text" maxlength="120" autocomplete="username" placeholder="활성 tenant 사용자명">
+            <input id="project-procurement-reviewer-input" type="text" maxlength="120" autocomplete="username" placeholder="활성 tenant 사용자명" value="${escapeHtml(_currentUser?.username || '')}">
           </label>
           <button
             id="project-procurement-review-packet-submit"
@@ -30058,16 +31335,17 @@
         <div id="project-procurement-status" class="project-import-status" aria-live="polite"></div>
         ${renderProjectProcurementRemediationStrip(p, procurementDecision)}
         ${renderProcurementSummary(procurementDecision)}
-        ${renderProcurementDecisionCouncilPanel(p, procurementDecision, docs, decisionCouncilSession)}
+        ${procurementSelection && procurementDecision ? '<section id="project-procurement-requirements" class="procurement-requirements" aria-labelledby="procurement-requirements-title" hidden></section>' : ''}
+        ${renderProcurementDecisionCouncilPanel(p, procurementDecision, decisionDocs, decisionCouncilSession)}
         ${renderProcurementOverridePanel(p, procurementDecision)}
-        ${renderProcurementOwnerStrip(p, procurementDecision, docs)}
-        ${renderProcurementRoleBoard(p, procurementDecision, docs)}
-        ${renderProcurementRoleBriefPanel(p, procurementDecision, docs)}
+        ${renderProcurementOwnerStrip(p, procurementDecision, decisionDocs)}
+        ${renderProcurementRoleBoard(p, procurementDecision, decisionDocs)}
+        ${renderProcurementRoleBriefPanel(p, procurementDecision, decisionDocs)}
       </div>
       ${renderDecisionEvidenceMapPanel(decisionEvidenceMap)}
       ` : ''}
       ${renderProjectGeneratedDocumentReviewHistory(p.project_id, generatedDocumentReviews)}
-      <h4 id="project-documents-heading" tabindex="-1" style="margin:16px 0 8px;font-weight:700;">📄 문서 목록 (${docs.length}건)</h4>
+      <h4 id="project-documents-heading" tabindex="-1" style="margin:16px 0 8px;font-weight:700;">📄 ${procurementSelection ? '프로젝트 전체 문서' : '문서 목록'} (${docs.length}건)</h4>
       ${docs.length === 0 ? `
         <div class="empty-state"><p>문서가 없습니다. 문서 생성 시 이 프로젝트를 선택하면 자동으로 추가됩니다.</p></div>` : `
       <div class="doc-list">
@@ -30086,6 +31364,7 @@
             <div class="doc-item-left">
               <span class="doc-bundle-badge">${_bundleNameMap[d.bundle_id] || d.bundle_id}</span>
               <span class="doc-title">${d.title}</span>
+              ${procurementSelection ? `<span class="tag" data-document-opportunity="${escapeHtml(d.source_procurement_binding?.decision_id || '')}">${escapeHtml(d.source_procurement_binding ? (procurementSelection.items.find(item => item.decision_id === d.source_procurement_binding.decision_id)?.title || d.source_procurement_binding.decision_id) : '공고 출처 미기록')}</span>` : ''}
               ${d.source_kind === 'voice_brief' ? `<span class="tag">Voice Brief</span>` : ''}
               ${d.source_decision_council_session_id ? `<span class="tag">Council v1 r${escapeHtml(String(d.source_decision_council_session_revision || 1))}</span>` : ''}
               ${d.source_decision_council_direction ? `<span class="tag">${escapeHtml(getDecisionCouncilDirectionMeta(d.source_decision_council_direction).copy)}</span>` : ''}
@@ -30114,7 +31393,7 @@
             <div class="doc-item-right">
               ${d.approval_status ? `<span style="font-size:0.75rem;padding:2px 8px;border-radius:9px;background:${APPROVAL_COLOR[d.approval_status] || '#888'}20;color:${APPROVAL_COLOR[d.approval_status] || '#888'};">${APPROVAL_LABEL[d.approval_status] || d.approval_status}</span>` : ''}
               <span class="muted-text" style="font-size:0.8rem;">${(d.generated_at || '').slice(0,10)}</span>
-              ${procurementEnabled ? `
+              ${procurementEnabled && d.source_kind !== 'edited_copy' ? `
               <div class="project-doc-actions">
                 ${councilFollowUpLabel ? `
 	                  <button
@@ -30138,6 +31417,7 @@
 	                <button type="button" data-project-detail-action="doc-share" data-project-id="${escapeHtml(p.project_id)}" data-doc-id="${escapeHtml(d.doc_id)}">공유</button>
 	              </div>` : ''}
 	              <div class="doc-download-btns">
+	                <button type="button" data-project-detail-action="doc-open-edited" data-project-id="${escapeHtml(p.project_id)}" data-doc-id="${escapeHtml(d.doc_id)}">${d.source_kind === 'edited_copy' ? '편집본 열기 · 미검토' : '열기'}</button>
 	                ${String(d.request_id || '').trim() && String(d.doc_snapshot || '').trim() && canUseGeneratedDocumentReviews() ? `<button type="button" data-project-detail-action="generated-document-review-create" data-project-id="${escapeHtml(p.project_id)}" data-doc-id="${escapeHtml(d.doc_id)}" style="padding:4px 8px;font-size:0.78rem;border-radius:4px;border:1px solid var(--border,#e5e7eb);background:transparent;cursor:pointer;">검토 패킷 전달</button>` : ''}
 	                ${String(d.request_id || '').trim() ? `<button type="button" data-project-detail-action="doc-verified-review-export" data-project-id="${escapeHtml(p.project_id)}" data-doc-id="${escapeHtml(d.doc_id)}" data-request-id="${escapeHtml(String(d.request_id || '').trim())}" style="padding:4px 8px;font-size:0.78rem;border-radius:4px;border:1px solid var(--border,#e5e7eb);background:transparent;cursor:pointer;">검증된 검토 ZIP</button>` : ''}
 	                <button type="button" data-project-detail-action="doc-download" data-project-id="${escapeHtml(p.project_id)}" data-doc-id="${escapeHtml(d.doc_id)}" data-format="pdf" style="padding:4px 8px;font-size:0.78rem;border-radius:4px;border:1px solid var(--border,#e5e7eb);background:transparent;cursor:pointer;">PDF</button>
@@ -30153,6 +31433,9 @@
 	      '<div id="project-generation-export-download-fallback" style="display:none;"></div>',
 	    );
 	    wireProjectDetailActions(container, p.project_id);
+        container.querySelector('#project-procurement-selection')?.addEventListener('change', event => {
+          selectProjectProcurementOpportunity(p.project_id, event.target.value);
+        });
 	    wireMeetingRecordingActions(container, p.project_id);
 	    wireProcurementRoleActions(container);
 	    wireGuidedDecisionReviewActions(container);
@@ -30164,6 +31447,10 @@
 	    const action = btn.dataset.projectDetailAction || '';
 	    const projectId = btn.dataset.projectId || fallbackProjectId || _currentProjectDetail?.project?.project_id || '';
 	    const docId = btn.dataset.docId || '';
+	    if (action === 'doc-open-edited') {
+	      openEditedProjectDocument(projectId, docId);
+	      return;
+	    }
 	    if (action === 'hide') {
 	      window.hideProjectDetail?.();
 	      return;
@@ -30276,6 +31563,26 @@
 	    }
 	    if (action === 'generated-document-review-download') {
 	      downloadGeneratedDocumentReviewPacket({
+	        surface: 'project',
+	        projectId,
+	        documentId: docId,
+	        packetSha256: btn.dataset.packetSha256 || '',
+	        sourceStatus: btn.dataset.sourceStatus || '',
+	        button: btn,
+	      });
+	      return;
+	    }
+	    if (action === 'generated-document-review-complete') {
+	      openGeneratedDocumentReviewCompletionDialog({
+	        surface: 'project',
+	        projectId,
+	        documentId: docId,
+	        packetSha256: btn.dataset.packetSha256 || '',
+	      });
+	      return;
+	    }
+	    if (action === 'generated-document-reviewed-download') {
+	      downloadGeneratedDocumentReviewedPackage({
 	        surface: 'project',
 	        projectId,
 	        documentId: docId,
@@ -31122,17 +32429,16 @@
         opt.value = s.profile_id;
         opt.textContent = s.name + (s.is_default ? ' ★' : '');
         opt.title = s.description || '';
-        if (s.is_default) opt.selected = true;
         select.appendChild(opt);
       });
 
-      // Pre-select and show description for default profile
       const defaultProfile = sorted.find(s => s.is_default);
-      if (defaultProfile) {
-        window._selectedStyleId = defaultProfile.profile_id;
-        const descEl = $id('inline-style-desc');
-        if (descEl) descEl.textContent = defaultProfile.description || '';
-      }
+      const selectedId = window._selectedStyleId;
+      const selectedProfile = sorted.find(s => s.profile_id === selectedId);
+      const nextId = selectedId === null ? ''
+        : (selectedProfile?.profile_id || defaultProfile?.profile_id || '');
+      select.value = nextId;
+      applyInlineStyle(nextId);
     } catch { /* non-critical */ }
   }
 
@@ -31149,13 +32455,21 @@
   }
 
   async function loadStyleProfiles() {
+    const detail = $id('style-detail');
+    const view = detail?.firstElementChild;
+    const profileId = detail?.dataset.styleDetailProfileId;
+    const headers = getAuthHeaders();
+    const authContext = JSON.stringify(headers);
+    const isCurrent = () => detail?.firstElementChild === view
+      && detail?.dataset.styleDetailProfileId === profileId
+      && JSON.stringify(getAuthHeaders()) === authContext;
     try {
-      const res = await fetch('/styles', { headers: getAuthHeaders() });
+      const res = await fetch('/styles', { headers });
       if (!res.ok) throw new Error(res.status);
       const data = await res.json();
-      renderStyleList(data.profiles || []);
+      if (isCurrent()) renderStyleList(data.profiles || []);
     } catch(e) {
-      showNotification('스타일 프로필 로드 실패', 'error');
+      if (isCurrent()) showNotification('스타일 프로필 로드 실패', 'error');
     }
   }
 
@@ -31163,7 +32477,10 @@
     const listEl = $id('style-list');
     const detailEl = $id('style-detail');
     if (!listEl) return;
-    if (detailEl) detailEl.style.display = 'none';
+    if (detailEl) {
+      detailEl.style.display = 'none';
+      detailEl.dataset.styleDetailProfileId = '';
+    }
     listEl.style.display = '';
 
 	    if (!profiles.length) {
@@ -31210,15 +32527,32 @@
 	    });
 	  }
 
-  async function loadStyleDetail(profileId) {
+  async function loadStyleDetail(profileId, { isCurrent } = {}) {
+    const container = $id('style-detail');
+    if (!container) return;
+    const view = container.firstElementChild;
+    const previousId = container.dataset.styleDetailProfileId;
+    const sequence = (container._styleDetailRequest || 0) + 1;
+    container._styleDetailRequest = sequence;
+    const headers = getAuthHeaders();
+    const authContext = JSON.stringify(headers);
+    const ownsView = () => container.isConnected
+      && container._styleDetailRequest === sequence
+      && container.firstElementChild === view
+      && container.dataset.styleDetailProfileId === previousId
+      && JSON.stringify(getAuthHeaders()) === authContext
+      && (!isCurrent || isCurrent());
     try {
-      const res = await fetch(`/styles/${profileId}`, { headers: getAuthHeaders() });
+      const res = await fetch(`/styles/${profileId}`, { headers });
       if (!res.ok) throw new Error(res.status);
       const profile = await res.json();
+      if (!ownsView()) return;
+      if (profile.profile_id !== profileId) throw new Error('Unexpected style profile');
       renderStyleDetail(profile);
       $id('style-list').style.display = 'none';
       $id('style-detail').style.display = 'block';
     } catch(e) {
+      if (!ownsView()) return;
       showNotification('스타일 상세 로드 실패', 'error');
     }
   }
@@ -31227,6 +32561,7 @@
     const t = p.tone_guide || {};
     const container = $id('style-detail');
     if (!container) return;
+    container.dataset.styleDetailProfileId = String(p.profile_id || '');
 
     const fmtOptions = ['경어체','해요체','합쇼체','혼용'];
     const densityOptions = ['간결하게','보통','상세하게'];
@@ -31248,8 +32583,8 @@
 	        </div>
 	      </div>
 
-      <h3 style="margin:0 0 4px;">${p.name}</h3>
-      <p class="muted-text" style="margin:0 0 16px;font-size:.875rem;">${p.description || ''}</p>
+      <h3 style="margin:0 0 4px;">${escapeHtml(p.name || '')}</h3>
+      <p class="muted-text" style="margin:0 0 16px;font-size:.875rem;">${escapeHtml(p.description || '')}</p>
 
       <!-- Tone Guide -->
       <div class="style-section">
@@ -31273,18 +32608,18 @@
 	          <textarea id="tone-rules" rows="3"
 	            placeholder="예: 수치는 반드시 포함&#10;문장은 3줄 이내로"
 	            data-style-tone-autosave
-	          >${(t.custom_rules || []).join('\n')}</textarea>
+	          >${escapeHtml((t.custom_rules || []).join('\n'))}</textarea>
         </div>
         <div class="tone-words-grid">
           <div>
             <label>선호 표현 (쉼표로 구분)</label>
-	            <input id="tone-preferred" value="${(t.preferred_words || []).join(', ')}"
+	            <input id="tone-preferred" value="${escapeHtml((t.preferred_words || []).join(', '))}"
 	              placeholder="예: 추진합니다, 수행합니다"
 	              data-style-tone-autosave>
           </div>
           <div>
             <label>금지 표현 (쉼표로 구분)</label>
-	            <input id="tone-forbidden" value="${(t.forbidden_words || []).join(', ')}"
+	            <input id="tone-forbidden" value="${escapeHtml((t.forbidden_words || []).join(', '))}"
 	              placeholder="예: ~것 같습니다"
 	              data-style-tone-autosave>
           </div>
@@ -31293,13 +32628,34 @@
 
       <!-- Document Upload -->
       <div class="style-section">
-        <h4>📄 문서에서 스타일 학습</h4>
+        <h4>📄 문서에서 스타일 예시 추출</h4>
         <div class="style-learning-hint" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:12px;font-size:.85rem;">
-          <p style="font-weight:600;margin:0 0 4px;">📄 <strong>AI 학습으로 개선하기</strong></p>
-          <p style="margin:0 0 4px;">실제 업무 문서(DOCX/PDF/HWPX/HTML/XML/JSON)나 캡처 이미지(PNG/JPG/WEBP)를 업로드하면 AI가 문체와 표현 특징을 분석하여 현재 스타일 프로필을 자동으로 개선합니다.</p>
-          <p style="color:var(--muted);font-size:0.8rem;margin:0;">3개 이상 업로드할수록 정확도가 높아집니다.</p>
+          <p style="font-weight:600;margin:0 0 4px;">📄 <strong>AI 문체 분석으로 생성 지침 보완</strong></p>
+          <p style="margin:0 0 4px;">업무 문서나 캡처 이미지를 업로드하면 설정된 provider가 문체와 표현 특징을 분석하고, 유효한 예시 문장만 현재 스타일 프로필에 저장합니다.</p>
+          <p style="color:var(--muted);font-size:0.8rem;margin:0;">저장된 예시는 문서 생성 시 style prompt에 반영되며, 모델 자체를 학습시키지는 않습니다.</p>
         </div>
+        <form id="style-example-form" class="style-manual-example">
+          <h5 style="margin:0;">직접 예시 문장 추가</h5>
+          <label for="style-example-name">
+            예시 이름
+            <input id="style-example-name" maxlength="120" required placeholder="예: 제안서 추진계획 문체">
+          </label>
+          <label for="style-example-sentences">
+            예시 문장 (한 줄에 한 문장, 최대 8개)
+            <textarea id="style-example-sentences" rows="4" maxlength="8000" required placeholder="사업 목표에 따라 단계별 실행계획을 수립합니다."></textarea>
+          </label>
+          <div class="style-manual-example-actions">
+            <select id="style-example-bundle" class="style-bundle-select" aria-label="수동 스타일 예시 적용 번들">
+              <option value="">전체 번들에 적용</option>
+              ${Object.entries(_bundleNameMap || {}).map(([id,name]) =>
+                `<option value="${escapeHtml(id)}">${escapeHtml(name)}</option>`).join('')}
+            </select>
+            <button id="style-example-save" type="submit" class="btn-primary">예시 저장</button>
+          </div>
+        </form>
         <div class="style-upload-area">
+          <input type="file" id="style-local-file-input" accept=".txt,.md,.docx,.hwpx,.pdf" multiple hidden>
+          <button type="button" data-style-detail-action="import-file" class="btn-outline">문서 예문 가져오기</button>
 	          <input type="file" id="style-file-input" accept=".pdf,.docx,.hwpx,.hwp,.txt,.md,.json,.yaml,.yml,.xml,.html,.htm,.rtf,.odt,.png,.jpg,.jpeg,.webp"
 	            multiple style="display:none">
           <select id="style-bundle-filter" class="style-bundle-select">
@@ -31308,7 +32664,7 @@
               `<option value="${id}">${name}</option>`).join('')}
           </select>
 	          <button type="button" data-style-detail-action="pick-file" class="btn-outline">
-	            📎 문서 업로드 (PDF/DOCX/HWPX/JSON/XML/HTML/PNG)
+	            AI 문체 분석
 	          </button>
         </div>
         ${(p.examples || []).length ? `
@@ -31316,8 +32672,8 @@
             ${p.examples.map(ex => `
               <div class="style-example-item">
                 <div class="example-header">
-                  <span>📄 ${ex.source_filename}</span>
-                  <span class="muted-text" style="font-size:.8rem;">${ex.bundle_id ? (_bundleNameMap[ex.bundle_id] || ex.bundle_id) : '전체 적용'}</span>
+                  <span>📄 ${escapeHtml(ex.source_filename || '')}</span>
+                  <span class="muted-text" style="font-size:.8rem;">${escapeHtml(ex.bundle_id ? (_bundleNameMap[ex.bundle_id] || ex.bundle_id) : '전체 적용')}</span>
 	                  <button
 	                    type="button"
 	                    data-style-detail-action="remove-example"
@@ -31328,8 +32684,8 @@
                 </div>
                 ${(ex.sample_sentences || []).length ? `
                   <details style="margin-top:6px;">
-                    <summary class="muted-text" style="font-size:.8rem;cursor:pointer;">추출된 예시 문장</summary>
-                    ${ex.sample_sentences.map(s => `<p class="sample-sentence">"${s}"</p>`).join('')}
+                    <summary class="muted-text" style="font-size:.8rem;cursor:pointer;">예시 문장</summary>
+                    ${ex.sample_sentences.map(s => `<p class="sample-sentence">"${escapeHtml(s || '')}"</p>`).join('')}
                   </details>` : ''}
               </div>`).join('')}
           </div>` : ''}
@@ -31342,8 +32698,8 @@
         <div class="bundle-override-list">
           ${Object.entries(p.bundle_overrides || {}).map(([bid, tone]) => `
             <div class="bundle-override-item">
-              <span style="flex:1;">${_bundleNameMap[bid] || bid}</span>
-              <span class="muted-text" style="font-size:.85rem;">${tone.formality || '—'} · ${tone.density || '—'}</span>
+              <span style="flex:1;">${escapeHtml(_bundleNameMap[bid] || bid)}</span>
+              <span class="muted-text" style="font-size:.85rem;">${escapeHtml(tone.formality || '—')} · ${escapeHtml(tone.density || '—')}</span>
 	              <button
 	                type="button"
 	                data-style-detail-action="remove-bundle"
@@ -31361,6 +32717,7 @@
 	  function wireStyleDetailActions(container, profileId) {
 	    const actions = {
 	      back: async () => {
+	        container.dataset.styleDetailProfileId = '';
 	        $id('style-detail').style.display = 'none';
 	        $id('style-list').style.display = '';
 	        await loadStyleProfiles();
@@ -31368,6 +32725,7 @@
 	      'set-default': () => setDefaultStyle(profileId),
 	      delete: () => deleteStyleProfile(profileId),
 	      'pick-file': () => document.getElementById('style-file-input')?.click(),
+          'import-file': () => document.getElementById('style-local-file-input')?.click(),
 	      'add-bundle': () => showAddBundleOverrideModal(profileId),
 	    };
 	    container.querySelectorAll('[data-style-detail-action]').forEach(btn => {
@@ -31388,24 +32746,50 @@
 	      el.addEventListener('change', () => autoSaveTone(profileId));
 	      el.addEventListener('blur', () => autoSaveTone(profileId));
 	    });
+	    container.querySelector('#style-example-form')?.addEventListener('submit', event => {
+	      event.preventDefault();
+	      addManualStyleExample(profileId, event.currentTarget);
+	    });
 	    container.querySelector('#style-file-input')?.addEventListener('change', () => analyzeStyleDocuments(profileId));
+        container.querySelector('#style-local-file-input')?.addEventListener('change', () => importStyleExamples(profileId));
 	  }
 
-  let _toneAutoSaveTimer;
+  const _toneAutoSaveTimers = new Map();
+  const _toneAutoSaveRequests = new Map();
   async function autoSaveTone(profileId) {
-    clearTimeout(_toneAutoSaveTimer);
-    _toneAutoSaveTimer = setTimeout(async () => {
-      const tone = collectToneFormValues();
-      try {
-        const res = await fetch(`/styles/${profileId}/tone`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-          body: JSON.stringify(tone),
-        });
-        if (!res.ok) throw new Error(await res.text());
-        showNotification('톤 가이드 저장됨', 'success');
-      } catch(e) { showNotification('저장 실패: ' + e.message, 'error'); }
-    }, 900);
+    clearTimeout(_toneAutoSaveTimers.get(profileId));
+    const container = $id('style-detail');
+    const form = $id('tone-rules');
+    const tone = collectToneFormValues();
+    const headers = getAuthHeaders();
+    const authContext = JSON.stringify(headers);
+    const isCurrent = () => form?.isConnected
+      && container?.dataset.styleDetailProfileId === profileId
+      && JSON.stringify(getAuthHeaders()) === authContext
+      && JSON.stringify(collectToneFormValues()) === JSON.stringify(tone);
+    _toneAutoSaveTimers.set(profileId, setTimeout(async () => {
+      _toneAutoSaveTimers.delete(profileId);
+      const previous = _toneAutoSaveRequests.get(profileId) || Promise.resolve();
+      const pending = previous.then(async () => {
+        if (JSON.stringify(getAuthHeaders()) !== authContext) return;
+        try {
+          const res = await fetch(`/styles/${profileId}/tone`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', ...headers },
+            body: JSON.stringify(tone),
+          });
+          if (!res.ok) throw new Error(await res.text());
+          if (isCurrent()) showNotification('톤 가이드 저장됨', 'success');
+        } catch(e) {
+          if (isCurrent()) showNotification('저장 실패: ' + e.message, 'error');
+        }
+      });
+      _toneAutoSaveRequests.set(profileId, pending);
+      await pending;
+      if (_toneAutoSaveRequests.get(profileId) === pending) {
+        _toneAutoSaveRequests.delete(profileId);
+      }
+    }, 900));
   }
 
   function collectToneFormValues() {
@@ -31419,76 +32803,229 @@
     };
   }
 
+  async function addManualStyleExample(profileId, form) {
+    const container = form?.closest('#style-detail');
+    const saveButton = form?.querySelector('#style-example-save');
+    if (!container || !saveButton) return;
+    if (saveButton.disabled) return;
+    const isCurrentProfile = () => (
+      form.isConnected
+      && container.dataset.styleDetailProfileId === profileId
+    );
+    if (!isCurrentProfile()) return;
+
+    const label = String(form.querySelector('#style-example-name')?.value || '').trim();
+    const sampleSentences = String(
+      form.querySelector('#style-example-sentences')?.value || ''
+    ).split('\n').map(sentence => sentence.trim()).filter(Boolean);
+    const bundleId = String(form.querySelector('#style-example-bundle')?.value || '');
+    if (!label || !sampleSentences.length) {
+      showNotification('예시 이름과 문장을 입력하세요.', 'error');
+      return;
+    }
+    if (sampleSentences.length > 8 || sampleSentences.some(sentence => sentence.length > 1000)) {
+      showNotification('예시 문장은 최대 8개, 문장당 1,000자까지 입력할 수 있습니다.', 'error');
+      return;
+    }
+
+    saveButton.disabled = true;
+    try {
+      const res = await fetch(`/styles/${profileId}/examples`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({
+          label,
+          sample_sentences: sampleSentences,
+          bundle_id: bundleId || null,
+        }),
+      });
+      if (!res.ok) throw new Error((await res.text()) || '수동 스타일 예시 저장 실패');
+      await res.json();
+      if (!isCurrentProfile()) return;
+      showNotification('수동 스타일 예시를 저장했습니다.', 'success');
+      await loadStyleDetail(profileId, { isCurrent: isCurrentProfile });
+    } catch (error) {
+      if (isCurrentProfile()) {
+        showNotification('예시 저장 실패: ' + (error.message || error), 'error');
+      }
+    } finally {
+      if (saveButton.isConnected && isCurrentProfile()) saveButton.disabled = false;
+    }
+  }
+
+  async function importStyleExamples(profileId) {
+    const input = $id('style-local-file-input');
+    if (!input?.files?.length || input.disabled) return;
+    const container = input.closest('#style-detail');
+    const button = container?.querySelector('[data-style-detail-action="import-file"]');
+    const headers = getAuthHeaders();
+    const authContext = JSON.stringify(headers);
+    const isCurrent = () => input.isConnected
+      && container?.dataset.styleDetailProfileId === profileId
+      && JSON.stringify(getAuthHeaders()) === authContext;
+    if (!isCurrent()) return;
+    if (input.files.length > 8 || Array.from(input.files).some(file => file.size > 20 * 1024 * 1024)) {
+      showNotification('최대 8개 파일, 파일당 20 MB까지 가져올 수 있습니다.', 'error');
+      input.value = '';
+      return;
+    }
+    const body = new FormData();
+    Array.from(input.files).forEach(file => body.append('files', file));
+    const bundle = $id('style-bundle-filter')?.value;
+    if (bundle) body.append('bundle_id', bundle);
+    input.disabled = true;
+    if (button) button.disabled = true;
+    try {
+      const response = await fetch(`/styles/${profileId}/import-examples`, {method: 'POST', headers, body});
+      if (!response.ok) throw new Error('가져오기 결과를 확인하지 못했습니다.');
+      const result = await response.json();
+      if (!isCurrent()) return;
+      if (result.method !== 'local_text' || result.provider_calls !== 0
+          || !Array.isArray(result.imported) || !Array.isArray(result.failed)) {
+        throw new Error('가져오기 응답을 확인하지 못했습니다.');
+      }
+      const count = result.imported.length;
+      const failures = result.failed.length;
+      showNotification(`${count}개 파일 예문 저장, ${failures}개 실패`, count ? (failures ? 'warn' : 'success') : 'error');
+      if (count) await loadStyleDetail(profileId, {isCurrent});
+    } catch (error) {
+      if (isCurrent()) showNotification(`${error.message} 예문 목록을 새로 확인한 뒤 다시 선택하세요.`, 'error');
+    } finally {
+      input.value = '';
+      input.disabled = false;
+      if (button) button.disabled = false;
+    }
+  }
+
   async function analyzeStyleDocuments(profileId) {
     const input = $id('style-file-input');
     const bundleId = $id('style-bundle-filter')?.value || null;
-    if (!input?.files?.length) return;
+    if (!input?.files?.length || input.disabled) return;
+    const container = input.closest('#style-detail');
+    const uploadButton = container?.querySelector('[data-style-detail-action="pick-file"]');
+    const headers = getAuthHeaders();
+    const authContext = JSON.stringify(headers);
+    const isCurrent = () => input.isConnected
+      && container?.dataset.styleDetailProfileId === profileId
+      && JSON.stringify(getAuthHeaders()) === authContext;
+    if (!isCurrent()) return;
 
     showNotification('⏳ 문서 스타일 분석 중…', 'info');
 
     const formData = new FormData();
     Array.from(input.files).forEach(f => formData.append('files', f));
     if (bundleId) formData.append('bundle_id', bundleId);
+    input.disabled = true;
+    if (uploadButton) uploadButton.disabled = true;
 
     try {
       const res = await fetch(`/styles/${profileId}/analyze`, {
         method: 'POST',
-        headers: getTenantHeaders(),   // no Content-Type: multipart is set by browser
+        headers,   // Multipart Content-Type is set by the browser.
         body: formData,
       });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
-      showNotification(`✅ ${data.analyzed.length}개 파일 분석 완료`, 'success');
-      await loadStyleDetail(profileId);
+      if (!isCurrent()) return;
+      const analyzed = Array.isArray(data.analyzed) ? data.analyzed : [];
+      const failed = Array.isArray(data.failed) ? data.failed : [];
+      if (analyzed.length && !failed.length) {
+        showNotification(`${analyzed.length}개 파일 분석 성공`, 'success');
+      } else if (analyzed.length) {
+        showNotification(`${analyzed.length}개 파일 분석 성공, ${failed.length}개 실패`, 'warn');
+      } else {
+        const firstError = failed[0]?.error || '유효한 스타일 예시를 추출하지 못했습니다.';
+        showNotification('분석 실패: ' + firstError, 'error');
+      }
+      if (analyzed.length) await loadStyleDetail(profileId, { isCurrent });
     } catch(e) {
-      showNotification('분석 실패: ' + e.message, 'error');
+      if (isCurrent()) showNotification('분석 실패: ' + e.message, 'error');
+    } finally {
+      input.disabled = false;
+      input.value = '';
+      if (uploadButton) uploadButton.disabled = false;
+    }
+  }
+
+  const pendingStyleDeletes = new WeakSet();
+  async function deleteStyleResource(profileId, path, onDeleted) {
+    const container = $id('style-detail');
+    const view = container?.firstElementChild;
+    const headers = getAuthHeaders();
+    const authContext = JSON.stringify(headers);
+    const isCurrent = () => view?.isConnected
+      && container.dataset.styleDetailProfileId === profileId
+      && JSON.stringify(getAuthHeaders()) === authContext;
+    if (!isCurrent() || pendingStyleDeletes.has(container)) return;
+    const buttons = Array.from(container.querySelectorAll(
+      '[data-style-detail-action="delete"], [data-style-detail-action="remove-example"], [data-style-detail-action="remove-bundle"]'
+    )).filter(button => !button.disabled);
+    pendingStyleDeletes.add(container);
+    container.setAttribute('aria-busy', 'true');
+    buttons.forEach(button => { button.disabled = true; });
+    try {
+      const response = await fetch(path, {method: 'DELETE', headers});
+      if (!response.ok) throw new Error('삭제 요청이 완료되지 않았습니다.');
+      if (isCurrent()) await onDeleted(isCurrent);
+    } catch (error) {
+      if (isCurrent()) showNotification('삭제 결과를 확인하지 못했습니다. 목록을 확인한 뒤 다시 시도하세요.', 'error');
+    } finally {
+      pendingStyleDeletes.delete(container);
+      container.removeAttribute('aria-busy');
+      buttons.forEach(button => { if (button.isConnected) button.disabled = false; });
     }
   }
 
   async function removeStyleExample(profileId, exampleId) {
-    try {
-      const res = await fetch(`/styles/${profileId}/examples/${exampleId}`, {
-        method: 'DELETE', headers: getAuthHeaders(),
-      });
-      if (!res.ok) throw new Error(res.status);
-      await loadStyleDetail(profileId);
-    } catch(e) { showNotification('제거 실패', 'error'); }
+    await deleteStyleResource(profileId, `/styles/${profileId}/examples/${exampleId}`,
+      isCurrent => loadStyleDetail(profileId, {isCurrent}));
   }
 
   async function setDefaultStyle(profileId) {
+    const container = $id('style-detail');
+    const button = container?.querySelector('[data-style-detail-action="set-default"]');
+    if (!button || button.disabled) return;
+    const headers = getAuthHeaders();
+    const authContext = JSON.stringify(headers);
+    const isCurrent = () => button.isConnected
+      && container.dataset.styleDetailProfileId === profileId
+      && JSON.stringify(getAuthHeaders()) === authContext;
+    if (!isCurrent()) return;
+    button.disabled = true;
     try {
       const res = await fetch(`/styles/${profileId}/set-default`, {
-        method: 'POST', headers: getAuthHeaders(),
+        method: 'POST', headers,
       });
       if (!res.ok) throw new Error(await res.text());
+      if (!isCurrent()) return;
       showNotification('기본 스타일이 설정되었습니다.', 'success');
-      await loadStyleDetail(profileId);
-    } catch(e) { showNotification('설정 실패', 'error'); }
+      await loadStyleDetail(profileId, {isCurrent});
+    } catch(e) {
+      if (isCurrent()) showNotification('설정 결과를 확인하지 못했습니다. 목록을 확인한 뒤 다시 시도하세요.', 'error');
+    } finally {
+      if (button.isConnected) button.disabled = false;
+    }
   }
 
   async function deleteStyleProfile(profileId) {
     if (!confirm('스타일 프로필을 삭제하시겠습니까?')) return;
-    try {
-      await fetch(`/styles/${profileId}`, { method: 'DELETE', headers: getAuthHeaders() });
+    await deleteStyleResource(profileId, `/styles/${profileId}`, async () => {
       showNotification('삭제되었습니다.', 'success');
+      $id('style-detail').dataset.styleDetailProfileId = '';
       $id('style-detail').style.display = 'none';
       $id('style-list').style.display = '';
-      loadStyleProfiles();
-    } catch(e) { showNotification('삭제 실패', 'error'); }
+      await loadStyleProfiles();
+    });
   }
 
   async function removeBundleOverride(profileId, bundleId) {
-    try {
-      await fetch(`/styles/${profileId}/bundles/${bundleId}`, {
-        method: 'DELETE', headers: getAuthHeaders(),
-      });
-      await loadStyleDetail(profileId);
-    } catch(e) { showNotification('제거 실패', 'error'); }
+    await deleteStyleResource(profileId, `/styles/${profileId}/bundles/${bundleId}`,
+      isCurrent => loadStyleDetail(profileId, {isCurrent}));
   }
 
   function showCreateStyleModal() {
     const modal = document.createElement('div');
-    modal.className = 'modal-overlay';
+    modal.className = 'modal-overlay style-create-modal';
     modal.innerHTML = `
       <div class="modal-box">
         <h4>✍️ 새 스타일 프로필</h4>
@@ -31508,15 +33045,25 @@
 
 	  function wireCreateStyleModalActions(modal) {
 	    modal.querySelector('[data-style-modal-close]')?.addEventListener('click', () => modal.remove());
-	    modal.querySelector('[data-style-create-submit]')?.addEventListener('click', submitCreateStyleProfile);
+	    modal.querySelector('[data-style-create-submit]')?.addEventListener('click', () => submitCreateStyleProfile(modal));
 	  }
 
   $id('style-create-btn')?.addEventListener('click', showCreateStyleModal);
+  $id('style-manage-btn')?.addEventListener('click', () => window.switchPage('style-page'));
+  $id('style-return-btn')?.addEventListener('click', () => {
+    window.switchPage('generate');
+    loadStylesInline();
+  });
 
-  async function submitCreateStyleProfile() {
-    const name = $id('new-style-name')?.value.trim();
-    const desc = $id('new-style-desc')?.value.trim() || '';
+  async function submitCreateStyleProfile(modal) {
+    const submitButton = modal.querySelector('[data-style-create-submit]');
+    if (!modal.isConnected || submitButton.disabled) return;
+    const name = modal.querySelector('#new-style-name')?.value.trim();
+    const desc = modal.querySelector('#new-style-desc')?.value.trim() || '';
     if (!name) { showNotification('프로필 이름을 입력하세요.', 'error'); return; }
+    const controls = modal.querySelectorAll('input, button');
+    controls.forEach(control => { control.disabled = true; });
+    modal.setAttribute('aria-busy', 'true');
     try {
       const res = await fetch('/styles', {
         method: 'POST',
@@ -31525,12 +33072,17 @@
       });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
-      document.querySelector('.modal-overlay')?.remove();
+      modal.remove();
       showNotification('스타일 프로필이 생성되었습니다.', 'success');
       loadStyleDetail(data.profile_id);
       $id('style-list').style.display = 'none';
       $id('style-detail') && ($id('style-detail').style.display = 'block');
-    } catch(e) { showNotification('생성 실패: ' + e.message, 'error'); }
+    } catch(e) {
+      showNotification('생성 실패: ' + e.message, 'error');
+    } finally {
+      controls.forEach(control => { control.disabled = false; });
+      modal.removeAttribute('aria-busy');
+    }
   }
 
   function showAddBundleOverrideModal(profileId) {
