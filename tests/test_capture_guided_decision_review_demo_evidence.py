@@ -163,3 +163,29 @@ def test_guided_review_demo_capture_restores_environment_after_browser_failure(
             playwright_factory=failing_playwright,
         )
     assert dict(os.environ) == environment_before
+
+
+@pytest.mark.parametrize(
+    ("path", "status", "recorded"),
+    [
+        ("/projects/p1/decision-council?decision_id=d1", 404, False),
+        ("/projects/p1/procurement/opportunities?limit=100", 404, False),
+        ("/projects/p1/procurement/opportunities?limit=100", 500, True),
+        ("/projects/p1/procurement/opportunities/d1", 404, True),
+        ("/projects/p1/procurement/opportunities/d1/requirements", 404, True),
+        ("/projects/p1/procurement", 404, True),
+    ],
+)
+def test_guided_review_demo_ignores_only_expected_availability_probes(
+    path: str, status: int, recorded: bool
+) -> None:
+    from types import SimpleNamespace
+
+    from scripts.capture_guided_decision_review_demo_evidence import (
+        _record_browser_http_error,
+    )
+
+    errors: list[dict[str, str | int]] = []
+    _record_browser_http_error(SimpleNamespace(url="http://127.0.0.1:1" + path, status=status), errors)
+
+    assert bool(errors) is recorded

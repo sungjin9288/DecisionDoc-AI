@@ -567,6 +567,11 @@ def test_guided_review_uses_the_session_bound_project_loading_path(page):
             "access_scope": "tenant",
             "operational_approval": False,
         },
+        # Multi-opportunity procurement is opt-in; the default app answers this
+        # probe with 404 and the page falls back to the single-decision route.
+        f"/projects/{project['project_id']}/procurement/opportunities?limit=100": {
+            "detail": "Not Found"
+        },
         f"/projects/{project['project_id']}/procurement": {"decision": _decision()},
         f"/projects/{project['project_id']}/procurement/reviews": {
             "reviews": [_review("2026-07-27T09:00:00Z", "a" * 64)]
@@ -577,8 +582,11 @@ def test_guided_review_uses_the_session_bound_project_loading_path(page):
             "?bundle_type=proposal_kr"
         ): _map(),
     }
+    statuses = {
+        f"/projects/{project['project_id']}/procurement/opportunities?limit=100": 404,
+    }
     page.evaluate(
-        """responses => {
+        """({responses, statuses}) => {
           window.__guidedReviewOriginalFetch = window.fetch;
           window.__guidedReviewObservedRequests = [];
           window.fetch = async (input, init = {}) => {
@@ -592,12 +600,12 @@ def test_guided_review_uses_the_session_bound_project_loading_path(page):
               authorization: headers.get('Authorization') || '',
             });
             return new Response(JSON.stringify(responses[url]), {
-              status: 200,
+              status: statuses[url] || 200,
               headers: { 'Content-Type': 'application/json' },
             });
           };
         }""",
-        responses,
+        {"responses": responses, "statuses": statuses},
     )
 
     page.evaluate(

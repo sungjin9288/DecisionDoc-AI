@@ -2475,7 +2475,8 @@ def test_index_html_style_profile_action_wiring_exists():
         "autoSaveTone(profileId)",
         "analyzeStyleDocuments(profileId)",
         "function wireCreateStyleModalActions(modal)",
-        "modal.querySelector('[data-style-create-submit]')?.addEventListener('click', submitCreateStyleProfile)",
+        # The submit handler receives its own modal for the duplicate-submit guard.
+        "modal.querySelector('[data-style-create-submit]')?.addEventListener('click', () => submitCreateStyleProfile(modal))",
         "function wireBundleOverrideModalActions(modal, profileId)",
         "modal.querySelector('[data-style-bundle-save]')?.addEventListener('click', () => saveBundleOverride(profileId))",
     ):
@@ -4021,8 +4022,9 @@ def test_production_procurement_review_artifact_calls_bind_resource_scope():
                 relative_path = path.relative_to(root).as_posix()
                 incomplete_calls.append(f"{relative_path}:{node.lineno}:{method_name}")
 
+    # read_reviewed_package also re-reads the bound original packet (8th call).
     assert discovered == {
-        "read_packet": 7,
+        "read_packet": 8,
         "complete": 1,
         "read_reviewed_package": 4,
     }

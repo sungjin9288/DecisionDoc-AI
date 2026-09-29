@@ -558,8 +558,11 @@ def _record_browser_http_error(
     browser_http_errors: list[dict[str, str | int]],
 ) -> None:
     route = response.url.split("?")[0]
+    # The project page probes these endpoints and treats 404 as "not available":
+    # no council session yet, or multi-opportunity procurement not opted in.
     if response.status < 400 or (
-        response.status == 404 and route.endswith("/decision-council")
+        response.status == 404
+        and route.endswith(("/decision-council", "/procurement/opportunities"))
     ):
         return
     browser_http_errors.append(
