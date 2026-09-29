@@ -1,0 +1,84 @@
+{
+  "schema_version": "decisiondoc.future_feature_gate.v1",
+  "gate_id": "generated-document-reviewed-package-verifier",
+  "title": "Read-only generated-document reviewed-package verifier CLI",
+  "target_user": "A local reviewer or operator checking a downloaded completed-review ZIP without starting DecisionDoc",
+  "observed_problem": "The existing standalone CLI verifies original generated-document packets, while the completed-review ZIP verifier is only callable as a Python function. An operator must write a Python invocation to check the downloaded outer package and receipt together.",
+  "evidence": [
+    {
+      "kind": "repository",
+      "reference": "scripts/verify_generation_export_packet.py::main",
+      "observation": "This CLI calls verify_generation_export_packet and reports only original packet verification."
+    },
+    {
+      "kind": "repository",
+      "reference": "app/storage/generated_document_review_models.py::verify_generated_document_reviewed_package",
+      "observation": "A pure verifier already validates the completed-review ZIP, embedded packet, canonical receipt and manifest, hashes, sizes, types, and false authority."
+    },
+    {
+      "kind": "test",
+      "reference": "tests/storage/test_generated_document_review_store.py::test_reviewed_package_rejects_invalid_json_value_types",
+      "observation": "Standalone integrity verification must distinguish JSON booleans from numeric values even when the archive is otherwise self-consistent."
+    }
+  ],
+  "current_workaround": "Call the Python verifier manually from the repository, or rely on the authenticated server download path; neither provides a dedicated standalone completed-package CLI command.",
+  "desired_outcome": "One local read-only command checks the exact downloaded completed-review ZIP and prints a minimal deterministic verification summary without exposing private review content or implying issuer authenticity.",
+  "acceptance_criteria": [
+    "Add scripts/verify_generated_document_reviewed_package.py using the existing pure verifier; do not change its schema or duplicate archive validation logic.",
+    "Read one regular non-symlink local file with the existing reviewed-package size limit and a bounded read; reject invalid, oversized, unreadable, or changed-size input without extraction or writes.",
+    "Success exits zero and prints exactly schema_version, status, packet_sha256, completion_receipt_sha256, reviewed_package_sha256, reviewed_package_size_bytes, review_decision, and operational_approval as deterministic JSON. Use schema_version decisiondoc.generated_document_reviewed_package.verification.v1, status verified, and strict operational_approval false.",
+    "Default output excludes rationale, reviewer identity, tenant, project, document, request, bundle, title, operation, timestamps, local path, and all receipt bodies.",
+    "Invalid content or IO failure produces a fixed non-disclosing stderr message, empty stdout, and nonzero exit without traceback or payload disclosure; argparse usage errors remain usage errors.",
+    "Accepted, changes_requested, and rejected receipts all verify as evidence without being promoted to business approval, source currentness, issuer authenticity, or permission to act.",
+    "Tests cover valid deterministic output, tampered packet/receipt/manifest, duplicate or extra members, type drift, oversize, missing/nonregular/symlink input, read-size drift, private-field redaction, unchanged input hashes, and no backend or network access."
+  ],
+  "affected_boundaries": [
+    "scripts/verify_generated_document_reviewed_package.py (new CLI only)",
+    "tests/test_verify_generated_document_reviewed_package.py (new CLI regression tests)",
+    "docs/product_execution_plan.md, docs/test_plan.md, docs/development-plan.md and README.md usage and verification evidence",
+    "tracked portfolio documentation mirror through the existing sync tool"
+  ],
+  "authority_scope": {
+    "review_only": true,
+    "allowed_effects": [
+      "read the user-selected local ZIP without extraction",
+      "print a redacted verification summary or fixed failure message",
+      "create isolated test fixtures and update coupled local documentation"
+    ],
+    "excluded_effects": [
+      "start the application, open StateBackend, or alter records, packets, assignments or receipts",
+      "re-complete, reassign, approve, repair, delete, notify or publish a review",
+      "read environment secrets or credentials, install packages, or access providers, AWS, G2B, Docker, databases or network endpoints",
+      "change authentication, tenant isolation, archive schemas, the pure verifier, or existing CLI contracts"
+    ],
+    "separate_approval_required_for": [
+      "implementation admission for this candidate",
+      "any expanded file or behavior scope",
+      "commit, push, merge, publication, deployment or paid/external execution"
+    ]
+  },
+  "local_verification": [
+    {
+      "command": "python3 scripts/validate_future_feature_gate.py docs/future_feature_gates/generated_document_reviewed_package_verifier.json --json",
+      "proves": "The candidate is structurally valid; a draft is not admitted for implementation."
+    },
+    {
+      "command": "python3 scripts/validate_future_feature_gate.py docs/future_feature_gates/generated_document_reviewed_package_verifier.json --require-approved --json",
+      "proves": "This must fail until a separate explicit decision admits the exact candidate."
+    },
+    {
+      "command": "python3 -m pytest -q tests/test_verify_generated_document_reviewed_package.py --tb=short",
+      "proves": "Planned after admission: the new CLI test file proves deterministic, redacted, read-only success and closed failure behavior. This file does not exist at draft time."
+    },
+    {
+      "command": "python3 -m pytest -q tests/test_generation_export_packet.py tests/storage/test_generated_document_review_store.py tests/test_generated_document_reviews.py --tb=short",
+      "proves": "The existing original-packet, review API and storage behavior remains compatible."
+    }
+  ],
+  "decision": {
+    "status": "approved",
+    "rationale": "The repository operator explicitly approved completing the proposed local CLI, regression tests and coupled documentation in the current task, bound to draft SHA-256 d44ffb960c266ab5f1bb525e88596238184b36a27ed4f8bb3c3d048efb7dce22. Preserve the existing completion approval and every excluded effect; no commit, push, paid call or existing data mutation is authorized.",
+    "decided_by": "repository-operator",
+    "decided_at": "2026-09-05T03:50:56Z"
+  }
+}

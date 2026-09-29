@@ -145,6 +145,39 @@ python3 scripts/run_free_local.py --provider mock --host 127.0.0.1 --port 8787 -
 검증할 수 있다. 사용자는 여기서의 관찰을 기존 UAT
 결과 템플릿에 기록하되 mock 출력 품질을 실제 provider 품질로 표시하지 않는다.
 
+### Completed-Review ZIP CLI
+
+```bash
+python3 scripts/verify_generated_document_reviewed_package.py \
+  "/path/to/generated-document-reviewed-package.zip"
+python3 -m pytest -q tests/test_verify_generated_document_reviewed_package.py --tb=short
+```
+
+macOS/Linux에서 기존 Python dependencies만 사용한다. 새 library, app server,
+StateBackend, credentials나 network endpoint가 필요하지 않다. 최대 입력 크기는
+기존 `MAX_REVIEWED_PACKAGE_SIZE_BYTES`를 그대로 사용하며, symlink와 nonregular
+입력은 거부한다. Descriptor의 크기를 읽기 전후에 확인하고 읽기 호출도 제한한다.
+
+stdout contract는 `schema_version=decisiondoc.generated_document_reviewed_package.verification.v1`,
+`status=verified`, `packet_sha256`, `completion_receipt_sha256`,
+`reviewed_package_sha256`, `reviewed_package_size_bytes`, `review_decision`,
+`operational_approval=false`의 exact field set이다. Rationale, reviewer/tenant/
+project/document/request/bundle/operation identity, title, timestamps와 input path는
+내보내지 않는다. 성공은 exit 0, invalid content/input IO 실패는 빈 stdout과 고정
+stderr `verification failed`, exit 1이다. Argparse usage error는 exit 2다.
+
+회귀는 모든 decision, deterministic replay, 원본 packet을 outer ZIP으로 오인하는
+입력, packet/receipt/manifest 변조, duplicate/extra member, duplicate JSON key,
+strict JSON type, 손상된 DEFLATE, deep JSON, empty/oversized/missing/directory/
+symlink/FIFO, read 실패와 크기 drift를 포함한다. 별도 Python process의 audit hook이
+runtime/backend/concrete-provider import, `.env`/credential file read, socket,
+subprocess와 파일 쓰기를 차단한 상태에서도 성공해야 한다. Provider ABC의 타입
+정의 import는 실행이나 concrete provider 접근으로 해석하지 않는다.
+
+ZIP을 추출하거나 output 파일을 만들지 않는다. 이 검증은 package 내부의
+일치만 증명하며 발급자 진위, source currentness, 사람의 판단 적절성, 운영 승인과
+human UAT는 별도로 남는다.
+
 ### Future Feature Gate
 
 Feature-admission regression은 versioned JSON record의 exact key set, duplicate

@@ -13,6 +13,9 @@ from scripts.validate_future_feature_gate import (
 
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE_PATH = ROOT / "docs/samples/future_feature_gate/template.json"
+CANDIDATE_PATH = (
+    ROOT / "docs/future_feature_gates/generated_document_review_completion.json"
+)
 
 
 def _template() -> dict[str, object]:
@@ -61,13 +64,37 @@ def _approved_record() -> dict[str, object]:
     return record
 
 
-def test_repository_template_is_valid_but_not_admitted() -> None:
-    result = validate_future_feature_gate(_template())
+def test_repository_template_stays_draft_and_approved_candidate_is_admitted() -> None:
+    template_result = validate_future_feature_gate(_template())
+    candidate = json.loads(CANDIDATE_PATH.read_text(encoding="utf-8"))
+    candidate_result = validate_future_feature_gate(candidate)
+    admitted_candidate = validate_future_feature_gate(candidate, require_approved=True)
 
-    assert result["status"] == "passed"
-    assert result["record_valid"] is True
-    assert result["admitted_for_implementation"] is False
-    assert result["decision_status"] == "draft"
+    assert template_result["status"] == "passed"
+    assert template_result["record_valid"] is True
+    assert template_result["admitted_for_implementation"] is False
+    assert template_result["decision_status"] == "draft"
+    assert candidate_result["status"] == "passed"
+    assert candidate_result["record_valid"] is True
+    assert candidate_result["admitted_for_implementation"] is True
+    assert candidate_result["decision_status"] == "approved"
+    assert candidate_result["gate_id"] == "generated-document-review-completion"
+    assert admitted_candidate["status"] == "passed"
+    assert admitted_candidate["record_valid"] is True
+    assert admitted_candidate["admitted_for_implementation"] is True
+    assert admitted_candidate["operational_authority_granted"] is False
+
+    verifier_record = json.loads(
+        (ROOT / "docs/future_feature_gates/generated_document_reviewed_package_verifier.json")
+        .read_text(encoding="utf-8")
+    )
+    verifier_admission = validate_future_feature_gate(verifier_record, require_approved=True)
+    assert verifier_admission["record_valid"] is True
+    assert verifier_admission["decision_status"] == "approved"
+    assert verifier_admission["admitted_for_implementation"] is True
+    assert verifier_admission["status"] == "passed"
+    assert verifier_admission["decision_identity_verified"] is False
+    assert verifier_admission["operational_authority_granted"] is False
 
 
 def test_require_approved_distinguishes_valid_draft_from_admitted_record() -> None:
