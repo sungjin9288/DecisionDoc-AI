@@ -42,8 +42,17 @@ def _sha256(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
 
 
-def _packet_context(content: bytes) -> dict[str, Any]:
-    verification = verify_procurement_review_packet(content)
+def _packet_context(
+    content: bytes,
+    *,
+    expected_tenant_id: str | None = None,
+    expected_project_id: str | None = None,
+) -> dict[str, Any]:
+    verification = verify_procurement_review_packet(
+        content,
+        expected_tenant_id=expected_tenant_id,
+        expected_project_id=expected_project_id,
+    )
     with zipfile.ZipFile(io.BytesIO(content)) as archive:
         package_doc = _load_package_document(archive.read(DECISION_PACKAGE_NAME))
     package = package_doc["package"]
@@ -97,6 +106,9 @@ def build_pending_procurement_review_receipt(
 def validate_procurement_review_receipt(
     receipt: Any,
     packet_content: bytes,
+    *,
+    expected_tenant_id: str | None = None,
+    expected_project_id: str | None = None,
 ) -> dict[str, Any]:
     """Validate receipt structure, packet binding, review state, and authority."""
     if not isinstance(receipt, dict):
@@ -106,7 +118,11 @@ def validate_procurement_review_receipt(
     if receipt["schema_version"] != REVIEW_RECEIPT_SCHEMA_VERSION:
         raise ValueError("procurement review receipt schema_version is invalid")
 
-    packet = _packet_context(packet_content)
+    packet = _packet_context(
+        packet_content,
+        expected_tenant_id=expected_tenant_id,
+        expected_project_id=expected_project_id,
+    )
     expected_values = {
         "packet_sha256": _sha256(packet_content),
         "packet_size_bytes": len(packet_content),

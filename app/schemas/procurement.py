@@ -1,9 +1,29 @@
 """Public-procurement opportunity, Decision Council, and decision-record schemas."""
 
 from enum import Enum
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from app.schemas.procurement_binding import ProcurementSourceBinding
+
+
+ProcurementUUID = Annotated[str, Field(pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")]
+
+
+class ProcurementSelectionRequest(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    decision_id: ProcurementUUID
+    expected_selection_revision: int = Field(ge=0)
+    operation_id: ProcurementUUID
+
+
+class ProcurementEvaluationRequest(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    expected_decision_revision: int = Field(ge=0)
+    operation_id: ProcurementUUID
 
 
 def _coerce_enum(value, enum_cls):
@@ -29,6 +49,25 @@ class ImportProjectProcurementOpportunityRequest(BaseModel):
     parsed_rfp_fields: dict[str, Any] | None = None
     structured_context: str = ""
     notes: str = ""
+    expected_selection_revision: int | None = Field(default=None, ge=0)
+    expected_decision_revision: int | None = Field(default=None, ge=0)
+    operation_id: ProcurementUUID | None = None
+
+    @model_validator(mode="after")
+    def validate_scoped_command(self):
+        scoped = (
+            self.expected_selection_revision,
+            self.expected_decision_revision,
+            self.operation_id,
+        )
+        if any(value is not None for value in scoped) and not all(
+            value is not None for value in scoped
+        ):
+            raise ValueError(
+                "expected_selection_revision, expected_decision_revision, and "
+                "operation_id must be provided together"
+            )
+        return self
 
 
 class ExportProjectProcurementReviewPacketRequest(BaseModel):
@@ -70,6 +109,25 @@ class UpdateProjectProcurementOverrideReasonRequest(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid")
 
     reason: str = Field(..., min_length=1, max_length=4000)
+    decision_id: ProcurementUUID | None = None
+    expected_decision_revision: int | None = Field(default=None, ge=1)
+    operation_id: ProcurementUUID | None = None
+
+    @model_validator(mode="after")
+    def validate_scoped_command(self):
+        scoped = (
+            self.decision_id,
+            self.expected_decision_revision,
+            self.operation_id,
+        )
+        if any(value is not None for value in scoped) and not all(
+            value is not None for value in scoped
+        ):
+            raise ValueError(
+                "decision_id, expected_decision_revision, and operation_id "
+                "must be provided together"
+            )
+        return self
 
 
 class RecordProjectProcurementRemediationLinkCopyRequest(BaseModel):
@@ -174,6 +232,7 @@ class DecisionCouncilSessionResponse(BaseModel):
     source_procurement_action_needed_count: int = 0
     source_procurement_blocking_hard_filter_count: int = 0
     source_snapshot_ids: list[str] = Field(default_factory=list)
+    source_binding: ProcurementSourceBinding | None = None
     created_at: str = Field(..., min_length=1)
     updated_at: str = Field(..., min_length=1)
     operation: Literal["created", "updated"] | None = None
@@ -190,6 +249,20 @@ class DecisionCouncilSessionResponse(BaseModel):
     risks: list[str] = Field(default_factory=list)
     consensus: DecisionCouncilConsensus
     handoff: DecisionCouncilHandoff
+
+    @model_validator(mode="after")
+    def validate_source_binding(self):
+        binding = self.source_binding
+        if binding is not None:
+            if (binding.tenant_id, binding.project_id, binding.decision_id) != (
+                self.tenant_id, self.project_id, self.source_procurement_decision_id,
+            ) or self.handoff.source_procurement_decision_id != binding.decision_id:
+                raise ValueError("Council source binding ownership mismatch")
+            if binding.source_updated_at != self.source_procurement_updated_at:
+                raise ValueError("Council source timestamp mismatch")
+            if [item.snapshot_id for item in binding.snapshots] != self.source_snapshot_ids:
+                raise ValueError("Council source snapshots mismatch")
+        return self
 
 
 class ProcurementRecommendationValue(str, Enum):

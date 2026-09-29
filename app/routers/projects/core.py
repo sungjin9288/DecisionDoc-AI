@@ -18,6 +18,11 @@ from app.schemas import AddDocumentToProjectRequest, CreateProjectRequest, Updat
 from app.services.docx_service import build_docx
 from app.services.excel_service import build_excel
 from app.services.hwp_service import build_hwp
+from app.services.procurement_document_binding import (
+    binding_sha256,
+    describe_procurement_document_binding,
+    resolver_from_app_state,
+)
 
 from app.routers.projects._shared import _load_pdf_builder, _resolve_gov_options, _serialize_project_detail
 
@@ -238,13 +243,27 @@ async def download_project_doc_endpoint(
         ext = "xlsx"
     else:
         raise HTTPException(status_code=400, detail=f"지원하지 않는 포맷: {fmt}")
+    source_status = describe_procurement_document_binding(
+        doc.source_procurement_binding,
+        resolver=resolver_from_app_state(request.app.state),
+    )
+    headers = {
+        "Content-Disposition": (
+            f'attachment; filename="document.{ext}"; '
+            f"filename*=UTF-8''{encoded_title}.{ext}"
+        ),
+        "X-DecisionDoc-Procurement-Source-Status": source_status["status"],
+        "X-DecisionDoc-Procurement-Source-Reason-Code": source_status[
+            "reason_code"
+        ],
+    }
+    source_binding_sha256 = binding_sha256(doc.source_procurement_binding)
+    if source_binding_sha256:
+        headers["X-DecisionDoc-Procurement-Source-Binding-SHA256"] = (
+            source_binding_sha256
+        )
     return Response(
         content=content,
         media_type=media_type,
-        headers={
-            "Content-Disposition": (
-                f'attachment; filename="document.{ext}"; '
-                f"filename*=UTF-8''{encoded_title}.{ext}"
-            )
-        },
+        headers=headers,
     )

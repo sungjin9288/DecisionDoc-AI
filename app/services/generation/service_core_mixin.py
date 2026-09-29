@@ -34,6 +34,8 @@ from app.services.markdown_utils import (
     build_slide_outline_table,
 )
 from app.services.validator import validate_docs
+from app.services.generation.procurement_source import ProcurementGenerationError, ProcurementGenerationResolver
+from app.services.procurement_override import extract_latest_procurement_override_reason
 from app.storage.base import Storage
 from app.tenant import require_tenant_id
 
@@ -61,6 +63,7 @@ class GenerationCoreMixin:
         search_service: Any | None = None,
         finetune_store: "FineTuneStore | None" = None,
         state_backend: "StateBackend | None" = None,
+        procurement_generation_resolver: ProcurementGenerationResolver | None = None,
     ) -> None:
         self.provider_factory = provider_factory
         self.feedback_store = feedback_store
@@ -72,6 +75,7 @@ class GenerationCoreMixin:
         self._procurement_copilot_enabled = procurement_copilot_enabled
         self._finetune_store = finetune_store
         self.state_backend = state_backend
+        self.procurement_generation_resolver = procurement_generation_resolver
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.cache_dir = self.data_dir / "cache"
@@ -161,6 +165,8 @@ class GenerationCoreMixin:
         bundle_id = str(uuid4())
         payload = requirements.model_dump(mode="json")
         payload.pop("style_profile_id", None)
+        payload.pop("procurement_decision_id", None)
+        payload.pop("expected_procurement_decision_revision", None)
 
         # Seed thread-local context so it's available after generation.
         _generation_context.request_id = request_id
@@ -174,6 +180,29 @@ class GenerationCoreMixin:
         # Resolve bundle spec (defaults to tech_decision for backward compatibility).
         bundle_type = payload.get("bundle_type", "tech_decision") or "tech_decision"
         bundle_spec = get_bundle_spec(bundle_type)
+
+        source = None
+        procurement_override_applied = False
+        source_enabled = self._procurement_copilot_enabled and bundle_type in self._PROCUREMENT_HANDOFF_BUNDLE_IDS
+        if requirements.procurement_decision_id is not None and (
+            not source_enabled or self.procurement_generation_resolver is None
+        ):
+            raise ProcurementGenerationError("procurement_generation_binding_unavailable")
+        if source_enabled and self.procurement_generation_resolver is not None and requirements.project_id:
+            source = self.procurement_generation_resolver.capture(
+                requirements.project_id, tenant_id=tenant_id,
+                decision_id=requirements.procurement_decision_id,
+                expected_revision=requirements.expected_procurement_decision_revision,
+            )
+        if source is not None:
+            record = source.record
+            procurement_override_applied = (
+                bundle_type in {"rfp_analysis_kr", "proposal_kr", "performance_plan_kr"}
+                and record.recommendation is not None and record.recommendation.value == "NO_GO"
+            )
+            if procurement_override_applied and not extract_latest_procurement_override_reason(record.notes):
+                raise ProcurementGenerationError("procurement_override_reason_required")
+            payload["_source_procurement_binding"] = source.binding.model_dump(mode="json")
 
         payload[STYLE_SNAPSHOT_KEY] = self.resolve_style_snapshot(
             requirements,
@@ -189,6 +218,7 @@ class GenerationCoreMixin:
             bundle_type=bundle_type,
             tenant_id=tenant_id,
             request_id=request_id,
+            procurement_source=source,
         )
         procurement_handoff_used = bool(payload.get("_procurement_context"))
         procurement_review_handoff_used = bool(payload.get("_procurement_review_context"))
@@ -314,6 +344,8 @@ class GenerationCoreMixin:
                 data_dir=self.data_dir,
                 state_backend=self.state_backend,
             )
+        if source is not None:
+            self.procurement_generation_resolver.assert_current(source)
         if cache_enabled and not cache_hit:
             self._write_cache_atomic(cache_path, bundle)
 
@@ -331,6 +363,9 @@ class GenerationCoreMixin:
             raise EvalLintFailedError(lint_errors)
         with timer.measure("validator_ms"):
             validate_docs(docs, headings_override=bundle_spec.validator_headings_map())
+        if source is not None:
+            for doc in docs:
+                doc["source_procurement_binding"] = source.binding.model_dump(mode="json")
         # ── Capture generation context for fine-tune collection ──────────────
         # system_prompt was captured in thread-local by build_bundle_prompt().
         # Collect it now (before spawning background thread) to avoid data races.
@@ -441,6 +476,7 @@ class GenerationCoreMixin:
                 "tenant_id": tenant_id,
                 "bundle_type": bundle_type,
                 "project_id": payload.get("project_id"),
+                "source_procurement_binding": source.binding.model_dump(mode="json") if source is not None else None,
                 "doc_count": len(docs),
                 "procurement_handoff_used": procurement_handoff_used,
                 "procurement_review_handoff_used": procurement_review_handoff_used,
@@ -459,6 +495,7 @@ class GenerationCoreMixin:
                 "decision_council_target_bundle": decision_council_target_bundle,
                 "decision_council_applied_bundle": decision_council_applied_bundle,
                 "decision_evidence_refs": decision_evidence_refs,
+                "procurement_override_applied": procurement_override_applied,
                 "timings_ms": timer.durations_ms,
                 "llm_prompt_tokens": usage_totals.get("prompt_tokens"),
                 "llm_output_tokens": usage_totals.get("output_tokens"),

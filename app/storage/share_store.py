@@ -12,6 +12,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, TypeVar
 
+from app.services.procurement_document_binding import (
+    normalize_procurement_document_binding,
+)
 from app.storage.state_backend import StateBackend, StateBackendError, get_state_backend
 from app.tenant import require_tenant_id
 
@@ -75,6 +78,9 @@ class ShareLink:
     procurement_review_document_status_tone: str = ""
     procurement_review_document_status_copy: str = ""
     procurement_review_document_status_summary: str = ""
+    source_procurement_binding: dict | None = None
+    source_procurement_binding_status: str = "unknown"
+    source_procurement_binding_reason_code: str = "source_binding_absent"
 
 
 class ShareStore:
@@ -97,6 +103,8 @@ class ShareStore:
         "procurement_review_document_status_tone",
         "procurement_review_document_status_copy",
         "procurement_review_document_status_summary",
+        "source_procurement_binding_status",
+        "source_procurement_binding_reason_code",
     )
 
     def __init__(
@@ -147,7 +155,13 @@ class ShareStore:
         )
         if any(not isinstance(link.get(field), str) for field in required_strings):
             raise ShareStoreError("Invalid share record")
-        if any(not link[field] for field in ("share_id", "request_id", "created_by")):
+        if any(not link[field] for field in ("share_id", "created_by")):
+            raise ShareStoreError("Invalid share identity")
+        project_id = link.get("project_id", "")
+        project_document_id = link.get("project_document_id", "")
+        if bool(project_id) != bool(project_document_id):
+            raise ShareStoreError("Invalid share document binding")
+        if not link["request_id"] and not (project_id and project_document_id):
             raise ShareStoreError("Invalid share identity")
         if link["share_id"] != stored_key:
             raise ShareStoreError("Invalid share identity")
@@ -155,6 +169,17 @@ class ShareStore:
         for field in self._optional_string_fields:
             if field in link and not isinstance(link[field], str):
                 raise ShareStoreError("Invalid share record")
+        source_status = link.get("source_procurement_binding_status", "unknown")
+        if source_status not in {"current", "stale", "unknown"}:
+            raise ShareStoreError("Invalid share procurement binding status")
+        try:
+            normalize_procurement_document_binding(
+                link.get("source_procurement_binding"),
+                tenant_id=self.tenant_id,
+                project_id=project_id or None,
+            )
+        except ValueError as exc:
+            raise ShareStoreError("Invalid share procurement binding") from exc
 
         access_count = link.get("access_count")
         if (
@@ -330,10 +355,18 @@ class ShareStore:
         procurement_review_document_status_tone: str = "",
         procurement_review_document_status_copy: str = "",
         procurement_review_document_status_summary: str = "",
+        source_procurement_binding: dict | None = None,
+        source_procurement_binding_status: str = "unknown",
+        source_procurement_binding_reason_code: str = "source_binding_absent",
     ) -> ShareLink:
         if isinstance(expires_days, bool) or not isinstance(expires_days, int):
             raise ValueError("Invalid share expiry")
 
+        source_procurement_binding = normalize_procurement_document_binding(
+            source_procurement_binding,
+            tenant_id=self.tenant_id,
+            project_id=project_id or None,
+        )
         created_at = datetime.now()
         link = ShareLink(
             share_id=secrets.token_urlsafe(16),
@@ -355,6 +388,11 @@ class ShareStore:
             procurement_review_document_status_tone=procurement_review_document_status_tone,
             procurement_review_document_status_copy=procurement_review_document_status_copy,
             procurement_review_document_status_summary=procurement_review_document_status_summary,
+            source_procurement_binding=source_procurement_binding,
+            source_procurement_binding_status=source_procurement_binding_status,
+            source_procurement_binding_reason_code=(
+                source_procurement_binding_reason_code
+            ),
         )
         try:
             record = self._validate_record(link.share_id, asdict(link))

@@ -136,6 +136,23 @@ This layer may use the provider to generate:
 Model-generated text must not be the sole source of truth for the decision.
 The structured result remains authoritative.
 
+### Input changes and judgment freshness
+
+- Importing a source snapshot, including a refresh of the same notice ID,
+  clears the derived capability reference, filters, scores, missing-data list,
+  recommendation and checklist. Preserve decision identity, prior source
+  snapshots and notes unless the import explicitly supplies replacement notes.
+- Evaluating current inputs replaces the deterministic results and clears any
+  prior recommendation and checklist. Recommending rebuilds both from the new
+  evaluation; an old GO must not survive a newly failing hard filter.
+- Until a fresh recommendation exists, Council and review-packet preparation
+  remain blocked by their existing context gates. Downstream draft generation
+  may use current source/evaluation context, but not the invalidated judgment
+  or stale completed review as current evidence.
+- Existing completed review records and package bytes remain historical
+  evidence. Invalidation does not delete or rewrite them and does not grant
+  operational, bid, legal or contractual approval.
+
 ---
 
 ## 7. Checklist rule

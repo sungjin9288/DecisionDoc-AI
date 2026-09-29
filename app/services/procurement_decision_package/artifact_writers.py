@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from app.services.procurement_decision_package.applicability import render_applicability_markdown
+
 from app.services.procurement_decision_package.json_helpers import (
     _bool_label,
     _require_mapping,
@@ -90,13 +92,16 @@ def _render_bid_readiness_checklist(package: dict[str, Any]) -> str:
             f"| {item['label']} | `{item['status']}` | "
             f"{item['owner']} | `{item['required_before']}` |"
         )
-    return "\n".join([
+    rendered = "\n".join([
         "# Bid Readiness Checklist",
         "",
         "| Item | Status | Owner | Required Before |",
         "|---|---|---|---|",
         *checklist_rows,
     ])
+    if "requirement_applicability" in package:
+        rendered += render_applicability_markdown(package["requirement_applicability"])
+    return rendered
 
 
 def _render_signoff_summary(package: dict[str, Any]) -> str:

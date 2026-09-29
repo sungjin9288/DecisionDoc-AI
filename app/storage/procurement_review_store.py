@@ -318,6 +318,46 @@ class ProcurementReviewStore:
                 packet_sha256=record.packet_sha256,
             )
 
+    @staticmethod
+    def _validate_bound_packet(
+        record: ProcurementReviewRecord, content: bytes,
+    ) -> dict[str, Any] | None:
+        from app.services.procurement_decision_package.review_packet import (
+            PACKET_SCHEMA_VERSION_V2,
+            PACKET_SCHEMA_VERSION_V3,
+            verify_bound_procurement_packet,
+        )
+        from app.services.procurement_review_evidence import (
+            validate_persisted_procurement_review_packet,
+        )
+
+        verified = verify_bound_procurement_packet(
+            content,
+            expected_tenant_id=record.tenant_id,
+            expected_project_id=record.project_id,
+        )
+        if (
+            verified is not None
+            or record.receipt["packet_schema_version"] in {PACKET_SCHEMA_VERSION_V2, PACKET_SCHEMA_VERSION_V3}
+        ):
+            validate_persisted_procurement_review_packet(record, content)
+        return verified
+
+    @staticmethod
+    def _validate_bound_reviewed_package(
+        record: ProcurementReviewRecord, content: bytes,
+    ) -> None:
+        from app.services.procurement_decision_package.review_packet import (
+            PACKET_SCHEMA_VERSION_V2,
+            PACKET_SCHEMA_VERSION_V3,
+        )
+        from app.services.procurement_review_evidence import (
+            validate_persisted_procurement_reviewed_package,
+        )
+
+        if record.receipt["packet_schema_version"] in {PACKET_SCHEMA_VERSION_V2, PACKET_SCHEMA_VERSION_V3}:
+            validate_persisted_procurement_reviewed_package(record, content)
+
     def prepare(
         self,
         *,
@@ -346,6 +386,7 @@ class ProcurementReviewStore:
             prepared_at=prepared_at,
             reviewer_assignment=assignment,
         )
+        self._validate_bound_packet(record, packet_content)
 
         with self._review_lock(
             tenant_id=tenant_id,
@@ -476,6 +517,30 @@ class ProcurementReviewStore:
             reviewer_user_id=reviewer_user_id,
         )
 
+    def filter_by_decision(
+        self,
+        records: list[ProcurementReviewRecord],
+        *,
+        tenant_id: str,
+        project_id: str,
+        decision_id: str,
+    ) -> list[ProcurementReviewRecord]:
+        """Filter already-authorized records without adopting legacy evidence."""
+        matched = []
+        for record in records:
+            _content, verified = self._read_packet_with_binding(
+                record,
+                tenant_id=tenant_id,
+                project_id=project_id,
+                packet_sha256=record.packet_sha256,
+            )
+            if (
+                verified is not None
+                and verified["source_binding"]["decision_id"] == decision_id
+            ):
+                matched.append(record)
+        return matched
+
     def list_by_tenant(
         self,
         *,
@@ -510,6 +575,23 @@ class ProcurementReviewStore:
         project_id: str,
         packet_sha256: str,
     ) -> bytes:
+        content, _binding = self._read_packet_with_binding(
+            record,
+            tenant_id=tenant_id,
+            project_id=project_id,
+            packet_sha256=packet_sha256,
+        )
+        return content
+
+    def _read_packet_with_binding(
+        self,
+        record: ProcurementReviewRecord,
+        *,
+        tenant_id: str,
+        project_id: str,
+        packet_sha256: str,
+    ) -> tuple[bytes, dict[str, Any] | None]:
+        """Return bytes and their binding from the same locked, validated read."""
         tenant_id, project_id, packet_sha256 = self._require_record_scope(
             record,
             tenant_id=tenant_id,
@@ -553,14 +635,15 @@ class ProcurementReviewStore:
                 raise ProcurementReviewStoreError(
                     "Procurement review packet evidence is inconsistent"
                 )
-            if self._packet_evidence_validator is not None:
-                try:
+            try:
+                verified = self._validate_bound_packet(stored, content)
+                if self._packet_evidence_validator is not None:
                     self._packet_evidence_validator(stored, content)
-                except (KeyError, OSError, TypeError, ValueError) as exc:
-                    raise ProcurementReviewStoreError(
-                        "Procurement review packet semantics are invalid"
-                    ) from exc
-            return content
+            except (KeyError, OSError, TypeError, ValueError) as exc:
+                raise ProcurementReviewStoreError(
+                    "Procurement review packet semantics are invalid"
+                ) from exc
+            return content, verified
 
     def complete(
         self,
@@ -586,16 +669,17 @@ class ProcurementReviewStore:
             reviewed_package_content=reviewed_package_content,
             reviewer_attestation=reviewer_attestation,
         )
-        if self._reviewed_package_evidence_validator is not None:
-            try:
+        try:
+            self._validate_bound_reviewed_package(completed, reviewed_package_content)
+            if self._reviewed_package_evidence_validator is not None:
                 self._reviewed_package_evidence_validator(
                     completed,
                     reviewed_package_content,
                 )
-            except (KeyError, OSError, TypeError, ValueError) as exc:
-                raise ProcurementReviewStoreError(
-                    "Procurement reviewed package semantics are invalid"
-                ) from exc
+        except (KeyError, OSError, TypeError, ValueError) as exc:
+            raise ProcurementReviewStoreError(
+                "Procurement reviewed package semantics are invalid"
+            ) from exc
 
         with self._review_lock(
             tenant_id=tenant_id,
@@ -615,12 +699,13 @@ class ProcurementReviewStore:
                 raise ValueError("procurement review record changed before completion")
             if stored.review_status != "pending":
                 raise ValueError("procurement review record is already completed")
-            self.read_packet(
+            packet_content = self.read_packet(
                 stored,
                 tenant_id=tenant_id,
                 project_id=project_id,
                 packet_sha256=packet_sha256,
             )
+            self._validate_bound_packet(completed, packet_content)
 
             reviewed_package_path = self._relative_path(
                 tenant_id=tenant_id,
@@ -707,6 +792,12 @@ class ProcurementReviewStore:
                 raise ValueError("procurement review record changed before package read")
             if stored.review_status != "completed":
                 raise ValueError("procurement review is not completed")
+            self.read_packet(
+                stored,
+                tenant_id=tenant_id,
+                project_id=project_id,
+                packet_sha256=packet_sha256,
+            )
             immutable_path = self._reviewed_package_path(
                 tenant_id=tenant_id,
                 project_id=project_id,
@@ -749,11 +840,12 @@ class ProcurementReviewStore:
                 raise ProcurementReviewStoreError(
                     "Procurement reviewed package evidence is inconsistent"
                 )
-            if self._reviewed_package_evidence_validator is not None:
-                try:
+            try:
+                self._validate_bound_reviewed_package(stored, content)
+                if self._reviewed_package_evidence_validator is not None:
                     self._reviewed_package_evidence_validator(stored, content)
-                except (KeyError, OSError, TypeError, ValueError) as exc:
-                    raise ProcurementReviewStoreError(
-                        "Procurement reviewed package semantics are invalid"
-                    ) from exc
+            except (KeyError, OSError, TypeError, ValueError) as exc:
+                raise ProcurementReviewStoreError(
+                    "Procurement reviewed package semantics are invalid"
+                ) from exc
             return content

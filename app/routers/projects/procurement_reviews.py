@@ -15,6 +15,8 @@ from app.dependencies import (
 from app.routers.projects.procurement import (
     _apply_procurement_observability,
     _ensure_procurement_copilot_enabled,
+    _raise_scoped_error,
+    _resolve_scoped_procurement_context,
 )
 from app.routers.projects.procurement_review_shared import (
     ensure_project_exists,
@@ -25,6 +27,13 @@ from app.schemas import (
     ExportProjectProcurementReviewPacketRequest,
 )
 from app.services.auth_service import get_request_user_store
+from app.schemas.procurement import ProcurementUUID
+from app.services.generation.procurement_source import ProcurementGenerationError
+from app.services.procurement_applicability_service import (
+    ProcurementApplicabilityConflict, ProcurementApplicabilityNotFound,
+)
+from app.storage.procurement_store import ProcurementDecisionStoreError
+from app.services.procurement_review_evidence import resolve_legacy_review_record
 from app.services.procurement_review_access import (
     authorized_review_records,
     get_procurement_review_access,
@@ -38,6 +47,34 @@ from app.services.procurement_review_access import (
 
 
 router = APIRouter()
+
+
+def _capture_requirement_context(request: Request, source):
+    service = getattr(request.app.state, "procurement_applicability_service", None)
+    if service is None:
+        raise ProcurementGenerationError("procurement_source_unavailable", status_code=503)
+    try:
+        captured = service.capture(
+            source.binding.project_id, tenant_id=source.binding.tenant_id,
+            decision_id=source.binding.decision_id,
+            expected_revision=source.binding.decision_revision,
+        )
+        if captured.binding != source.binding:
+            raise ProcurementApplicabilityConflict("Procurement source changed")
+        return captured
+    except (ProcurementApplicabilityConflict, ProcurementApplicabilityNotFound) as exc:
+        raise ProcurementGenerationError("procurement_context_changed") from exc
+    except ProcurementDecisionStoreError as exc:
+        raise ProcurementGenerationError("procurement_source_unavailable", status_code=503) from exc
+
+
+def _assert_requirements_current(request: Request, captured) -> None:
+    try:
+        request.app.state.procurement_applicability_service.assert_current(captured)
+    except (ProcurementApplicabilityConflict, ProcurementApplicabilityNotFound) as exc:
+        raise ProcurementGenerationError("procurement_context_changed") from exc
+    except ProcurementDecisionStoreError as exc:
+        raise ProcurementGenerationError("procurement_source_unavailable", status_code=503) from exc
 
 
 def _canonical_json_bytes(value: dict) -> bytes:
@@ -194,6 +231,8 @@ def export_project_procurement_review_packet_endpoint(
     project_id: str,
     payload: ExportProjectProcurementReviewPacketRequest,
     request: Request,
+    decision_id: ProcurementUUID | None = Query(default=None),
+    expected_decision_revision: int | None = Query(default=None, ge=1),
 ) -> Response:
     """Export a verified packet and prepare its packet-bound review record."""
     from app.services.procurement_decision_package.review_packet import (
@@ -215,7 +254,22 @@ def export_project_procurement_review_packet_endpoint(
     request.state.procurement_review_access_scope = access.scope
     ensure_project_exists(request, project_id=project_id, tenant_id=tenant_id)
 
-    record = request.app.state.procurement_store.get(project_id, tenant_id=tenant_id)
+    scoped_context = _resolve_scoped_procurement_context(
+        request,
+        project_id=project_id,
+        tenant_id=tenant_id,
+        decision_id=decision_id,
+        expected_decision_revision=expected_decision_revision,
+    )
+    if scoped_context is None:
+        record = request.app.state.procurement_store.get(
+            project_id,
+            tenant_id=tenant_id,
+        )
+        source = None
+    else:
+        entry, source = scoped_context
+        record = entry.record
     if record is None or record.opportunity is None or record.recommendation is None:
         request.state.error_code = "procurement_review_packet_context_required"
         raise HTTPException(
@@ -243,12 +297,31 @@ def export_project_procurement_review_packet_endpoint(
     require_assignment_access(access, reviewer_assignment)
 
     try:
+        captured_requirements = None
+        package_options = {}
+        if source is not None:
+            captured_requirements = _capture_requirement_context(request, source)
+            if captured_requirements.entry.requirements:
+                from app.routers.projects.procurement_applicability import _errors, _read_access
+
+                with _errors(request):
+                    _read_access(project_id, source.binding.decision_id, request)
+            record = captured_requirements.entry.record
+            package_options["requirement_applicability"] = (
+                request.app.state.procurement_applicability_service.export_projection(captured_requirements)
+            )
         packet = build_project_procurement_review_packet(
             record,
             reviewer_owner=reviewer_assignment["username"],
+            source_binding=source.binding if source is not None else None,
+            **package_options,
         )
+        if source is not None:
+            request.app.state.procurement_generation_resolver.assert_current(source)
         receipt = build_pending_procurement_review_receipt(packet.content)
         validate_procurement_review_receipt(receipt, packet.content)
+        if captured_requirements is not None:
+            _assert_requirements_current(request, captured_requirements)
         review_record, review_created = request.app.state.procurement_review_store.prepare(
             tenant_id=tenant_id,
             project_id=project_id,
@@ -256,6 +329,13 @@ def export_project_procurement_review_packet_endpoint(
             receipt=receipt,
             prepared_at=_utc_now(),
             reviewer_assignment=reviewer_assignment,
+        )
+    except ProcurementGenerationError as exc:
+        _raise_scoped_error(
+            request,
+            code=exc.code,
+            status=exc.status_code,
+            message="검토 패킷 저장 전 공고 원문이 변경되었습니다.",
         )
     except ValueError as exc:
         request.state.error_code = "procurement_review_packet_not_ready"
@@ -301,7 +381,9 @@ def export_project_procurement_review_packet_endpoint(
     "/projects/{project_id}/procurement/reviews",
     dependencies=[Depends(require_session_bound_procurement_reviewer)],
 )
-def list_project_procurement_reviews_endpoint(project_id: str, request: Request) -> dict:
+def list_project_procurement_reviews_endpoint(
+    project_id: str, request: Request, decision_id: ProcurementUUID | None = Query(default=None),
+) -> dict:
     """List packet-bound procurement review history for the current tenant."""
     _ensure_procurement_copilot_enabled(request)
     _apply_procurement_observability(
@@ -334,6 +416,10 @@ def list_project_procurement_reviews_endpoint(project_id: str, request: Request)
         authorized=authorized,
         access=access,
     )
+    if decision_id is not None:
+        authorized = review_store.filter_by_decision(
+            authorized, tenant_id=tenant_id, project_id=project_id, decision_id=decision_id,
+        )
     request.state.procurement_review_total = len(authorized)
     request.state.procurement_review_pending_count = sum(
         record.review_status == "pending" for record in authorized
@@ -362,7 +448,9 @@ def complete_project_procurement_review_endpoint(
     """Complete one review and return its independently verified audit package."""
     from app.services.procurement_decision_package.review_packet import (
         build_project_procurement_review_packet,
+        verify_procurement_review_packet,
     )
+    from app.schemas.procurement_binding import ProcurementSourceBinding
     from app.services.procurement_decision_package.review_receipt import (
         record_procurement_review_decision,
         validate_procurement_review_receipt,
@@ -479,17 +567,6 @@ def complete_project_procurement_review_endpoint(
             reviewer_identity_bound=True,
         )
 
-    decision_record = request.app.state.procurement_store.get(project_id, tenant_id=tenant_id)
-    if decision_record is None:
-        request.state.error_code = "procurement_review_source_missing"
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "procurement_review_source_missing",
-                "message": "검토의 원본 procurement decision을 찾을 수 없습니다.",
-            },
-        )
-
     try:
         packet_content = review_store.read_packet(
             review_record,
@@ -498,9 +575,79 @@ def complete_project_procurement_review_endpoint(
             packet_sha256=packet_sha256,
         )
         validate_procurement_review_receipt(review_record.receipt, packet_content)
+        packet_verification = verify_procurement_review_packet(
+            packet_content,
+            expected_tenant_id=tenant_id,
+            expected_project_id=project_id,
+        )
+        raw_binding = packet_verification.get("source_binding")
+        source = None
+        captured_requirements = None
+        package_options = {}
+        legacy_source_scope = None
+        if raw_binding is None:
+            legacy_source_scope = {
+                "project_id": project_id,
+                "tenant_id": tenant_id,
+                "package_id": packet_verification["package_id"],
+                "decision_store": request.app.state.procurement_store,
+                "project_store": getattr(request.app.state, "procurement_opportunity_store", None),
+            }
+            decision_record = resolve_legacy_review_record(**legacy_source_scope)
+            source_binding = None
+        else:
+            pinned_binding = ProcurementSourceBinding.model_validate(raw_binding)
+            resolver = getattr(
+                request.app.state,
+                "procurement_generation_resolver",
+                None,
+            )
+            if resolver is None:
+                _raise_scoped_error(
+                    request,
+                    code="procurement_review_source_changed",
+                    status=409,
+                    message="검토 패킷의 공고 원문을 현재 앱에서 확인할 수 없습니다.",
+                )
+            source = resolver.capture(
+                project_id,
+                tenant_id=tenant_id,
+                decision_id=pinned_binding.decision_id,
+                expected_revision=pinned_binding.decision_revision,
+            )
+            if source.binding != pinned_binding:
+                _raise_scoped_error(
+                    request,
+                    code="procurement_review_source_changed",
+                    status=409,
+                    message=(
+                        "검토 패킷을 만든 뒤 procurement 원문이 변경되었습니다."
+                    ),
+                )
+            decision_record = source.record
+            source_binding = source.binding
+            from app.services.procurement_decision_package.review_packet import PACKET_SCHEMA_VERSION_V3
+
+            if packet_verification["schema_version"] == PACKET_SCHEMA_VERSION_V3:
+                captured_requirements = _capture_requirement_context(request, source)
+                decision_record = captured_requirements.entry.record
+                package_options["requirement_applicability"] = (
+                    request.app.state.procurement_applicability_service.export_projection(captured_requirements)
+                )
+        if decision_record is None:
+            request.state.error_code = "procurement_review_source_missing"
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "procurement_review_source_missing",
+                    "message": "검토의 원본 procurement decision을 찾을 수 없습니다.",
+                },
+            )
         current_packet = build_project_procurement_review_packet(
             decision_record,
             reviewer_owner=review_record.reviewer,
+            source_binding=source_binding,
+            **package_options,
         )
         if current_packet.sha256 != packet_sha256:
             request.state.error_code = "procurement_review_source_changed"
@@ -552,6 +699,16 @@ def complete_project_procurement_review_endpoint(
             expected_project_id=project_id,
             expected_reviewer_user_id=request.state.user_id,
         )
+        if source is not None:
+            resolver.assert_current(source)
+        if captured_requirements is not None:
+            _assert_requirements_current(request, captured_requirements)
+        if legacy_source_scope is not None:
+            if resolve_legacy_review_record(**legacy_source_scope) != decision_record:
+                _raise_scoped_error(
+                    request, code="procurement_review_source_changed", status=409,
+                    message="검토 중 원본 procurement decision이 변경되었습니다.",
+                )
         completed_record = review_store.complete(
             tenant_id=tenant_id,
             project_id=project_id,
@@ -563,6 +720,22 @@ def complete_project_procurement_review_endpoint(
         )
     except HTTPException:
         raise
+    except ProcurementDecisionStoreError:
+        _raise_scoped_error(
+            request, code="procurement_source_unavailable", status=503,
+            message="검토 원문을 조회할 수 없습니다. 잠시 후 상태를 다시 확인해주세요.",
+        )
+    except ProcurementGenerationError as exc:
+        _raise_scoped_error(
+            request,
+            code=exc.code if exc.status_code == 503 else "procurement_review_source_changed",
+            status=exc.status_code,
+            message=(
+                "검토 원문을 조회할 수 없습니다. 잠시 후 상태를 다시 확인해주세요."
+                if exc.status_code == 503 else
+                "검토 패킷을 만든 뒤 procurement decision 또는 원문이 변경되었습니다."
+            ),
+        )
     except (KeyError, ValueError) as exc:
         request.state.error_code = "procurement_review_completion_rejected"
         raise HTTPException(

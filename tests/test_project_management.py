@@ -35,13 +35,13 @@ from fastapi.testclient import TestClient
 
 from app.main import create_app
 from app.schemas import (
+    CapabilityProfileReference,
     GenerateRequest,
     NormalizedProcurementOpportunity,
     ProcurementChecklistItem,
     ProcurementDecisionUpsert,
     ProcurementHardFilterResult,
     ProcurementRecommendation,
-    ProcurementRecommendationValue,
     ProcurementScoreBreakdownItem,
 )
 from app.storage.project_store import Project, ProjectDocument, ProjectStore
@@ -820,24 +820,33 @@ class TestProjectProcurementApi:
         assert decision["opportunity"]["title"] == "AI 기반 민원 서비스 고도화 사업"
         assert decision["source_snapshots"][0]["snapshot_id"] == snapshot_id
 
-    def test_import_g2b_opportunity_preserves_existing_decision_fields(self, client):
+    @pytest.mark.parametrize("bid_number", ["R26-PACKET-001", "20260325002-00"])
+    def test_import_g2b_opportunity_invalidates_evaluation_preserving_sources(self, client, bid_number):
         from app.services.g2b_collector import G2BAnnouncement
 
         pid = self._pid(client)
-        client.app.state.procurement_store.upsert(
-            ProcurementDecisionUpsert(
-                project_id=pid,
-                tenant_id="system",
-                recommendation=ProcurementRecommendation(
-                    value=ProcurementRecommendationValue.GO,
-                    summary="기존 판단 유지",
-                    evidence=["기존 레퍼런스 충분"],
-                ),
-                notes="existing procurement note",
-            )
+        store = client.app.state.procurement_store
+        previous = self._ready_decision(client, pid)
+        snapshot = store.save_source_snapshot(
+            tenant_id="system", project_id=pid,
+            source_kind="g2b_import", source_label="previous source",
+            external_id=previous.opportunity.source_id,
+            payload={"raw_text": "previous source evidence"},
+        )
+        previous_payload = ProcurementDecisionUpsert.model_validate(previous.model_dump(
+            exclude={"decision_id", "created_at", "updated_at"},
+        ))
+        previous_payload.source_snapshots = [snapshot]
+        previous_payload.notes = "existing procurement note"
+        previous_payload.capability_profile = CapabilityProfileReference(
+            source_kind="knowledge", source_ref=pid, document_ids=["previous-document"],
+        )
+        previous = store.upsert(previous_payload)
+        snapshot_before = store.load_source_snapshot(
+            tenant_id="system", project_id=pid, snapshot_id=snapshot.snapshot_id,
         )
         fake = G2BAnnouncement(
-            bid_number="20260325002-00",
+            bid_number=bid_number,
             title="클라우드 전환 컨설팅",
             issuer="조달청",
             budget="3억원",
@@ -857,15 +866,44 @@ class TestProjectProcurementApi:
         ):
             res = client.post(
                 f"/projects/{pid}/imports/g2b-opportunity",
-                json={"url_or_number": "20260325002-00"},
+                json={"url_or_number": bid_number},
                 headers=HEADERS,
             )
 
         assert res.status_code == 200
         decision = res.json()["decision"]
-        assert decision["recommendation"]["value"] == "GO"
+        assert decision["decision_id"] == previous.decision_id
+        assert decision["created_at"] == previous.created_at
+        assert decision["recommendation"] is None
+        assert decision["capability_profile"] is None
+        assert decision["hard_filters"] == []
+        assert decision["score_breakdown"] == []
+        assert decision["soft_fit_score"] is None
+        assert decision["soft_fit_status"] == "insufficient_data"
+        assert decision["missing_data"] == []
+        assert decision["checklist_items"] == []
         assert decision["notes"] == "existing procurement note"
-        assert decision["opportunity"]["source_id"] == "20260325002-00"
+        assert decision["opportunity"]["source_id"] == bid_number
+        assert len(decision["source_snapshots"]) == 2
+        assert decision["source_snapshots"][0] == snapshot.model_dump(mode="json")
+        assert store.load_source_snapshot(
+            tenant_id="system", project_id=pid, snapshot_id=snapshot.snapshot_id,
+        ) == snapshot_before
+        assert client.get(f"/projects/{pid}/procurement", headers=HEADERS).json()["decision"] == decision
+
+        council = client.post(
+            f"/projects/{pid}/decision-council/run", json={"goal": "Review updated source"},
+            headers=HEADERS,
+        )
+        assert council.status_code == 409
+        assert council.json()["detail"]["code"] == "decision_council_procurement_context_required"
+        reviewer_headers = self._reviewer_headers(client, "source-reviewer")
+        packet = client.post(
+            f"/projects/{pid}/procurement/review-packet", json={"reviewer": "source-reviewer"},
+            headers=reviewer_headers,
+        )
+        assert packet.status_code == 409
+        assert packet.json()["detail"]["code"] == "procurement_review_packet_context_required"
 
     def test_import_g2b_opportunity_reuses_preparsed_rfp_signals(self, client):
         from app.services.g2b_collector import G2BAnnouncement

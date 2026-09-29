@@ -487,18 +487,32 @@ def test_downstream_bundles_receive_current_completed_review_evidence(client, bu
     assert "proposal-review-owner" in prompt
 
 
-def test_downstream_handoff_skips_completed_review_after_procurement_state_changes(client):
+@pytest.mark.parametrize("state_change", ["replacement", "evaluate"])
+@pytest.mark.parametrize("bundle_type", ["rfp_analysis_kr", "proposal_kr", "performance_plan_kr"])
+def test_downstream_handoff_skips_completed_review_after_procurement_state_changes(client, state_change, bundle_type):
     project_id = _create_project(client)
     _seed_procurement_decision(client, project_id)
-    _complete_procurement_review(client, project_id)
-    _seed_procurement_decision(client, project_id)
+    packet_sha256 = _complete_procurement_review(client, project_id)
+    review_store = client.app.state.service._procurement_review_store
+    reviews_before = review_store.list_by_project(tenant_id="system", project_id=project_id)
+    review = reviews_before[0]
+    package_before = review_store.read_reviewed_package(
+        review, tenant_id="system", project_id=project_id, packet_sha256=packet_sha256,
+    )
+    if state_change == "replacement":
+        _seed_procurement_decision(client, project_id)
+    else:
+        evaluated = client.post(f"/projects/{project_id}/procurement/evaluate", headers=HEADERS)
+        assert evaluated.status_code == 200
+        assert evaluated.json()["decision"]["recommendation"] is None
+        assert evaluated.json()["decision"]["checklist_items"] == []
 
     response = client.post(
         "/generate",
         json={
             "title": "AI 기반 민원 서비스 고도화 사업",
             "goal": "최신 procurement state로 제안서를 준비한다",
-            "bundle_type": "proposal_kr",
+            "bundle_type": bundle_type,
             "project_id": project_id,
         },
         headers=HEADERS,
@@ -511,6 +525,19 @@ def test_downstream_handoff_skips_completed_review_after_procurement_state_chang
     assert body["procurement_review_packet_sha256"] is None
     assert body["procurement_review_decision"] is None
     assert body["procurement_review_operational_approval"] is False
+    assert review_store.list_by_project(tenant_id="system", project_id=project_id) == reviews_before
+    assert review_store.read_reviewed_package(
+        review, tenant_id="system", project_id=project_id, packet_sha256=packet_sha256,
+    ) == package_before
+    if state_change == "evaluate":
+        payload = {"title": "Current evaluation", "goal": "Draft only", "project_id": project_id}
+        client.app.state.service._inject_project_contexts(
+            payload, bundle_type=bundle_type, tenant_id="system", request_id="reevaluation-context-test",
+        )
+        prompt = build_bundle_prompt(payload, SCHEMA_VERSION, BUNDLE_REGISTRY[bundle_type])
+        assert "핵심 적합도는 충분하나 파트너 준비도를 닫은 뒤 입찰하는 것이 안전함" not in prompt
+        assert "파트너 확약서 갱신 내용을 제안서 위험과 다음 조치에 반영하세요." not in prompt
+        assert "_procurement_review_context" not in payload
 
 
 @pytest.mark.parametrize("bundle_type", ["rfp_analysis_kr", "proposal_kr", "performance_plan_kr"])

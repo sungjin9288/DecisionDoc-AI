@@ -11,6 +11,10 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+from app.services.procurement_decision_package.applicability import (
+    APPLICABILITY_DOCX_NAME, artifact_order, validate_applicability_docx,
+)
+
 from app.services.procurement_decision_package.constants import (
     ARTIFACT_INVENTORY_TABLE_BODY_OFFSET,
     ARTIFACT_INVENTORY_TABLE_HEADER,
@@ -61,6 +65,7 @@ def validate_local_package_artifacts(output_dir: Path) -> dict[str, Any]:
     validate_package_artifact_files(output_dir)
 
     package_doc = load_json(package_doc_path)
+    validate_package_artifact_files(output_dir, included_artifacts=artifact_order(package_doc))
     package = validate_package_document_for_path(
         package_doc,
         path=DECISION_PACKAGE_DOCUMENT_PATH,
@@ -81,6 +86,17 @@ def validate_local_package_artifacts(output_dir: Path) -> dict[str, Any]:
         (output_dir / PROCUREMENT_REVIEW_NAME).read_text(encoding="utf-8"),
         package=package,
     )
+    if "requirement_applicability" in package:
+        from app.services.procurement_decision_package.artifact_writers import _render_bid_readiness_checklist
+        from app.services.procurement_decision_package.review_workspace import render_procurement_review_workspace
+
+        expected_markdown = _render_bid_readiness_checklist(package).rstrip() + "\n"
+        if (output_dir / "bid_readiness_checklist.md").read_bytes() != expected_markdown.encode("utf-8"):
+            raise ValueError("requirement applicability Markdown content mismatch")
+        if (output_dir / PROCUREMENT_REVIEW_NAME).read_bytes() != render_procurement_review_workspace(package_doc).encode("utf-8"):
+            raise ValueError("requirement applicability HTML content mismatch")
+        validate_applicability_docx((output_dir / APPLICABILITY_DOCX_NAME).read_bytes(),
+                                    package["requirement_applicability"])
     return package
 
 
@@ -137,9 +153,9 @@ def build_artifact_fingerprint(path: Path) -> dict[str, object]:
     }
 
 
-def build_artifact_inventory(output_dir: Path) -> dict[str, dict[str, object]]:
+def build_artifact_inventory(output_dir: Path, *, included_artifacts=INCLUDED_ARTIFACT_ORDER) -> dict[str, dict[str, object]]:
     inventory: dict[str, dict[str, object]] = {}
-    for artifact_name in INCLUDED_ARTIFACT_ORDER:
+    for artifact_name in included_artifacts:
         inventory[artifact_name] = build_artifact_fingerprint(
             output_dir / artifact_name
         )
@@ -186,12 +202,12 @@ def validate_artifact_list(value: Any, *, path: str) -> list[str]:
     return artifacts
 
 
-def validate_package_artifact_files(output_dir: Path) -> None:
+def validate_package_artifact_files(output_dir: Path, *, included_artifacts=INCLUDED_ARTIFACT_ORDER) -> None:
     if not output_dir.exists() or not output_dir.is_dir():
         raise FileNotFoundError(f"package output directory not found: {output_dir}")
     missing_artifacts = [
         artifact_name
-        for artifact_name in INCLUDED_ARTIFACT_ORDER
+        for artifact_name in included_artifacts
         if not (output_dir / artifact_name).is_file()
     ]
     if missing_artifacts:

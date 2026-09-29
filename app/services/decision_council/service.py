@@ -21,6 +21,8 @@ from app.services.decision_council.binding import (
 from app.services.decision_council.council_synthesis_mixin import CouncilSynthesisMixin
 from app.storage.decision_council_store import DecisionCouncilStore
 from app.tenant import require_tenant_id
+from app.schemas.procurement_binding import ProcurementSourceBinding
+from app.services.procurement_source_binding import require_binding_matches_record
 
 _ROLE_ORDER = (
     "Requirement Analyst",
@@ -46,6 +48,7 @@ class DecisionCouncilService(CouncilSynthesisMixin):
         context: str = "",
         constraints: str = "",
         procurement_record: ProcurementDecisionRecord,
+        source_binding: ProcurementSourceBinding | None = None,
     ) -> DecisionCouncilSessionResponse:
         tenant_id = require_tenant_id(tenant_id)
         if (
@@ -55,6 +58,8 @@ class DecisionCouncilService(CouncilSynthesisMixin):
             raise ValueError("Procurement record does not match Decision Council scope")
         if procurement_record.opportunity is None or procurement_record.recommendation is None:
             raise KeyError("decision_council_procurement_context_required")
+        if source_binding is not None:
+            source_binding = require_binding_matches_record(source_binding, procurement_record)
 
         recommendation_value = procurement_record.recommendation.value
         recommendation_value_text = getattr(recommendation_value, "value", recommendation_value) or ""
@@ -117,6 +122,7 @@ class DecisionCouncilService(CouncilSynthesisMixin):
                     project_id=project_id,
                     use_case="public_procurement",
                     target_bundle_type="bid_decision_kr",
+                    decision_id=procurement_record.decision_id if source_binding is not None else None,
                 ),
                 "session_revision": 1,
                 "tenant_id": tenant_id,
@@ -127,6 +133,7 @@ class DecisionCouncilService(CouncilSynthesisMixin):
                 "context": context or "",
                 "constraints": constraints or "",
                 "source_procurement_decision_id": procurement_record.decision_id,
+                "source_binding": source_binding,
                 "source_procurement_updated_at": procurement_record.updated_at,
                 "source_procurement_recommendation_value": recommendation_value_text,
                 "source_procurement_missing_data_count": len(missing_data),
@@ -155,12 +162,14 @@ class DecisionCouncilService(CouncilSynthesisMixin):
         *,
         tenant_id: str,
         project_id: str,
+        decision_id: str | None = None,
     ) -> DecisionCouncilSessionResponse | None:
         return self._decision_council_store.get_latest(
             tenant_id=tenant_id,
             project_id=project_id,
             use_case="public_procurement",
             target_bundle_type="bid_decision_kr",
+            decision_id=decision_id,
         )
 
     def attach_procurement_binding(
@@ -168,10 +177,12 @@ class DecisionCouncilService(CouncilSynthesisMixin):
         *,
         session: DecisionCouncilSessionResponse,
         procurement_record: ProcurementDecisionRecord | None,
+        source_binding: ProcurementSourceBinding | None = None,
     ) -> DecisionCouncilSessionResponse:
         binding = describe_procurement_council_binding(
             session=session,
             procurement_record=procurement_record,
+            source_binding=source_binding,
         )
         current_metrics = _build_procurement_binding_metrics(procurement_record)
         return session.model_copy(

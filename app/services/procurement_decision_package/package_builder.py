@@ -12,6 +12,17 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from app.schemas.procurement_binding import ProcurementSourceBinding
+from app.services.procurement_source_binding import require_binding_matches_record
+from app.services.procurement_decision_package.applicability import (
+    APPLICABILITY_DOCX_NAME,
+    PACKAGE_SCHEMA_PURPOSE_V2,
+    V3_ARTIFACT_ORDER,
+    artifact_order,
+    build_applicability_docx,
+    validate_applicability,
+)
+
 from app.schemas import (
     NormalizedProcurementOpportunity,
     ProcurementChecklistItem,
@@ -389,7 +400,15 @@ def build_decision_package_from_record(
     record: ProcurementDecisionRecord,
     *,
     reviewer_owner: str = "executive-reviewer",
+    source_binding: ProcurementSourceBinding | None = None,
+    requirement_applicability: dict | None = None,
 ) -> dict[str, Any]:
+    projection = None
+    if requirement_applicability is not None:
+        if source_binding is None:
+            raise ValueError("requirement applicability requires source_binding")
+        source_binding = require_binding_matches_record(source_binding, record)
+        projection = validate_applicability(requirement_applicability, source_binding)
     if record.opportunity is None:
         raise ValueError("procurement decision record must include an opportunity")
     if record.recommendation is None:
@@ -502,6 +521,12 @@ def build_decision_package_from_record(
     scenario_id = f"procurement-record-{record.project_id}"
     schema_purpose = PROCUREMENT_DECISION_PACKAGE_SCHEMA_PURPOSE
     updated_at = record.updated_at
+    if projection is not None:
+        schema_purpose = PACKAGE_SCHEMA_PURPOSE_V2
+        package["requirement_applicability"] = projection
+        for name in ("audit_manifest", "export_manifest"):
+            package[name]["included_artifacts"] = list(V3_ARTIFACT_ORDER)
+        package["audit_manifest"]["evidence_artifacts"].append(APPLICABILITY_DOCX_NAME)
 
     return {
         "scenario_id": scenario_id,
@@ -582,7 +607,9 @@ def _package_checklist_status(status: str) -> str:
         return "blocked"
     if status in {"action_needed", "unknown"}:
         return "needs_review"
-    return "ready"
+    if status == "ready":
+        return "ready"
+    raise ValueError(f"unsupported procurement checklist status: {status!r}")
 
 
 def _score_band(recommendation: str, score: int) -> str:
@@ -754,12 +781,16 @@ def write_package_artifacts(
         output_dir / PROCUREMENT_REVIEW_NAME,
         render_procurement_review_workspace(package_doc),
     )
+    if "requirement_applicability" in package:
+        from app.services.procurement_decision_package.review_packet import write_bytes_atomic
+        write_bytes_atomic(output_dir / APPLICABILITY_DOCX_NAME,
+                           build_applicability_docx(package["requirement_applicability"]))
 
     return {
         "schema_purpose": package_doc["schema_purpose"],
         "status": "passed",
         "output_dir": str(output_dir),
-        "artifacts": list(INCLUDED_ARTIFACT_ORDER),
+        "artifacts": list(artifact_order(package_doc)),
         "recommendation": package["recommendation"],
         "authorization_boundary": EXPLICIT_AUTHORIZATION_BOUNDARY,
     }

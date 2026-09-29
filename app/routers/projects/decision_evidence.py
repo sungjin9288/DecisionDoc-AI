@@ -29,6 +29,7 @@ from app.services.procurement_review_access import (
     get_procurement_review_access,
     review_summary,
 )
+from app.services.procurement_document_binding import resolver_from_app_state
 from app.storage.knowledge_store import KnowledgeStore
 from app.storage.guided_decision_review_disposition_registry import (
     GuidedDecisionReviewDispositionRegistryConflictError,
@@ -54,6 +55,51 @@ class _DecisionEvidenceContext:
     review_summaries: tuple[dict, ...]
     council_session: object | None
     project: object
+    project_documents: tuple[dict, ...]
+
+
+def _load_current_procurement_source(
+    request: Request,
+    *,
+    tenant_id: str,
+    project_id: str,
+) -> tuple[object | None, object | None]:
+    resolver = resolver_from_app_state(request.app.state)
+    if resolver is None:
+        return (
+            request.app.state.procurement_store.get(
+                project_id,
+                tenant_id=tenant_id,
+            ),
+            None,
+        )
+
+    store = getattr(resolver, "store", None)
+    capture = getattr(resolver, "capture", None)
+    if store is None or not callable(getattr(store, "get", None)) or not callable(capture):
+        raise RuntimeError("Procurement generation resolver is incomplete")
+    procurement_project = store.get(project_id, tenant_id=tenant_id)
+    if procurement_project is None or procurement_project.active_decision_id is None:
+        return None, None
+    entry = next(
+        (
+            item
+            for item in procurement_project.entries
+            if item.record.decision_id == procurement_project.active_decision_id
+        ),
+        None,
+    )
+    if entry is None:
+        raise RuntimeError("Active procurement decision is missing")
+    captured = capture(
+        project_id,
+        tenant_id=tenant_id,
+        decision_id=entry.record.decision_id,
+        expected_revision=entry.decision_revision,
+    )
+    if captured is None:
+        raise RuntimeError("Active procurement decision is unavailable")
+    return captured.record, captured.binding
 
 
 def _load_decision_evidence_context(
@@ -65,22 +111,45 @@ def _load_decision_evidence_context(
     _ensure_procurement_copilot_enabled(request)
 
     tenant_id = get_tenant_id(request)
-    project, review_summaries = _load_authorized_decision_evidence_project(
+    project, authorized_reviews = _load_authorized_decision_evidence_project(
         project_id,
         request,
     )
-    procurement_record = request.app.state.procurement_store.get(
-        project_id,
+    procurement_record, source_binding = _load_current_procurement_source(
+        request,
         tenant_id=tenant_id,
+        project_id=project_id,
     )
+    if resolver_from_app_state(request.app.state) is not None:
+        authorized_reviews = (
+            request.app.state.procurement_review_store.filter_by_decision(
+                list(authorized_reviews), tenant_id=tenant_id, project_id=project_id,
+                decision_id=procurement_record.decision_id,
+            ) if procurement_record is not None else []
+        )
+    access = get_procurement_review_access(request)
+    request.state.procurement_review_total = len(authorized_reviews)
+    request.state.procurement_review_authorized_count = len(authorized_reviews)
+    if not access.is_admin and not authorized_reviews:
+        raise HTTPException(
+            status_code=404,
+            detail="Decision evidence is not available for this opportunity.",
+        )
+    review_summaries = tuple(review_summary(record, access) for record in authorized_reviews)
     council_session = request.app.state.decision_council_service.get_latest_procurement_council(
         tenant_id=tenant_id,
         project_id=project_id,
+        decision_id=(
+            getattr(procurement_record, "decision_id", None)
+            if source_binding is not None
+            else None
+        ),
     )
     if council_session is not None:
         council_session = request.app.state.decision_council_service.attach_procurement_binding(
             session=council_session,
             procurement_record=procurement_record,
+            source_binding=source_binding,
         )
 
     approvals = [
@@ -97,6 +166,21 @@ def _load_decision_evidence_context(
         tenant_id=tenant_id,
         backend=request.app.state.state_backend,
     ).list_documents()
+    project_documents = _serialize_project_documents(
+        request,
+        tenant_id=tenant_id,
+        project=project,
+    )
+    if resolver_from_app_state(request.app.state) is not None:
+        decision_id = getattr(procurement_record, "decision_id", None)
+        project_documents = [
+            document for document in project_documents
+            if decision_id is not None
+            and (document.get("source_procurement_binding") or {}).get("decision_id") == decision_id
+        ]
+        document_ids = {document["doc_id"] for document in project_documents}
+        approvals = [record for record in approvals if record.project_document_id in document_ids]
+        report_workflows = [record for record in report_workflows if record.project_document_id in document_ids]
 
     projection = request.app.state.decision_evidence_service.build(
         project_id=project_id,
@@ -104,7 +188,7 @@ def _load_decision_evidence_context(
         procurement_record=procurement_record,
         review_summaries=review_summaries,
         council_session=council_session,
-        project_documents=project.documents,
+        project_documents=project_documents,
         approval_records=approvals,
         report_workflows=report_workflows,
         knowledge_metadata=knowledge_metadata,
@@ -115,13 +199,14 @@ def _load_decision_evidence_context(
         review_summaries=review_summaries,
         council_session=council_session,
         project=project,
+        project_documents=tuple(project_documents),
     )
 
 
 def _load_authorized_decision_evidence_project(
     project_id: str,
     request: Request,
-) -> tuple[object, tuple[dict, ...]]:
+) -> tuple[object, tuple[object, ...]]:
     tenant_id = get_tenant_id(request)
     access = get_procurement_review_access(request)
     request.state.procurement_review_access_scope = access.scope
@@ -152,11 +237,7 @@ def _load_authorized_decision_evidence_project(
     request.state.procurement_review_authorized_count = len(authorized_reviews)
     request.state.procurement_review_operational_approval = False
 
-    review_summaries = tuple(
-        review_summary(record, access)
-        for record in authorized_reviews
-    )
-    return project, review_summaries
+    return project, tuple(authorized_reviews)
 
 
 @router.get(
@@ -767,15 +848,10 @@ def _build_current_guided_review_handoff(
     request: Request,
     context: _DecisionEvidenceContext,
 ) -> GuidedDecisionReviewHandoffResponse:
-    project_documents = _serialize_project_documents(
-        request,
-        tenant_id=get_tenant_id(request),
-        project=context.project,
-    )
     return request.app.state.guided_decision_review_service.build(
         projection=context.projection,
         procurement_record=context.procurement_record,
         review_summaries=context.review_summaries,
         council_session=context.council_session,
-        project_documents=project_documents,
+        project_documents=context.project_documents,
     )

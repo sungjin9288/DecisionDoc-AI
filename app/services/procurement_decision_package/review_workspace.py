@@ -10,6 +10,8 @@ from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 from urllib.parse import quote
 
+from app.services.procurement_decision_package.applicability import artifact_order, render_applicability_html
+
 from app.services.procurement_decision_package.constants import (
     INCLUDED_ARTIFACT_ORDER,
     PROCUREMENT_REVIEW_NAME,
@@ -108,9 +110,9 @@ def _plain_list(items: Iterable[Any]) -> str:
     return "".join(f"<li><code>{_text(item)}</code></li>" for item in items)
 
 
-def _artifact_links() -> str:
+def _artifact_links(artifacts=INCLUDED_ARTIFACT_ORDER) -> str:
     links = []
-    for artifact_name in INCLUDED_ARTIFACT_ORDER:
+    for artifact_name in artifacts:
         if artifact_name == PROCUREMENT_REVIEW_NAME:
             links.append(
                 f'<li aria-current="page"><span>{_text(artifact_name)}</span><small>현재 화면</small></li>'
@@ -132,6 +134,9 @@ def render_procurement_review_workspace(package_doc: Mapping[str, Any]) -> str:
     proposal = package["proposal_handoff"]
     signoff = package["pending_signoff"]
     score = int(soft_fit["score"])
+    artifacts = artifact_order(package_doc)
+    applicability = (render_applicability_html(package["requirement_applicability"])
+                     if "requirement_applicability" in package else "")
 
     return f"""<!doctype html>
 <html lang="ko">
@@ -293,8 +298,8 @@ def render_procurement_review_workspace(package_doc: Mapping[str, Any]) -> str:
     </section>
 
     <section aria-labelledby="artifacts-heading">
-      <div class="section-heading"><h2 id="artifacts-heading">Artifact index</h2><p>{len(INCLUDED_ARTIFACT_ORDER)}개 artifact가 동일한 audit/export 계약에 포함됩니다.</p></div>
-      <ul class="artifact-list">{_artifact_links()}</ul>
+      {applicability}<div class="section-heading"><h2 id="artifacts-heading">Artifact index</h2><p>{len(artifacts)}개 artifact가 동일한 audit/export 계약에 포함됩니다.</p></div>
+      <ul class="artifact-list">{_artifact_links(artifacts)}</ul>
     </section>
 
     <section class="boundary" aria-labelledby="boundary-heading">

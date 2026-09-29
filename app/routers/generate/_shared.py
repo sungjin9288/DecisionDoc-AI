@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import logging
 import os
-import re
 from pathlib import Path
 from typing import Any
 
@@ -342,6 +341,8 @@ def _build_generated_docs_response(
             "doc_type": doc_type,
             "markdown": markdown,
         }
+        if doc.get("source_procurement_binding") is not None:
+            item["source_procurement_binding"] = doc["source_procurement_binding"]
         structured = raw_bundle.get(doc_type)
         if isinstance(structured, dict):
             total_slides = structured.get("total_slides")
@@ -461,6 +462,13 @@ def _apply_generate_state(request: Request, result: dict, template_version: str)
     request.state.bundle_type = metadata.get("bundle_type")
     request.state.decision_council_project_id = metadata.get("project_id")
     request.state.procurement_project_id = metadata.get("project_id")
+    source_binding = metadata.get("source_procurement_binding") or {}
+    request.state.procurement_decision_id = source_binding.get("decision_id")
+    request.state.procurement_decision_revision = source_binding.get("decision_revision")
+    if metadata.get("procurement_override_applied"):
+        request.state.procurement_action = "downstream_resolved"
+        request.state.procurement_operation = "override_reason_present"
+        request.state.procurement_recommendation = "NO_GO"
     request.state.doc_count = metadata.get("doc_count")
     request.state.llm_prompt_tokens = metadata.get("llm_prompt_tokens")
     request.state.llm_output_tokens = metadata.get("llm_output_tokens")
@@ -508,6 +516,8 @@ def _build_generate_log_event(request: Request, result: dict, request_id: str, t
         "cache_hit": metadata["cache_hit"],
         "bundle_type": metadata.get("bundle_type"),
         "project_id": metadata.get("project_id"),
+        "procurement_decision_id": request.state.procurement_decision_id,
+        "procurement_decision_revision": request.state.procurement_decision_revision,
         "doc_count": metadata.get("doc_count"),
         "llm_prompt_tokens": request.state.llm_prompt_tokens,
         "llm_output_tokens": request.state.llm_output_tokens,
@@ -576,20 +586,8 @@ def _ensure_procurement_bundle_enabled(bundle_type: str, request: Request) -> No
 
 
 def _extract_latest_procurement_override_reason(notes: str) -> str | None:
-    text = str(notes or "").strip()
-    if not text:
-        return None
-    matches = list(
-        re.finditer(
-            r"\[override_reason ts=(?P<timestamp>[^\s]+) actor=(?P<actor>[^\]]+)\]\n(?P<reason>.*?)\n\[/override_reason\]",
-            text,
-            flags=re.DOTALL,
-        )
-    )
-    if not matches:
-        return None
-    reason = matches[-1].group("reason").strip()
-    return reason or None
+    from app.services.procurement_override import extract_latest_procurement_override_reason
+    return extract_latest_procurement_override_reason(notes)
 
 
 def _ensure_procurement_override_reason_for_downstream(
@@ -598,6 +596,8 @@ def _ensure_procurement_override_reason_for_downstream(
     *,
     tenant_id: str,
 ) -> None:
+    if getattr(request.app.state.service, "procurement_generation_resolver", None) is not None:
+        return  # The generation service checks the exact captured decision.
     if payload.bundle_type not in _PROCUREMENT_OVERRIDE_REQUIRED_BUNDLE_IDS:
         return
     project_id = payload.project_id or ""
@@ -648,6 +648,8 @@ def _mark_procurement_downstream_resolved_context(
     *,
     tenant_id: str,
 ) -> None:
+    if getattr(request.app.state.service, "procurement_generation_resolver", None) is not None:
+        return
     if payload.bundle_type not in _PROCUREMENT_OVERRIDE_REQUIRED_BUNDLE_IDS:
         return
     project_id = payload.project_id or ""
@@ -681,6 +683,8 @@ def _mark_decision_council_handoff_context(
     *,
     tenant_id: str,
 ) -> None:
+    if getattr(request.app.state.service, "procurement_generation_resolver", None) is not None:
+        return
     if payload.bundle_type not in _DECISION_COUNCIL_APPLIED_BUNDLE_IDS:
         return
     project_id = payload.project_id or ""
@@ -770,5 +774,6 @@ def _run_generate(req: GenerateRequest, request: Request) -> GenerateResponse:
             "procurement_review_operational_approval", False
         ),
         decision_evidence_refs=metadata.get("decision_evidence_refs", []),
+        source_procurement_binding=metadata.get("source_procurement_binding"),
         docs=_build_generated_docs_response(result["docs"], result.get("raw_bundle")),
     )

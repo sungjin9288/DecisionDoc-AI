@@ -1,0 +1,83 @@
+{
+  "schema_version": "decisiondoc.future_feature_gate.v1",
+  "gate_id": "procurement-requirement-applicability",
+  "title": "Source-bound requirement applicability annotations",
+  "target_user": "A session-bound project administrator and assigned reviewer who must distinguish inapplicable requirements from missing evidence",
+  "observed_problem": "The PRD mentions not_applicable, but current checklist items represent broad categories without requirement-scoped applicability evidence, and package conversion defaults unrecognized statuses to ready.",
+  "evidence": [
+    {
+      "kind": "repository",
+      "reference": "app/schemas/procurement.py:ProcurementChecklistItem",
+      "observation": "The current model has category/status/evidence but no requirement applicability assessment or immutable actor/source binding."
+    },
+    {
+      "kind": "repository",
+      "reference": "app/services/procurement_decision_package/package_builder.py:_package_checklist_status",
+      "observation": "Only blocked and action_needed/unknown are explicitly mapped; the fallback is ready."
+    },
+    {
+      "kind": "repository",
+      "reference": "app/dependencies.py:require_session_bound_admin",
+      "observation": "An existing session-bound administrator guard rejects Ops-key-only access and can be reused for explicit applicability authorship."
+    },
+    {
+      "kind": "repository",
+      "reference": "docs/superpowers/specs/2026-09-21-procurement-opportunity-and-applicability-design.md:section 7",
+      "observation": "Proposes evidence-bound requirement annotations rather than excluding whole categories or bypassing filters. Depends on approved opportunity identity integration."
+    }
+  ],
+  "current_workaround": "Keep uncertainty as action_needed/unknown and explain non-applicability in prose; it is not a structured source-bound assessment.",
+  "desired_outcome": "Record and export a traceable human applicability judgment for an individual requirement without changing business approval, score or mandatory filters.",
+  "acceptance_criteria": [
+    "Keep all ten category rows; add stable child requirement identity and explicit applies/not_applicable/unknown annotations, initially unknown.",
+    "Only current session-bound administrators may author, change or retract annotations; API/Ops keys alone and unassigned members cannot write.",
+    "N/A requires rationale, exact current source snapshot hash and quote range plus server-derived actor/time; absence of text is not evidence of non-applicability.",
+    "Reject N/A where relevant server-mapped hard filters fail or remain unknown; preserve blocking state, scores, recommendation and false operational authority.",
+    "Changing source makes prior annotation stale and current applicability unknown; changing an annotation invalidates dependent review/Council/document freshness.",
+    "Retain every prior annotation and existing package byte sequence; expose explicit applicability in a versioned package format without N/A-to-ready fallback.",
+    "Local/fake-S3 tests cover wrong scope, missing evidence, duplicate operations, revision races, stale sources and export round trips before exposing UI writes."
+  ],
+  "affected_boundaries": [
+    "Procurement requirement/applicability schemas and versioned decision storage",
+    "Session-bound project requirement annotation routes using existing administrator authentication",
+    "Checklist source binding, evidence history and decision freshness",
+    "Package schema/version validators, generation context and HTML/Markdown/DOCX renderers",
+    "Procurement browser requirement controls and focused local/API/browser verification"
+  ],
+  "authority_scope": {
+    "review_only": true,
+    "allowed_effects": [
+      "After scoped approval, implement and verify only isolated local and fake-S3 workflows described by the candidate design",
+      "Preserve existing snapshots, completed packages, receipts and unrelated dirty changes"
+    ],
+    "excluded_effects": [
+      "Modify real user DATA_DIR contents or perform an unapproved migration",
+      "Invoke live G2B, AWS, providers, training, deployment or publication",
+      "Commit, push, install dependencies, change credentials or grant operational authority"
+    ],
+    "separate_approval_required_for": [
+      "Real-data migration and production rollout",
+      "External service calls, paid execution, deployment, commit or push"
+    ]
+  },
+  "local_verification": [
+    {
+      "command": "python3 -m pytest -q tests/test_procurement_decision_service.py tests/test_procurement_decision_package_builder.py tests/test_procurement_review_authorization.py tests/test_procurement_bundle_handoff.py tests/test_procurement_summary_ui.py",
+      "proves": "Existing recommendation, package, access and rendering regression boundaries; isolate sync browser tests if the selected runner requires it."
+    },
+    {
+      "command": "python3 -m pytest -q tests/test_procurement_requirement_applicability.py",
+      "proves": "Planned new test file: source/actor binding, hard-filter non-bypass, local/fake-S3 revision conflict, history and versioned export semantics. Not implemented or run."
+    },
+    {
+      "command": "python3 -m pytest -q -p pytest_playwright.pytest_playwright tests/e2e/test_procurement_requirement_applicability.py --browser chromium",
+      "proves": "Planned new test file: real local administrator annotation, assignee read-only inspection, source change and package reload across desktop/mobile. Not implemented or run."
+    }
+  ],
+  "decision": {
+    "status": "approved",
+    "rationale": "The repository operator accepted the linked design and local/fake-S3 scope with '좋아 이어서 완벽하게 계획 세워서 진행하자' after the explicit design approval request. Proceed in the current task; real-data migration and all excluded effects remain unauthorized.",
+    "decided_by": "repository-operator",
+    "decided_at": "2026-09-21T12:09:24Z"
+  }
+}

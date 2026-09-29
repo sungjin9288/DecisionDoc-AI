@@ -55,6 +55,15 @@ AUDIT_RULES: dict[tuple[str, str], str] = {
     ("POST", "/projects/{id}/imports/g2b-opportunity"): "procurement.import",
     ("POST", "/projects/{id}/procurement/evaluate"): "procurement.evaluate",
     ("POST", "/projects/{id}/procurement/recommend"): "procurement.recommend",
+    ("GET", "/projects/{id}/procurement/opportunities"): "procurement.opportunities_view",
+    ("GET", "/projects/{id}/procurement/opportunities/{id}"): "procurement.opportunity_view",
+    ("POST", "/projects/{id}/procurement/selection"): "procurement.select",
+    ("POST", "/projects/{id}/procurement/opportunities/{id}/evaluate"): "procurement.evaluate",
+    ("POST", "/projects/{id}/procurement/opportunities/{id}/recommend"): "procurement.recommend",
+    ("GET", "/projects/{id}/procurement/opportunities/{id}/requirements"): "procurement.requirement_list",
+    ("GET", "/projects/{id}/procurement/opportunities/{id}/requirements/sources"): "procurement.requirement_sources",
+    ("POST", "/projects/{id}/procurement/opportunities/{id}/requirements"): "procurement.requirement_create",
+    ("POST", "/projects/{id}/procurement/opportunities/{id}/requirements/{id}/applicability"): "procurement.requirement_annotate",
     ("POST", "/projects/{id}/procurement/review-packet"): "procurement.review_packet_export",
     ("GET", "/procurement/reviews"): "procurement.review_inbox_view",
     ("GET", "/projects/{id}/decision-evidence-map"): "procurement.review_evidence_map_view",
@@ -508,6 +517,14 @@ def _append_audit_entries(
             detail["error_code"] = procurement_error_code
         if procurement_project_id:
             detail["project_id"] = procurement_project_id
+        for field in (
+            "procurement_decision_id", "procurement_decision_revision", "procurement_selection_revision",
+            "procurement_operation_id", "procurement_request_sha256",
+            "procurement_expected_decision_revision", "procurement_expected_selection_revision",
+        ):
+            value = getattr(request.state, field, None)
+            if value is not None:
+                detail[field] = value
         if bundle_type:
             detail["bundle_type"] = bundle_type
         if procurement_operation:

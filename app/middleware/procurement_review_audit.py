@@ -33,6 +33,7 @@ def procurement_review_audit_network(
 def _is_procurement_review_action(action: str) -> bool:
     return (
         action.startswith("procurement.review")
+        or action.startswith("procurement.requirement_")
         or action
         in {
             "procurement.guided_review_handoff_download",

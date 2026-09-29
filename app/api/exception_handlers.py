@@ -25,6 +25,7 @@ from app.storage.base import StorageFailedError
 from app.storage.generation_export_source_store import GenerationExportSourceStoreError
 from app.storage.usage_store import UsageStoreError
 from app.services.validator import DocumentValidationError
+from app.services.generation.procurement_source import ProcurementGenerationError
 
 _log = logging.getLogger("decisiondoc.api.errors")
 
@@ -51,6 +52,15 @@ def _error_response(
 
 
 def install_exception_handlers(app: FastAPI) -> None:
+    @app.exception_handler(ProcurementGenerationError)
+    async def procurement_generation_handler(request: Request, exc: ProcurementGenerationError):
+        return _error_response(
+            request,
+            code=exc.code,
+            message="Procurement generation source could not be validated.",
+            status_code=exc.status_code,
+        )
+
     @app.exception_handler(GenerationExportSourceStoreError)
     async def generation_export_source_handler(
         request: Request,

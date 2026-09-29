@@ -16,7 +16,6 @@ from app.services.procurement_decision_package.json_helpers import (
 )
 from app.services.procurement_decision_package.review_packet import (
     MAX_PACKET_SIZE_BYTES,
-    PACKET_SCHEMA_VERSION,
     _write_zip_entry,
     verify_procurement_review_packet,
 )
@@ -196,6 +195,11 @@ def build_procurement_reviewed_package(
 ) -> tuple[bytes, dict[str, Any]]:
     """Return a deterministic audit envelope for a completed review."""
     context = _review_context(packet_content, receipt, receipt_content)
+    verify_procurement_review_packet(
+        packet_content,
+        expected_tenant_id=expected_tenant_id,
+        expected_project_id=expected_project_id,
+    )
     attestation_content: bytes | None = None
     if reviewer_attestation is not None:
         tenant_id, project_id, reviewer_user_id = _require_attestation_scope(
@@ -321,7 +325,7 @@ def _validate_manifest(
     expected_source = {
         "packet_sha256": _sha256(packet_content),
         "packet_size_bytes": len(packet_content),
-        "packet_schema_version": PACKET_SCHEMA_VERSION,
+        "packet_schema_version": packet["schema_version"],
         "receipt_sha256": _sha256(receipt_content),
         "receipt_size_bytes": len(receipt_content),
         "receipt_schema_version": REVIEW_RECEIPT_SCHEMA_VERSION,
@@ -369,6 +373,11 @@ def verify_procurement_reviewed_package(
     """Verify outer membership, source hashes, completed review, and authority."""
     entries = _read_entries(content)
     packet_content = entries[REVIEWED_PACKAGE_PACKET_NAME]
+    packet_verification = verify_procurement_review_packet(
+        packet_content,
+        expected_tenant_id=expected_tenant_id,
+        expected_project_id=expected_project_id,
+    )
     receipt_content = entries[REVIEWED_PACKAGE_RECEIPT_NAME]
     receipt = _load_json_object(
         receipt_content,
@@ -430,5 +439,10 @@ def verify_procurement_reviewed_package(
             reviewer_identity_bound=True,
             reviewer_session_bound=True,
             reviewer_attestation=attestation,
+        )
+    if "source_binding" in packet_verification:
+        result.update(
+            source_binding=packet_verification["source_binding"],
+            source_bytes_verified=False,
         )
     return result
