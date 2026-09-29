@@ -1,11 +1,113 @@
 # DecisionDoc AI Product Execution Plan
 
-Updated: 2026-09-04
+Updated: 2026-09-05
 
 This document translates [DecisionDoc AI Product Direction](./product_direction.md) into an execution plan. It is an internal planning document and does not claim production readiness, customer adoption, measured business impact, or autonomous approval capability.
 
 Current completion/readiness is owned only by the [Development Plan — Current
 Completion/Readiness Snapshot](./development-plan.md#0-current-completionreadiness-snapshot).
+
+## 0. Current Local Completion Goal
+
+2026-09-14 priority update: the user approved the
+Planned Feature Completion Design (`docs/superpowers/specs/2026-09-14-planned-feature-completion-design.md`).
+Prioritize generation/edit/save/reopen/export, then style reuse, review, and
+wider planned workflow reconciliation. The first explicit-empty-edit correction
+and its focused verification are recorded in that design. The separately approved
+edited-copy save slice (`docs/superpowers/specs/2026-09-14-edited-project-document-save-design.md`)
+now has local save/reload/download and original-preservation verification.
+The separately approved local style example import (`docs/superpowers/specs/2026-09-15-local-style-example-import-design.md`)
+now has source-text import/reload and generation-prompt verification, without
+provider analysis or model training.
+This does not mark all product workflows complete. The checklist below preserves the
+earlier review-completion scope; it is not a checklist of all product features.
+
+이번 Goal은 **전체 설계를 현재 코드와 맞추고, 승인된 generated-document review
+completion의 local/fake-S3 구현과 검증을 마무리하는 것**이다. 전체 제품의 운영
+완료나 새 기능의 포괄 승인이 아니다. 설계 기준은
+[Local-First Product Design](./architecture.md#local-first-product-design)이다.
+
+기존 30/60/90-day 항목에는 이미 구현된 작업이 포함되어 있다. 아래의 의존 순서가
+현재 실행 순서이며, 이후 numbered sections는 제품 방향과 과거 실행 근거로
+보존한다. 새 phase 번호나 handoff wrapper를 추가하는 것은 제품 진척으로 세지 않는다.
+
+### 현재 Goal 체크리스트
+
+- [x] 실제 branch/dirty diff, 승인된 completion gate, source/storage/browser 계약 확인.
+- [x] Verifier의 JSON 타입 혼동, 잘못된 decision, expected packet size 누락을 실패 테스트로 재현하고 보완.
+- [x] 기존 문서에 제품 설계, 상태/권한 경계, dependency-ordered 계획 통합.
+- [x] 관련 local/fake-S3/browser regression, gate, lint, metrics, portfolio 정합성 검증.
+- [x] 현재 결과와 잔여 human/external evidence를 canonical snapshot에 구분해 기록.
+
+### 의존 순서
+
+| 순서 | 사용자에게 남는 결과 | 선행 조건 | 완료 기준 / 현재 범위 |
+|---|---|---|---|
+| A. Approved completion 안정화 | 작성자 → 담당자 → 완료 ZIP 흐름의 검증된 구현 | 기존 approved completion gate | integrity regressions GREEN, API/storage/browser 증거; 이 Goal에서 수행 |
+| B. 다운로드 후 독립 검증 | 서버 없이 완료 ZIP의 내부 무결성을 확인하는 CLI | A + 별도 candidate admission | 2026-09-05 후속 승인에 따라 구현; 아래 실행 체크리스트와 canonical snapshot 기준 |
+| C. 실제 검토자 사용성 확인 | 사람이 자료·결정·불확실성·비승인 경계를 이해하는지 관측 | A; B는 독립 CLI 검수가 필요할 때만 선행 | local synthetic-data UAT의 실제 수행자 결과; 아직 미실행 |
+| D. 관측된 결함만 개선 | UAT에서 막힌 동작 해소 | C의 재현 가능한 observation | 기존 승인 계약의 버그는 regression, 새 동작은 새 gate; 범용 기능 확장 제외 |
+| E. Local pilot 인계 | 설치 전제, 사용 흐름, 검증 명령과 한계가 일치하는 전달물 | 필요한 A-D 완료 | 미해결 blocker 표시, local runbook 검수; 배포/공개 아님 |
+| F. 외부 실증 | 실제 provider/G2B/cloud 환경의 별도 증거 | 비용/데이터/환경별 명시 승인 | M1/M2/M6 각각의 canonical proof; 현재 보류 |
+
+기간을 임의로 확정하지 않는다. 각 단계는 검증 가능한 결과로 종료하고, 실패나
+scope drift가 생기면 원인과 남은 조건을 기록한다. 이전 자동화 Goal이나
+Codex-Orca routing은 재가동하지 않고 현재 Codex task에서 진행한다.
+
+### Reviewed-Package Verifier CLI
+
+2026-09-05 후속 실행: 사용자가 앞서 제시한 CLI·회귀 테스트·관련 문서의 완성을
+승인했다. Draft SHA-256 `d44ffb960c266ab5f1bb525e88596238184b36a27ed4f8bb3c3d048efb7dce22`에
+결속해 gate decision을 기록했다. 기존 completion Goal과 구분되는 후속 local 구현이다.
+
+- [x] Exact draft와 기존 verifier bytes 확인, 사용자 승인 기록.
+- [x] CLI 계약 실패 재현과 bounded read-only 구현.
+- [x] 변조·입출력·정보 노출·무변경 CLI 전용 회귀 검증.
+- [x] Usage, canonical snapshot, metrics와 portfolio 동기화.
+
+Local 구현과 관련 회귀 검증까지 완료했다. 상세 명령·결과는 canonical snapshot의
+Reviewed-Package Verifier CLI 절에 기록한다. 다음 남은 단계는 실제 검토자의
+synthetic-data UAT이며, 이 CLI의 자동 검증으로 대신 완료 처리하지 않는다.
+
+승인 전 repository evidence: `scripts/verify_generation_export_packet.py`는 원본 packet만
+검증했고, 완료 ZIP의 verifier는 `app/storage/generated_document_review_models.py`의
+Python 함수로만 노출되어 있었다. 다운로드한 완료 ZIP을 검증하려면 Python
+호출을 직접 작성해야 했다. 이는 코드로 확인한 사용 경로의 공백이지 실제 고객의
+불편, 수요 또는 사용률을 측정한 결과는 아니다.
+
+Approved record: `docs/future_feature_gates/generated_document_reviewed_package_verifier.json`.
+계획 요청만으로 승격하지 않았고, 구체적 범위에 대한 후속 사용자 승인으로
+`approved` decision을 기록했다. 기존 terminal completion decision은 보존했다.
+
+구현은 새 read-only CLI `scripts/verify_generated_document_reviewed_package.py`와
+그 회귀 테스트로 제한한다. 기존 pure verifier를 호출하고 ZIP을 추출하지 않으며
+backend, app startup, credentials, provider 또는 network에 접근하지 않는다.
+성공 stdout은 versioned JSON의 status, packet/receipt/package SHA-256, package
+size, decision, `operational_approval=false`만 포함한다. Rationale, stable identity,
+tenant/project/title/operation/timestamp와 local path는 출력하지 않는다.
+실패는 payload를 노출하지 않는 stderr와 nonzero exit code로 닫는다.
+내부 검증 성공을 발급자 신원, 현재 source 또는 법적 승인으로 설명하지 않는다.
+
+검증 순서: CLI 미존재/실패 계약 RED → bounded file read와 pure
+verifier 호출 → 결정별 GREEN → tamper/size/type/IO failure → stdout redaction과
+read-only/hash 보존 → 관련 packet/review regression. Dependencies나 새 API/UI는
+추가하지 않는다. CLI와 전용 test 파일은 후속 승인 이후에 추가했다. macOS/Linux의
+`O_NOFOLLOW`와 `O_NONBLOCK`으로 입력을 열고 descriptor의 regular-file 여부와
+읽기 전후 크기를 확인한다. 안전한 open flag가 없는 플랫폼은 fail closed한다.
+기존 verifier가 간접 참조하는 Provider ABC는 타입 정의만 import하며, concrete
+provider/factory, backend, `.env`와 AWS SDK import 없이 동작하는지 별도 process에서 검사한다.
+
+### 완료와 전달 규칙
+
+Local technical completion, human UAT, external readiness는 서로 다른 상태다.
+Mock은 구조와 흐름을 검증하지만 실제 생성 품질을 증명하지 않는다. Fake-S3는
+storage 계약의 테스트이며 live AWS 결과가 아니다. CLI의 내부 무결성 검증은
+실제 사람의 UAT나 출력 문서의 내용·레이아웃 검수를 대체하지 않는다.
+
+현재 Goal에는 commit/push가 필요조건이 아니다. 별도 명시 요청이 생기면 서로
+의존하는 completion 코드·tests·spec·snapshot·README/portfolio를 하나의 단위로
+묶어 검토하고, 후속 candidate 구현은 별도 단위로 묶는다. 각 테스트 실행마다
+commit하지 않는다. Push/merge 전에는 실제 CI/CD trigger와 외부 효과를 확인한다.
 
 ## 1. Execution Goal
 
