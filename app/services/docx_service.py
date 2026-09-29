@@ -174,6 +174,9 @@ def _add_markdown_table(
     line_spacing_pct: int,
 ) -> None:
     table = doc.add_table(rows=len(rows) + 1, cols=len(headers))
+    table.rows[0]._tr.get_or_add_trPr().append(OxmlElement("w:tblHeader"))
+    for row in table.rows:
+        row._tr.get_or_add_trPr().append(OxmlElement("w:cantSplit"))
     try:
         table.style = "Table Grid"
     except Exception:
@@ -305,8 +308,9 @@ def _add_export_cover_page(
             align=WD_ALIGN_PARAGRAPH.CENTER,
         )
 
-    doc.add_paragraph()
     heading = doc.add_paragraph()
+    heading.paragraph_format.space_before = Pt(8)
+    heading.paragraph_format.keep_with_next = True
     heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
     heading_run = heading.add_run("문서 구성")
     heading_run.bold = True
@@ -321,10 +325,12 @@ def _add_export_cover_page(
             font_name,
             font_size_pt,
         )
-        _set_line_spacing(line, line_spacing_pct)
+        _set_line_spacing(line, 120)
+        line.paragraph_format.space_after = Pt(4)
 
-    doc.add_paragraph()
     summary_heading = doc.add_paragraph()
+    summary_heading.paragraph_format.space_before = Pt(8)
+    summary_heading.paragraph_format.keep_with_next = True
     summary_heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
     summary_run = summary_heading.add_run("핵심 검토 포인트")
     summary_run.bold = True
@@ -337,6 +343,9 @@ def _add_export_cover_page(
     _set_run_font(package_note_run, font_name, font_size_pt - 0.1)
 
     table = doc.add_table(rows=len(summaries) + 1, cols=3)
+    table.rows[0]._tr.get_or_add_trPr().append(OxmlElement("w:tblHeader"))
+    for row in table.rows:
+        row._tr.get_or_add_trPr().append(OxmlElement("w:cantSplit"))
     try:
         table.style = "Table Grid"
     except Exception:
@@ -381,8 +390,11 @@ def _add_export_cover_page(
             font_size_pt=font_size_pt,
             line_spacing_pct=line_spacing_pct,
         )
+    for row in table.rows:
+        for cell in row.cells:
+            for paragraph in cell.paragraphs:
+                paragraph.paragraph_format.space_after = Pt(0)
 
-    doc.add_page_break()
 
 
 def _add_doc_section_intro(
@@ -401,6 +413,7 @@ def _add_doc_section_intro(
     section_items = [item for item in section_hint.split(" · ") if item]
     metric_items = [item for item in metrics.split(" / ") if item]
     badge = doc.add_paragraph()
+    badge.paragraph_format.page_break_before = True
     badge.alignment = WD_ALIGN_PARAGRAPH.LEFT
     badge_run = badge.add_run(f"문서 {index:02d} / {total:02d}")
     badge_run.bold = True
@@ -744,7 +757,7 @@ def build_docx(
         )
 
     for i, d in enumerate(docs):
-        if i > 0:
+        if i > 0 and opts and opts.is_government_format:
             doc.add_page_break()
         if not (opts and opts.is_government_format):
             summary = summaries[i]

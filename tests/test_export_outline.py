@@ -1,4 +1,23 @@
 from app.services.export_outline import presentation_points, summarize_export_docs
+from app.services.export_labels import humanize_doc_type
+
+
+def test_core_document_export_labels_preserve_ids_and_existing_fallbacks():
+    labels = {
+        "adr": "기술 의사결정 기록 (ADR)",
+        "onepager": "한 페이지 요약",
+        "eval_plan": "평가 계획",
+        "ops_checklist": "운영 체크리스트",
+    }
+    docs = [{"doc_type": key, "markdown": "# Title\n\nBody"} for key in labels]
+    summaries = summarize_export_docs(docs)
+    for doc, summary in zip(docs, summaries):
+        assert summary["label"] == labels[doc["doc_type"]]
+        assert labels[doc["doc_type"]] == humanize_doc_type(doc["doc_type"])
+    assert [doc["doc_type"] for doc in docs] == list(labels)
+    assert humanize_doc_type("business_understanding") == "사업 이해"
+    assert humanize_doc_type("future_document") == "Future Document"
+    assert humanize_doc_type("") == "문서"
 
 
 def test_presentation_points_split_long_sentence_into_clauses() -> None:
