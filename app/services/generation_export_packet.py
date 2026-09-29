@@ -13,10 +13,16 @@ from app.services.docx_service import build_docx
 from app.services.excel_service import build_excel
 from app.services.hwp_service import build_hwp
 from app.services.pptx_service import build_pptx_from_docs
+from app.services.procurement_document_binding import (
+    normalize_procurement_document_binding,
+    source_binding_from_documents,
+)
 
 
 PACKET_SCHEMA = "decisiondoc.generate_export_review_packet.v1"
+PACKET_SCHEMA_V2 = "decisiondoc.generate_export_review_packet.v2"
 PERSISTED_PACKET_SCHEMA = "decisiondoc.generated_document_review_packet.v1"
+PERSISTED_PACKET_SCHEMA_V2 = "decisiondoc.generated_document_review_packet.v2"
 MANIFEST_PATH = "export_packet_manifest.json"
 FORMAT_ORDER = ("docx", "pdf", "xlsx", "hwp", "pptx")
 ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
@@ -193,17 +199,25 @@ async def build_generation_export_packet(
     """Convert every requested artifact in memory, then self-verify the ZIP."""
     if not all(isinstance(value, str) and value for value in (title, tenant_id, request_id)):
         raise ExportPacketBuildError("source binding is invalid")
+    try:
+        source_procurement_binding = source_binding_from_documents(
+            docs,
+            tenant_id=tenant_id,
+        )
+    except ValueError as exc:
+        raise ExportPacketBuildError("procurement source binding is invalid") from exc
     return await _build_export_packet(
         docs=docs,
         title=title,
         formats=formats,
-        schema=PACKET_SCHEMA,
+        schema=PACKET_SCHEMA_V2 if source_procurement_binding else PACKET_SCHEMA,
         packet_persisted=False,
         source={
             "request_id": request_id,
             "tenant_id": tenant_id,
             "title": title,
         },
+        source_procurement_binding=source_procurement_binding,
     )
 
 
@@ -218,6 +232,7 @@ async def build_generated_document_review_packet(
     bundle_id: str,
     document_source_sha256: str,
     formats: str | Sequence[str],
+    source_procurement_binding: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a deterministic packet bound to one persisted project document."""
     source = {
@@ -233,13 +248,38 @@ async def build_generated_document_review_packet(
         raise ExportPacketBuildError("source binding is invalid")
     if not _is_sha256(document_source_sha256):
         raise ExportPacketBuildError("source fingerprint is invalid")
+    try:
+        embedded_binding = source_binding_from_documents(
+            docs,
+            tenant_id=tenant_id,
+            project_id=project_id,
+        )
+        source_procurement_binding = normalize_procurement_document_binding(
+            source_procurement_binding,
+            tenant_id=tenant_id,
+            project_id=project_id,
+        )
+        if embedded_binding is not None and source_procurement_binding is None:
+            source_procurement_binding = embedded_binding
+        elif (
+            embedded_binding is not None
+            and embedded_binding != source_procurement_binding
+        ):
+            raise ValueError("procurement source binding mismatch")
+    except ValueError as exc:
+        raise ExportPacketBuildError("procurement source binding is invalid") from exc
     return await _build_export_packet(
         docs=docs,
         title=title,
         formats=formats,
-        schema=PERSISTED_PACKET_SCHEMA,
+        schema=(
+            PERSISTED_PACKET_SCHEMA_V2
+            if source_procurement_binding
+            else PERSISTED_PACKET_SCHEMA
+        ),
         packet_persisted=True,
         source=source,
+        source_procurement_binding=source_procurement_binding,
     )
 
 
@@ -251,6 +291,7 @@ async def _build_export_packet(
     schema: str,
     packet_persisted: bool,
     source: dict[str, str],
+    source_procurement_binding: dict[str, Any] | None,
 ) -> dict[str, Any]:
     canonical_formats = canonicalize_export_formats(formats)
 
@@ -291,6 +332,8 @@ async def _build_export_packet(
         "schema": schema,
         "source": source,
     }
+    if source_procurement_binding is not None:
+        manifest["source_procurement_binding"] = source_procurement_binding
     manifest_bytes = _canonical_json_bytes(manifest)
     packet = _build_zip(artifacts, manifest_bytes)
     if len(packet) > MAX_PACKET_SIZE_BYTES:
@@ -349,7 +392,9 @@ def _validate_manifest(manifest_bytes: bytes, entries: dict[str, bytes]) -> dict
         raise GenerationExportPacketError("packet manifest is not UTF-8 JSON") from exc
     if not isinstance(manifest, dict) or manifest_bytes != _canonical_json_bytes(manifest):
         raise GenerationExportPacketError("packet manifest is not canonical JSON")
-    if set(manifest) != {
+    schema = manifest.get("schema")
+    bound_schema = schema in {PACKET_SCHEMA_V2, PERSISTED_PACKET_SCHEMA_V2}
+    expected_manifest_keys = {
         "artifacts",
         "authority",
         "human_review_completed",
@@ -357,12 +402,16 @@ def _validate_manifest(manifest_bytes: bytes, entries: dict[str, bytes]) -> dict
         "review_only",
         "schema",
         "source",
-    }:
+    }
+    if bound_schema:
+        expected_manifest_keys.add("source_procurement_binding")
+    if set(manifest) != expected_manifest_keys:
         raise GenerationExportPacketError("packet manifest keys are invalid")
-    schema = manifest.get("schema")
     schema_rules = {
         PACKET_SCHEMA: (False, TRANSIENT_SOURCE_KEYS),
+        PACKET_SCHEMA_V2: (False, TRANSIENT_SOURCE_KEYS),
         PERSISTED_PACKET_SCHEMA: (True, PERSISTED_SOURCE_KEYS),
+        PERSISTED_PACKET_SCHEMA_V2: (True, PERSISTED_SOURCE_KEYS),
     }
     if schema not in schema_rules:
         raise GenerationExportPacketError("packet schema is invalid")
@@ -390,6 +439,27 @@ def _validate_manifest(manifest_bytes: bytes, entries: dict[str, bytes]) -> dict
         source["document_source_sha256"]
     ):
         raise GenerationExportPacketError("packet source fingerprint is invalid")
+    if schema == PERSISTED_PACKET_SCHEMA_V2 and not _is_sha256(
+        source["document_source_sha256"]
+    ):
+        raise GenerationExportPacketError("packet source fingerprint is invalid")
+    if bound_schema:
+        try:
+            source_procurement_binding = normalize_procurement_document_binding(
+                manifest.get("source_procurement_binding"),
+                tenant_id=source["tenant_id"],
+                project_id=(
+                    source["project_id"]
+                    if schema == PERSISTED_PACKET_SCHEMA_V2
+                    else None
+                ),
+            )
+            if source_procurement_binding is None:
+                raise ValueError("Bound packet requires procurement source binding")
+        except ValueError as exc:
+            raise GenerationExportPacketError(
+                "packet procurement source binding is invalid"
+            ) from exc
 
     artifacts = manifest.get("artifacts")
     if not isinstance(artifacts, list) or not 1 <= len(artifacts) <= len(FORMAT_ORDER):
@@ -497,6 +567,7 @@ def verify_generation_export_packet(content: bytes) -> dict[str, Any]:
         "packet_sha256": _sha256(content),
         "schema": manifest["schema"],
         "source": manifest["source"],
+        "source_procurement_binding": manifest.get("source_procurement_binding"),
         "verified": True,
     }
 
