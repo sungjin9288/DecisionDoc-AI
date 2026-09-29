@@ -2,8 +2,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
-from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -18,6 +16,17 @@ from app.routers.projects.procurement import (
     _raise_scoped_error,
     _resolve_scoped_procurement_context,
 )
+from app.routers.projects._procurement_review_helpers import (
+    _assert_requirements_current,
+    _canonical_json_bytes,
+    _capture_requirement_context,
+    _require_bound_reviewer,
+    _resolve_reviewer_assignment,
+    _review_packet_response,
+    _review_project_summary,
+    _reviewed_package_response,
+    _utc_now,
+)
 from app.routers.projects.procurement_review_shared import (
     ensure_project_exists,
     require_packet_sha256,
@@ -26,12 +35,8 @@ from app.schemas import (
     CompleteProjectProcurementReviewRequest,
     ExportProjectProcurementReviewPacketRequest,
 )
-from app.services.auth_service import get_request_user_store
 from app.schemas.procurement import ProcurementUUID
 from app.services.generation.procurement_source import ProcurementGenerationError
-from app.services.procurement_applicability_service import (
-    ProcurementApplicabilityConflict, ProcurementApplicabilityNotFound,
-)
 from app.storage.procurement_store import ProcurementDecisionStoreError
 from app.services.procurement_review_evidence import resolve_legacy_review_record
 from app.services.procurement_review_access import (
@@ -47,101 +52,6 @@ from app.services.procurement_review_access import (
 
 
 router = APIRouter()
-
-
-def _capture_requirement_context(request: Request, source):
-    service = getattr(request.app.state, "procurement_applicability_service", None)
-    if service is None:
-        raise ProcurementGenerationError("procurement_source_unavailable", status_code=503)
-    try:
-        captured = service.capture(
-            source.binding.project_id, tenant_id=source.binding.tenant_id,
-            decision_id=source.binding.decision_id,
-            expected_revision=source.binding.decision_revision,
-        )
-        if captured.binding != source.binding:
-            raise ProcurementApplicabilityConflict("Procurement source changed")
-        return captured
-    except (ProcurementApplicabilityConflict, ProcurementApplicabilityNotFound) as exc:
-        raise ProcurementGenerationError("procurement_context_changed") from exc
-    except ProcurementDecisionStoreError as exc:
-        raise ProcurementGenerationError("procurement_source_unavailable", status_code=503) from exc
-
-
-def _assert_requirements_current(request: Request, captured) -> None:
-    try:
-        request.app.state.procurement_applicability_service.assert_current(captured)
-    except (ProcurementApplicabilityConflict, ProcurementApplicabilityNotFound) as exc:
-        raise ProcurementGenerationError("procurement_context_changed") from exc
-    except ProcurementDecisionStoreError as exc:
-        raise ProcurementGenerationError("procurement_source_unavailable", status_code=503) from exc
-
-
-def _canonical_json_bytes(value: dict) -> bytes:
-    return (json.dumps(value, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
-
-
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
-
-
-def _reviewed_package_response(
-    *,
-    packet_sha256: str,
-    reviewed_package: bytes,
-    reviewed_package_sha256: str,
-    verification: dict,
-    reviewer_identity_bound: bool,
-) -> Response:
-    filename = f"procurement_reviewed_package_{packet_sha256[:12]}.zip"
-    return Response(
-        content=reviewed_package,
-        media_type="application/zip",
-        headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
-            "X-Content-Type-Options": "nosniff",
-            "X-DecisionDoc-Packet-SHA256": packet_sha256,
-            "X-DecisionDoc-Reviewed-Package-SHA256": reviewed_package_sha256,
-            "X-DecisionDoc-Review-Status": verification["reviewed_package_status"],
-            "X-DecisionDoc-Review-Decision": verification["decision"],
-            "X-DecisionDoc-Reviewer-Identity-Bound": str(
-                reviewer_identity_bound
-            ).lower(),
-            "X-DecisionDoc-Operational-Approval": "false",
-        },
-    )
-
-
-def _resolve_reviewer_assignment(
-    request: Request,
-    *,
-    tenant_id: str,
-    reviewer_username: str,
-) -> dict[str, str]:
-    """Resolve one active tenant reviewer to its stable account identity."""
-    user = get_request_user_store(
-        request,
-        tenant_id,
-    ).get_by_username(reviewer_username)
-    if (
-        user is None
-        or not user.is_active
-        or user.role.value not in {"admin", "member"}
-    ):
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "code": "procurement_reviewer_assignment_invalid",
-                "message": (
-                    "검토 담당자는 현재 tenant의 활성 관리자 또는 "
-                    "멤버여야 합니다."
-                ),
-            },
-        )
-    return {
-        "user_id": user.user_id,
-        "username": user.username,
-    }
 
 
 @router.get(
@@ -194,17 +104,7 @@ def list_procurement_review_inbox_endpoint(
     for record in page:
         project = project_by_id.get(record.project_id)
         item = review_summary(record, access)
-        item["project"] = (
-            {
-                "project_id": project.project_id,
-                "name": project.name,
-                "client": project.client,
-                "fiscal_year": project.fiscal_year,
-                "status": project.status,
-            }
-            if project is not None
-            else None
-        )
+        item["project"] = _review_project_summary(project)
         reviews.append(item)
 
     request.state.procurement_review_status = review_status
@@ -358,23 +258,7 @@ def export_project_procurement_review_packet_endpoint(
         review_status=review_record.review_status,
     )
     request.state.procurement_review_started = review_created
-    filename = f"procurement_review_packet_{packet.sha256[:12]}.zip"
-    return Response(
-        content=packet.content,
-        media_type="application/zip",
-        headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
-            "X-Content-Type-Options": "nosniff",
-            "X-DecisionDoc-Packet-SHA256": packet.sha256,
-            "X-DecisionDoc-Package-Id": packet.verification["package_id"],
-            "X-DecisionDoc-Artifact-Count": str(packet.verification["artifact_count"]),
-            "X-DecisionDoc-Review-Status": review_record.review_status,
-            "X-DecisionDoc-Reviewer-Identity-Bound": str(
-                review_record.reviewer_identity_bound
-            ).lower(),
-            "X-DecisionDoc-Operational-Approval": "false",
-        },
-    )
+    return _review_packet_response(packet=packet, review_record=review_record)
 
 
 @router.get(
@@ -489,33 +373,7 @@ def complete_project_procurement_review_endpoint(
                 "message": "검토 기록을 찾을 수 없습니다.",
             },
         )
-    assignment = review_record.reviewer_assignment
-    if (
-        not review_record.reviewer_identity_bound
-        or not isinstance(assignment, dict)
-    ):
-        request.state.error_code = "procurement_reviewer_identity_required"
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "procurement_reviewer_identity_required",
-                "message": (
-                    "기존 검토 기록은 담당자를 다시 지정한 뒤 "
-                    "완료할 수 있습니다."
-                ),
-            },
-        )
-    if assignment["user_id"] != request.state.user_id:
-        request.state.error_code = "procurement_reviewer_mismatch"
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "procurement_reviewer_mismatch",
-                "message": (
-                    "지정된 검토 담당자만 이 패킷을 완료할 수 있습니다."
-                ),
-            },
-        )
+    _require_bound_reviewer(request, review_record)
 
     if review_record.review_status == "completed":
         if (
@@ -860,20 +718,10 @@ def download_project_procurement_reviewed_package_endpoint(
         review_status=review_record.review_status,
         review_decision=review_record.decision,
     )
-    filename = f"procurement_reviewed_package_{packet_sha256[:12]}.zip"
-    return Response(
-        content=reviewed_package,
-        media_type="application/zip",
-        headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
-            "X-Content-Type-Options": "nosniff",
-            "X-DecisionDoc-Packet-SHA256": packet_sha256,
-            "X-DecisionDoc-Reviewed-Package-SHA256": review_record.reviewed_package_sha256 or "",
-            "X-DecisionDoc-Review-Status": verification["reviewed_package_status"],
-            "X-DecisionDoc-Review-Decision": verification["decision"],
-            "X-DecisionDoc-Reviewer-Identity-Bound": str(
-                review_record.reviewer_identity_bound
-            ).lower(),
-            "X-DecisionDoc-Operational-Approval": "false",
-        },
+    return _reviewed_package_response(
+        packet_sha256=packet_sha256,
+        reviewed_package=reviewed_package,
+        reviewed_package_sha256=review_record.reviewed_package_sha256 or "",
+        verification=verification,
+        reviewer_identity_bound=review_record.reviewer_identity_bound,
     )

@@ -1,6 +1,5 @@
 """Tenant-scoped persistence for packet-bound procurement reviews."""
 from __future__ import annotations
-import json
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
@@ -18,7 +17,7 @@ from app.storage.procurement_review_models import (
     safe_segment,
     serialize_review_record,
     sha256_content,
-    unique_object as _unique_object,
+    unique_object as _unique_object,  # noqa: F401 - legacy re-export
     upgrade_pending_reviewer_assignment,
     validate_record,
 )
@@ -26,6 +25,14 @@ from app.storage.procurement_review_query import (
     has_project_review_records,
     list_project_review_records,
     list_tenant_review_records,
+)
+from app.storage.procurement_review_records import (
+    record_from_raw,
+    require_record_scope,
+    review_prefix,
+    tenant_review_prefix,
+    validate_bound_packet,
+    validate_bound_reviewed_package,
 )
 from app.storage.state_backend import (
     StateBackend,
@@ -59,23 +66,8 @@ class ProcurementReviewStore:
     _require_sha256 = staticmethod(require_sha256)
     _from_dict = staticmethod(record_from_dict)
     _validate_record = staticmethod(validate_record)
-
-    def _review_prefix(
-        self,
-        *,
-        tenant_id: str,
-        project_id: str,
-        packet_sha256: str | None = None,
-    ) -> Path:
-        project = self._safe_segment(project_id, field="project_id")
-        prefix = self._tenant_review_prefix(tenant_id=tenant_id) / project
-        if packet_sha256 is not None:
-            prefix /= self._require_sha256(packet_sha256)
-        return prefix
-
-    def _tenant_review_prefix(self, *, tenant_id: str) -> Path:
-        tenant = require_tenant_id(tenant_id)
-        return Path("tenants") / tenant / "procurement_reviews"
+    _review_prefix = staticmethod(review_prefix)
+    _tenant_review_prefix = staticmethod(tenant_review_prefix)
 
     def _review_lock(
         self,
@@ -113,25 +105,7 @@ class ProcurementReviewStore:
             / filename
         )
 
-    @classmethod
-    def _require_record_scope(
-        cls,
-        record: ProcurementReviewRecord,
-        *,
-        tenant_id: str,
-        project_id: str,
-        packet_sha256: str,
-    ) -> tuple[str, str, str]:
-        tenant_id = require_tenant_id(tenant_id)
-        project_id = cls._safe_segment(project_id, field="project_id")
-        packet_sha256 = cls._require_sha256(packet_sha256)
-        if not isinstance(record, ProcurementReviewRecord) or (
-            record.tenant_id != tenant_id
-            or record.project_id != project_id
-            or record.packet_sha256 != packet_sha256
-        ):
-            raise ValueError("procurement review record does not match caller scope")
-        return tenant_id, project_id, packet_sha256
+    _require_record_scope = staticmethod(require_record_scope)
 
     def _record_path(
         self,
@@ -186,44 +160,7 @@ class ProcurementReviewStore:
                 "Invalid procurement review record"
             ) from exc
 
-    def _record_from_raw(
-        self,
-        raw: str | None,
-        *,
-        tenant_id: str,
-        project_id: str,
-        packet_sha256: str,
-    ) -> ProcurementReviewRecord | None:
-        if raw is None:
-            return None
-        if not raw.strip():
-            raise ProcurementReviewStoreError(
-                "Invalid procurement review record"
-            )
-        try:
-            payload = json.loads(raw, object_pairs_hook=_unique_object)
-            if not isinstance(payload, dict):
-                raise TypeError("procurement review record must be an object")
-            record = self._from_dict(payload)
-        except (
-            json.JSONDecodeError,
-            KeyError,
-            TypeError,
-            ValueError,
-            ProcurementReviewStoreError,
-        ) as exc:
-            raise ProcurementReviewStoreError(
-                "Invalid procurement review record"
-            ) from exc
-        if (
-            record.tenant_id != tenant_id
-            or record.project_id != project_id
-            or record.packet_sha256 != packet_sha256
-        ):
-            raise ProcurementReviewStoreError(
-                "Procurement review record identity is inconsistent"
-            )
-        return record
+    _record_from_raw = staticmethod(record_from_raw)
 
     def _load_record(
         self,
@@ -318,45 +255,10 @@ class ProcurementReviewStore:
                 packet_sha256=record.packet_sha256,
             )
 
-    @staticmethod
-    def _validate_bound_packet(
-        record: ProcurementReviewRecord, content: bytes,
-    ) -> dict[str, Any] | None:
-        from app.services.procurement_decision_package.review_packet import (
-            PACKET_SCHEMA_VERSION_V2,
-            PACKET_SCHEMA_VERSION_V3,
-            verify_bound_procurement_packet,
-        )
-        from app.services.procurement_review_evidence import (
-            validate_persisted_procurement_review_packet,
-        )
-
-        verified = verify_bound_procurement_packet(
-            content,
-            expected_tenant_id=record.tenant_id,
-            expected_project_id=record.project_id,
-        )
-        if (
-            verified is not None
-            or record.receipt["packet_schema_version"] in {PACKET_SCHEMA_VERSION_V2, PACKET_SCHEMA_VERSION_V3}
-        ):
-            validate_persisted_procurement_review_packet(record, content)
-        return verified
-
-    @staticmethod
-    def _validate_bound_reviewed_package(
-        record: ProcurementReviewRecord, content: bytes,
-    ) -> None:
-        from app.services.procurement_decision_package.review_packet import (
-            PACKET_SCHEMA_VERSION_V2,
-            PACKET_SCHEMA_VERSION_V3,
-        )
-        from app.services.procurement_review_evidence import (
-            validate_persisted_procurement_reviewed_package,
-        )
-
-        if record.receipt["packet_schema_version"] in {PACKET_SCHEMA_VERSION_V2, PACKET_SCHEMA_VERSION_V3}:
-            validate_persisted_procurement_reviewed_package(record, content)
+    _validate_bound_packet = staticmethod(validate_bound_packet)
+    _validate_bound_reviewed_package = staticmethod(
+        validate_bound_reviewed_package
+    )
 
     def prepare(
         self,
