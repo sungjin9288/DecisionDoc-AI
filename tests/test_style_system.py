@@ -13,6 +13,9 @@ Coverage (24 tests):
 """
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
 from fastapi.testclient import TestClient
 
 from tests.async_helper import run_async
@@ -22,13 +25,16 @@ from tests.async_helper import run_async
 
 
 def _make_client(tmp_path, monkeypatch) -> TestClient:
+    monkeypatch.setenv("PYTHON_DOTENV_DISABLED", "1")
     monkeypatch.setenv("DECISIONDOC_PROVIDER", "mock")
+    monkeypatch.setenv("DECISIONDOC_FREE_MODE", "0")
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.setenv("DECISIONDOC_TEMPLATE_VERSION", "v1")
     monkeypatch.setenv("DECISIONDOC_ENV", "dev")
     monkeypatch.setenv("DECISIONDOC_MAINTENANCE", "0")
     monkeypatch.delenv("DECISIONDOC_API_KEY", raising=False)
     monkeypatch.delenv("DECISIONDOC_API_KEYS", raising=False)
+    monkeypatch.setattr("app.main.load_dotenv", lambda *args, **kwargs: None)
     from app.main import create_app
 
     return TestClient(create_app())
@@ -277,6 +283,72 @@ def test_build_style_prompt_includes_sample_sentences(tmp_path, monkeypatch):
     assert "이를 위해 적극 추진합니다." in prompt
 
 
+def test_build_style_prompt_uses_two_most_recent_valid_relevant_examples(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    from app.services.style_analyzer import build_style_prompt
+    from app.storage.style_store import StyleExample, StyleStore, ToneGuide
+
+    store = StyleStore("t1")
+    profile = store.create("Recent", "", "u1")
+    store.update_tone_guide(profile.profile_id, ToneGuide(formality="합쇼체"))
+
+    def add_example(example_id, bundle_id, sentences, uploaded_at):
+        store.add_example(
+            profile.profile_id,
+            StyleExample(
+                example_id=example_id,
+                source_filename=f"{example_id}.txt",
+                bundle_id=bundle_id,
+                extracted_patterns=[],
+                sample_sentences=sentences,
+                uploaded_at=uploaded_at,
+                uploaded_by="u1",
+            ),
+        )
+
+    add_example(
+        "00000000-0000-4000-8000-00000000000a",
+        "proposal_kr",
+        ["A 문장입니다."],
+        "2026-01-01T00:00:00+00:00",
+    )
+    add_example(
+        "00000000-0000-4000-8000-00000000000b",
+        "proposal_kr",
+        ["", "B 첫 문장입니다.", "   ", "B 둘째 문장입니다."],
+        "2026-01-02T00:00:00+00:00",
+    )
+    add_example(
+        "00000000-0000-4000-8000-00000000000c",
+        None,
+        ["C 문장입니다."],
+        "2026-01-03T00:00:00+00:00",
+    )
+    add_example(
+        "00000000-0000-4000-8000-00000000000d",
+        "tech_decision",
+        ["다른 번들 문장입니다."],
+        "2026-01-04T00:00:00+00:00",
+    )
+    add_example(
+        "00000000-0000-4000-8000-00000000000e",
+        "proposal_kr",
+        ["", "   "],
+        "2026-01-05T00:00:00+00:00",
+    )
+
+    prompt = build_style_prompt(store.get(profile.profile_id), bundle_id="proposal_kr")
+
+    assert "A 문장입니다." not in prompt
+    assert "B 첫 문장입니다." in prompt
+    assert "B 둘째 문장입니다." in prompt
+    assert "C 문장입니다." in prompt
+    assert "다른 번들 문장입니다." not in prompt
+    assert prompt.index("B 첫 문장입니다.") < prompt.index("C 문장입니다.")
+
+
 def test_analyze_document_style_mock_provider(tmp_path):
     """analyze_document_style returns parsed dict from provider.generate_raw."""
     from app.services.style_analyzer import analyze_document_style
@@ -293,7 +365,7 @@ def test_analyze_document_style_mock_provider(tmp_path):
     }"""
 
     class FakeProvider:
-        async def generate_raw(self, prompt, max_tokens=None):
+        async def generate_raw(self, prompt, *, request_id, max_output_tokens=None):
             return expected_json
 
     content = b"Sample document text for style analysis."
@@ -303,19 +375,74 @@ def test_analyze_document_style_mock_provider(tmp_path):
     assert "우리는 추진합니다." in result["sample_sentences"]
 
 
-def test_analyze_document_style_json_parse_failure_returns_fallback(tmp_path):
-    """On JSON parse failure, analyze_document_style returns fallback dict."""
+@pytest.mark.parametrize(
+    "provider_result",
+    [
+        "This is not valid JSON at all!",
+        "[]",
+        '{"formality": [], "density": "보통", "perspective": "혼용", '
+        '"patterns": [], "sample_sentences": ["문장"], '
+        '"preferred_expressions": [], "avoid_expressions": [], "summary": "요약"}',
+        '{"formality": "혼용", "density": "보통", "perspective": "혼용", '
+        '"patterns": [], "sample_sentences": ["", "   "], '
+        '"preferred_expressions": [], "avoid_expressions": [], "summary": "요약"}',
+        RuntimeError("provider unavailable"),
+        TypeError("provider body failed"),
+    ],
+)
+def test_analyze_document_style_invalid_result_fails_once(provider_result):
     from app.services.style_analyzer import analyze_document_style
 
-    class BrokenProvider:
-        async def generate_raw(self, prompt, max_tokens=None):
-            return "This is not valid JSON at all!"
+    class StubProvider:
+        calls = 0
 
+        async def generate_raw(self, prompt, *, request_id, max_output_tokens=None):
+            self.calls += 1
+            if isinstance(provider_result, Exception):
+                raise provider_result
+            return provider_result
+
+    provider = StubProvider()
+    usage_totals = {}
     content = b"Some text."
-    result = run_async(analyze_document_style("doc.txt", content, None, BrokenProvider()))
-    assert result["formality"] == "혼용"
-    assert result["density"] == "보통"
-    assert result["patterns"] == []
+    with pytest.raises(ValueError, match="문체 분석에 실패했습니다"):
+        run_async(
+            analyze_document_style(
+                "doc.txt",
+                content,
+                None,
+                provider,
+                usage_totals=usage_totals,
+            )
+        )
+    assert provider.calls == 1
+    assert usage_totals == {"provider_calls": 1}
+
+
+def test_analyze_document_style_sync_type_error_is_not_retried():
+    from app.services.style_analyzer import analyze_document_style
+
+    class TypeErrorProvider:
+        calls = 0
+
+        def generate_raw(self, prompt, *, request_id, max_output_tokens=None):
+            self.calls += 1
+            raise TypeError("provider body failed")
+
+    provider = TypeErrorProvider()
+    usage_totals = {}
+    with pytest.raises(ValueError, match="문체 분석에 실패했습니다"):
+        run_async(
+            analyze_document_style(
+                "doc.txt",
+                b"Some text.",
+                None,
+                provider,
+                usage_totals=usage_totals,
+            )
+        )
+    assert provider.calls == 1
+    assert usage_totals == {"provider_calls": 1}
 
 
 def test_analyze_document_style_image_uses_attachment_fallback(tmp_path):
@@ -440,6 +567,265 @@ def test_api_delete_style_profile(tmp_path, monkeypatch):
     assert client.get(f"/styles/{pid}").status_code == 404
 
 
+def test_api_adds_reads_and_deletes_manual_style_example_without_provider(
+    tmp_path, monkeypatch
+):
+    client = _make_client(tmp_path, monkeypatch)
+    profile_id = client.post("/styles", json={"name": "Manual"}).json()["profile_id"]
+    monkeypatch.setattr(
+        "app.providers.factory.get_provider_for_bundle",
+        lambda *args, **kwargs: pytest.fail("manual style example must not call provider"),
+    )
+
+    response = client.post(
+        f"/styles/{profile_id}/examples",
+        json={
+            "label": "대표 제안 문장",
+            "sample_sentences": [
+                "사업 목표에 따라 단계별 실행계획을 수립합니다.",
+                "성과지표는 측정 가능한 기준으로 관리합니다.",
+            ],
+            "bundle_id": "proposal_kr",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["source_filename"] == "수동 예시: 대표 제안 문장"
+    example_id = payload["example_id"]
+    detail = client.get(f"/styles/{profile_id}").json()
+    assert detail["tone_guide"] == {
+        "formality": "",
+        "density": "",
+        "perspective": "",
+        "custom_rules": [],
+        "forbidden_words": [],
+        "preferred_words": [],
+    }
+    assert detail["examples"] == [
+        {
+            "example_id": example_id,
+            "source_filename": "수동 예시: 대표 제안 문장",
+            "bundle_id": "proposal_kr",
+            "extracted_patterns": [],
+            "sample_sentences": [
+                "사업 목표에 따라 단계별 실행계획을 수립합니다.",
+                "성과지표는 측정 가능한 기준으로 관리합니다.",
+            ],
+            "uploaded_at": detail["examples"][0]["uploaded_at"],
+            "uploaded_by": "anonymous",
+        }
+    ]
+
+    delete_response = client.delete(f"/styles/{profile_id}/examples/{example_id}")
+    assert delete_response.status_code == 200
+    assert client.get(f"/styles/{profile_id}").json()["examples"] == []
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"label": " ", "sample_sentences": ["유효한 문장입니다."]},
+        {"label": "예시", "sample_sentences": []},
+        {"label": "예시", "sample_sentences": ["문장"] * 9},
+        {"label": "예시", "sample_sentences": ["   "]},
+        {"label": "가" * 121, "sample_sentences": ["유효한 문장입니다."]},
+        {"label": "예시", "sample_sentences": ["가" * 1001]},
+        {
+            "label": "예시",
+            "sample_sentences": ["유효한 문장입니다."],
+            "unexpected": True,
+        },
+    ],
+)
+def test_api_rejects_invalid_manual_style_example_without_saving(
+    tmp_path, monkeypatch, payload
+):
+    client = _make_client(tmp_path, monkeypatch)
+    profile_id = client.post("/styles", json={"name": "Bounds"}).json()["profile_id"]
+
+    response = client.post(f"/styles/{profile_id}/examples", json=payload)
+
+    assert response.status_code == 422
+    assert client.get(f"/styles/{profile_id}").json()["examples"] == []
+
+
+def test_api_manual_style_example_cannot_cross_tenant(tmp_path, monkeypatch):
+    monkeypatch.setenv("JWT_SECRET_KEY", "manual-style-test-secret-key-32chars")
+    client = _make_client(tmp_path, monkeypatch)
+    from app.services.auth_service import create_access_token
+    from app.storage.style_store import StyleStore
+
+    tenant_a_store = StyleStore(
+        "tenant-a",
+        data_dir=tmp_path,
+        backend=client.app.state.state_backend,
+    )
+    profile = tenant_a_store.create("Tenant A", "", "owner-a")
+    tenant_b_token = create_access_token("user-b", "tenant-b", "member", "user-b")
+
+    response = client.post(
+        f"/styles/{profile.profile_id}/examples",
+        headers={
+            "Authorization": f"Bearer {tenant_b_token}",
+            "X-Tenant-ID": "tenant-b",
+        },
+        json={"label": "Foreign", "sample_sentences": ["저장되면 안 됩니다."]},
+    )
+
+    assert response.status_code == 403
+    assert tenant_a_store.get(profile.profile_id).examples == []
+
+
+def test_manual_style_examples_feed_recent_example_prompt_without_provider(
+    tmp_path, monkeypatch
+):
+    client = _make_client(tmp_path, monkeypatch)
+    profile_id = client.post("/styles", json={"name": "Prompt"}).json()["profile_id"]
+    monkeypatch.setattr(
+        "app.providers.factory.get_provider_for_bundle",
+        lambda *args, **kwargs: pytest.fail("manual style example must not call provider"),
+    )
+    for label in ("A", "B", "C"):
+        response = client.post(
+            f"/styles/{profile_id}/examples",
+            json={
+                "label": label,
+                "sample_sentences": [f"수동 {label} 문장입니다."],
+                "bundle_id": "proposal_kr",
+            },
+        )
+        assert response.status_code == 200
+
+    from app.services.style_analyzer import build_style_prompt
+    from app.storage.style_store import get_style_store
+
+    profile = get_style_store(
+        "system",
+        data_dir=tmp_path,
+        backend=client.app.state.state_backend,
+    ).get(profile_id)
+    prompt = build_style_prompt(profile, bundle_id="proposal_kr")
+    assert "수동 A 문장입니다." not in prompt
+    assert "수동 B 문장입니다." in prompt
+    assert "수동 C 문장입니다." in prompt
+
+
+def test_manual_style_example_ui_contract_and_escaping() -> None:
+    html = Path("app/static/index.html").read_text(encoding="utf-8")
+    render_start = html.index("function renderStyleDetail")
+    render_end = html.index("function wireStyleDetailActions", render_start)
+    render_source = html[render_start:render_end]
+    add_start = html.index("async function addManualStyleExample")
+    add_end = html.index("async function analyzeStyleDocuments", add_start)
+    add_source = html[add_start:add_end]
+
+    for element_id in (
+        "style-example-name",
+        "style-example-sentences",
+        "style-example-bundle",
+        "style-example-save",
+    ):
+        assert f'id="{element_id}"' in render_source
+    assert "escapeHtml(ex.source_filename || '')" in render_source
+    assert (
+        "escapeHtml(ex.bundle_id ? (_bundleNameMap[ex.bundle_id] || ex.bundle_id)"
+        in render_source
+    )
+    assert "escapeHtml(s || '')" in render_source
+    assert "if (saveButton.disabled) return;" in add_source
+    assert "saveButton.disabled = true;" in add_source
+    assert "sample_sentences: sampleSentences" in add_source
+    assert "styleDetailProfileId" in add_source
+    assert "loadStyleDetail(profileId, { isCurrent: isCurrentProfile })" in add_source
+
+
+def test_api_style_analysis_retains_successes_and_reports_failures(
+    tmp_path, monkeypatch
+):
+    client = _make_client(tmp_path, monkeypatch)
+    profile_id = client.post("/styles", json={"name": "Batch"}).json()["profile_id"]
+    valid_result = """{
+      "formality": "합쇼체",
+      "density": "상세",
+      "perspective": "기관명칭",
+      "patterns": ["~합니다"],
+      "sample_sentences": ["유효한 예시 문장입니다."],
+      "preferred_expressions": ["추진합니다"],
+      "avoid_expressions": [],
+      "summary": "공식 문체입니다."
+    }"""
+
+    class BatchProvider:
+        name = "style-test-stub"
+
+        def __init__(self):
+            self.results = iter((valid_result, "not-json"))
+
+        def generate_raw(self, prompt, *, request_id, max_output_tokens=None):
+            return next(self.results)
+
+    monkeypatch.setattr(
+        "app.providers.factory.get_provider_for_bundle",
+        lambda bundle_id, tenant_id: BatchProvider(),
+    )
+
+    response = client.post(
+        f"/styles/{profile_id}/analyze",
+        files=[
+            ("files", ("valid.txt", b"valid source", "text/plain")),
+            ("files", ("invalid.txt", b"invalid source", "text/plain")),
+        ],
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [item["filename"] for item in payload["analyzed"]] == ["valid.txt"]
+    assert payload["failed"] == [
+        {"filename": "invalid.txt", "error": "invalid.txt: 문체 분석에 실패했습니다."}
+    ]
+    assert payload["message"] == "1개 파일 분석 성공, 1개 실패"
+    detail = client.get(f"/styles/{profile_id}").json()
+    assert [item["source_filename"] for item in detail["examples"]] == ["valid.txt"]
+
+
+def test_api_mock_style_analysis_reports_failure_without_saving(
+    tmp_path, monkeypatch
+):
+    client = _make_client(tmp_path, monkeypatch)
+    profile_id = client.post("/styles", json={"name": "Mock"}).json()["profile_id"]
+
+    response = client.post(
+        f"/styles/{profile_id}/analyze",
+        files=[("files", ("sample.txt", b"sample source", "text/plain"))],
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["analyzed"] == []
+    assert payload["failed"] == [
+        {"filename": "sample.txt", "error": "sample.txt: 문체 분석에 실패했습니다."}
+    ]
+    assert payload["message"] == "0개 파일 분석 성공, 1개 실패"
+    assert client.get(f"/styles/{profile_id}").json()["examples"] == []
+
+
+def test_style_upload_ui_reports_success_and_failure_counts_honestly() -> None:
+    html = Path("app/static/index.html").read_text(encoding="utf-8")
+    start = html.index("async function analyzeStyleDocuments")
+    end = html.index("async function removeStyleExample", start)
+    source = html[start:end]
+
+    assert "3개 이상 업로드할수록 정확도가 높아집니다." not in html
+    assert "모델 자체를 학습시키지는 않습니다." in html
+    assert "const analyzed = Array.isArray(data.analyzed) ? data.analyzed : [];" in source
+    assert "const failed = Array.isArray(data.failed) ? data.failed : [];" in source
+    assert "analyzed.length" in source
+    assert "failed.length" in source
+    assert "분석 성공" in source
+    assert "분석 실패" in source
+
+
 # ── Style injection integration test ─────────────────────────────────────────
 
 
@@ -466,5 +852,50 @@ def test_style_injection_in_build_bundle_prompt(tmp_path, monkeypatch):
         bundle_spec = get_bundle_spec("tech_decision")
         prompt = build_bundle_prompt({"title": "테스트"}, bundle_spec)
         assert "합쇼체_UNIQUE_MARKER" in prompt
+    finally:
+        _current_tenant_id.value = None
+
+
+def test_recent_valid_style_examples_reach_bundle_prompt(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("DECISIONDOC_PROVIDER", "mock")
+
+    from app.domain.schema import _current_tenant_id, build_bundle_prompt
+    from app.storage.style_store import StyleExample, StyleStore, ToneGuide
+
+    store = StyleStore("style-example-integration")
+    profile = store.create("Test", "", "u1")
+    store.update_tone_guide(profile.profile_id, ToneGuide(formality="합쇼체"))
+    for suffix, sentence, uploaded_at in (
+        ("a", "통합 A 문장입니다.", "2026-01-01T00:00:00+00:00"),
+        ("b", "통합 B 문장입니다.", "2026-01-02T00:00:00+00:00"),
+        ("c", "통합 C 문장입니다.", "2026-01-03T00:00:00+00:00"),
+    ):
+        store.add_example(
+            profile.profile_id,
+            StyleExample(
+                example_id=f"00000000-0000-4000-8000-00000000000{suffix}",
+                source_filename=f"{suffix}.txt",
+                bundle_id="tech_decision",
+                extracted_patterns=[],
+                sample_sentences=[sentence],
+                uploaded_at=uploaded_at,
+                uploaded_by="u1",
+            ),
+        )
+
+    _current_tenant_id.value = "style-example-integration"
+    try:
+        from app.bundle_catalog.registry import get_bundle_spec
+
+        prompt = build_bundle_prompt(
+            {"title": "테스트"},
+            "v1",
+            bundle_spec=get_bundle_spec("tech_decision"),
+        )
+        assert "통합 A 문장입니다." not in prompt
+        assert "통합 B 문장입니다." in prompt
+        assert "통합 C 문장입니다." in prompt
+        assert prompt.index("통합 B 문장입니다.") < prompt.index("통합 C 문장입니다.")
     finally:
         _current_tenant_id.value = None

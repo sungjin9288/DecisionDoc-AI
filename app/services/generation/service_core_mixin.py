@@ -24,6 +24,10 @@ from app.services.generation.context_store import (
     _store_generation_context,
 )
 from app.services.generation.errors import EvalLintFailedError
+from app.services.generation.style_context import (
+    STYLE_SNAPSHOT_KEY,
+    resolve_style_snapshot,
+)
 from app.services.markdown_utils import (
     build_markdown_kv_table,
     build_markdown_table,
@@ -131,6 +135,22 @@ class GenerationCoreMixin:
             else:
                 _current_generation_state_backend.value = previous_backend
 
+    def resolve_style_snapshot(
+        self,
+        requirements: GenerateRequest,
+        *,
+        tenant_id: str,
+    ) -> dict[str, str | None]:
+        """Bind the current tenant's selected/default style without mutating it."""
+        tenant_id = require_tenant_id(tenant_id)
+        return resolve_style_snapshot(
+            style_profile_id=requirements.style_profile_id,
+            bundle_id=requirements.bundle_type,
+            tenant_id=tenant_id,
+            data_dir=self.data_dir,
+            state_backend=self.state_backend,
+        )
+
     def _generate_documents_for_tenant(
         self,
         requirements: GenerateRequest,
@@ -140,6 +160,7 @@ class GenerationCoreMixin:
     ) -> dict[str, Any]:
         bundle_id = str(uuid4())
         payload = requirements.model_dump(mode="json")
+        payload.pop("style_profile_id", None)
 
         # Seed thread-local context so it's available after generation.
         _generation_context.request_id = request_id
@@ -153,6 +174,11 @@ class GenerationCoreMixin:
         # Resolve bundle spec (defaults to tech_decision for backward compatibility).
         bundle_type = payload.get("bundle_type", "tech_decision") or "tech_decision"
         bundle_spec = get_bundle_spec(bundle_type)
+
+        payload[STYLE_SNAPSHOT_KEY] = self.resolve_style_snapshot(
+            requirements,
+            tenant_id=tenant_id,
+        )
 
         variant_key = os.getenv("DECISIONDOC_PROMPT_VARIANT", "")
         if variant_key:

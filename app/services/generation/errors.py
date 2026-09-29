@@ -13,6 +13,20 @@ class ProviderFailedError(Exception):
     pass
 
 
+class StyleProfileNotFoundError(Exception):
+    """Raised when an explicit style selection is unavailable to the tenant."""
+
+    def __init__(self) -> None:
+        super().__init__("Selected style profile was not found.")
+
+
+class StyleSnapshotInvalidError(Exception):
+    """Raised when private style snapshot data is not safe to consume."""
+
+    def __init__(self) -> None:
+        super().__init__("Style snapshot is invalid.")
+
+
 def iter_exception_chain(exc: BaseException) -> list[BaseException]:
     """Return the exception chain for *exc* following cause/context links."""
     chain: list[BaseException] = []

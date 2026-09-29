@@ -107,6 +107,7 @@ from app.schemas.finetune import (
     FineTuneTrainingTriggerRequest,
 )
 from app.schemas.messages_styles import (
+    CreateManualStyleExampleRequest,
     CreateStyleProfileRequest,
     EditMessageRequest,
     PostMessageRequest,
@@ -262,6 +263,7 @@ __all__ = [
     "UpdateUserRequest",
     "PostMessageRequest",
     "EditMessageRequest",
+    "CreateManualStyleExampleRequest",
     "CreateStyleProfileRequest",
     "UpdateToneGuideRequest",
     "UpdateKnowledgeMetadataRequest",

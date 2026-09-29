@@ -11,7 +11,11 @@ from dataclasses import asdict
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 
 from app.dependencies import get_tenant_id, get_user_id
-from app.schemas import CreateStyleProfileRequest, UpdateToneGuideRequest
+from app.schemas import (
+    CreateManualStyleExampleRequest,
+    CreateStyleProfileRequest,
+    UpdateToneGuideRequest,
+)
 
 router = APIRouter(tags=["styles"])
 
@@ -156,6 +160,7 @@ async def analyze_style_document(
 
     provider = get_provider_for_bundle(bundle_id or "proposal_kr", tenant_id)
     results = []
+    failures = []
 
     for f in files:
         raw = await f.read()
@@ -169,7 +174,8 @@ async def analyze_style_document(
                 usage_totals=usage_totals,
             )
         except ValueError as exc:
-            raise HTTPException(400, str(exc))
+            failures.append({"filename": f.filename, "error": str(exc)})
+            continue
         finally:
             if usage_totals.get("provider_calls", 0) > 0:
                 record_direct_provider_usage(
@@ -197,7 +203,11 @@ async def analyze_style_document(
             }
         )
 
-    return {"analyzed": results, "message": f"{len(results)}개 파일 분석 완료"}
+    return {
+        "analyzed": results,
+        "failed": failures,
+        "message": f"{len(results)}개 파일 분석 성공, {len(failures)}개 실패",
+    }
 
 
 @router.delete("/styles/{profile_id}/examples/{example_id}")
@@ -209,6 +219,36 @@ async def remove_style_example(request: Request, profile_id: str, example_id: st
     except ValueError as exc:
         raise HTTPException(404, str(exc))
     return {"message": "예시가 제거되었습니다."}
+
+
+@router.post("/styles/{profile_id}/examples")
+async def add_manual_style_example(
+    request: Request,
+    profile_id: str,
+    body: CreateManualStyleExampleRequest,
+):
+    """Add user-entered sample sentences without invoking a provider."""
+    from app.storage.style_store import StyleExample
+
+    style_store = _get_style_store(request)
+    if not style_store.get(profile_id):
+        raise HTTPException(404, "스타일 프로필을 찾을 수 없습니다.")
+
+    example = StyleExample(
+        example_id=str(_uuid.uuid4()),
+        source_filename=f"수동 예시: {body.label}",
+        bundle_id=body.bundle_id,
+        extracted_patterns=[],
+        sample_sentences=body.sample_sentences,
+        uploaded_at=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        uploaded_by=get_user_id(request),
+    )
+    style_store.add_example(profile_id, example)
+    return {
+        "example_id": example.example_id,
+        "source_filename": example.source_filename,
+        "message": "수동 스타일 예시가 저장되었습니다.",
+    }
 
 
 @router.delete("/styles/{profile_id}")

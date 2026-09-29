@@ -17,6 +17,43 @@ if TYPE_CHECKING:
 
 _log = logging.getLogger("decisiondoc.style")
 
+_ANALYSIS_STRING_FIELDS = ("formality", "density", "perspective", "summary")
+_ANALYSIS_LIST_FIELDS = (
+    "patterns",
+    "sample_sentences",
+    "preferred_expressions",
+    "avoid_expressions",
+)
+
+
+def _validate_analysis_result(result: object) -> dict:
+    if not isinstance(result, dict):
+        raise ValueError("Style analysis result must be an object")
+    for field in _ANALYSIS_STRING_FIELDS:
+        if not isinstance(result.get(field), str):
+            raise ValueError(f"Style analysis field {field} must be a string")
+    for field in _ANALYSIS_LIST_FIELDS:
+        values = result.get(field)
+        if not isinstance(values, list) or any(
+            not isinstance(value, str) for value in values
+        ):
+            raise ValueError(f"Style analysis field {field} must be a string list")
+
+    sample_sentences = [
+        sentence.strip()
+        for sentence in result["sample_sentences"]
+        if sentence.strip()
+    ]
+    if not sample_sentences:
+        raise ValueError("Style analysis must include a usable sample sentence")
+
+    validated = {
+        field: result[field]
+        for field in (*_ANALYSIS_STRING_FIELDS, *_ANALYSIS_LIST_FIELDS)
+    }
+    validated["sample_sentences"] = sample_sentences
+    return validated
+
 
 async def analyze_document_style(
     filename: str,
@@ -78,33 +115,25 @@ async def analyze_document_style(
 
     provider_attempted = False
     try:
-        try:
-            provider_attempted = True
-            result = provider.generate_raw(
-                prompt,
-                request_id="style-analysis",
-                max_output_tokens=800,
-            )
-        except TypeError:
-            result = provider.generate_raw(prompt, max_tokens=800)
+        provider_attempted = True
+        result = provider.generate_raw(
+            prompt,
+            request_id="style-analysis",
+            max_output_tokens=800,
+        )
         if inspect.isawaitable(result):
             result = await result
         # Strip markdown code fences if present
         result = re.sub(r"```(?:json)?\s*", "", result).strip()
         result = re.sub(r"```\s*$", "", result).strip()
-        return json.loads(result)
+        return _validate_analysis_result(json.loads(result))
     except Exception as exc:
-        _log.warning("[StyleAnalyzer] Analysis failed for %s: %s", filename, exc)
-        return {
-            "formality": "혼용",
-            "density": "보통",
-            "perspective": "혼용",
-            "patterns": [],
-            "sample_sentences": [],
-            "preferred_expressions": [],
-            "avoid_expressions": [],
-            "summary": "분석 실패",
-        }
+        _log.warning(
+            "[StyleAnalyzer] Analysis failed for %s (%s)",
+            filename,
+            type(exc).__name__,
+        )
+        raise ValueError(f"{filename}: 문체 분석에 실패했습니다.") from exc
     finally:
         if provider_attempted and usage_totals is not None:
             usage_totals["provider_calls"] = usage_totals.get("provider_calls", 0) + 1
@@ -134,12 +163,26 @@ def build_style_prompt(
     if not tone:
         return ""
 
+    examples = style_profile.examples or []
+    relevant = []
+    for example in examples:
+        if example.bundle_id and example.bundle_id != bundle_id:
+            continue
+        sample_sentences = [
+            sentence.strip()
+            for sentence in (example.sample_sentences or [])
+            if isinstance(sentence, str) and sentence.strip()
+        ]
+        if sample_sentences:
+            relevant.append((example, sample_sentences))
+    relevant = relevant[-2:]
+
     # Check if there's anything meaningful to inject
     has_content = any([
         tone.formality, tone.density, tone.perspective,
         tone.custom_rules, tone.preferred_words, tone.forbidden_words,
     ])
-    if not has_content and not style_profile.examples:
+    if not has_content and not relevant:
         return ""
 
     lines = ["=== 문체 및 스타일 지침 ==="]
@@ -161,17 +204,10 @@ def build_style_prompt(
     if tone.forbidden_words:
         lines.append(f"사용 금지: {', '.join(tone.forbidden_words)}")
 
-    # Inject up to 2 relevant style examples
-    examples = style_profile.examples or []
-    relevant = [
-        e for e in examples
-        if not e.bundle_id or e.bundle_id == bundle_id
-    ][:2]
-
     if relevant:
         lines.append("\n참고 문체 예시 (이 스타일을 따르세요):")
-        for ex in relevant:
-            for sent in (ex.sample_sentences or [])[:2]:
+        for _, sample_sentences in relevant:
+            for sent in sample_sentences[:2]:
                 lines.append(f"  예: {sent}")
 
     lines.append("=== 문체 지침 끝 ===")

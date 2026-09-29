@@ -1,6 +1,147 @@
 # 시험 계획서 및 결과서
 ## DecisionDoc AI v1.0 — GS인증 시험
 
+### Local Popup And Style Regression (2026-09-14)
+
+본문 SSE는 `complete` 이벤트 없이 EOF에 도달하면 생성 실패로 처리한다.
+`test_incomplete_generation_stream_recovers_without_success`는 빈 응답과 progress만
+포함한 응답에서 오류 표시, 진행/취소 UI 종료, 버튼 복구, 입력 보존과 결과 미표시를
+검사한 뒤 정상 mock 재생성을 확인한다. 실제 timeout·사용자 취소·부분 complete
+payload 검증이나 provider-side 취소를 보장하는 테스트는 아니다.
+
+알림은 같은 내용·종류가 현재 표시 중이면 중복 추가하지 않는다. 다른 메시지와
+오류는 유지하며 기존 5초 표시 시간은 중복 호출로 연장하지 않는다. 알림 영역은
+최대 320px/40dvh 높이 안에서 세로 스크롤되고 새 알림을 보이게 한다. 긴 문장은
+줄바꿈하며 다운로드 완료 문장과 작업 버튼은 분리한다. `tests/test_notification_ui.py`는
+중복 구분, 메시지 보존, 1280/390/320px 경계, 닫기·자동 종료, HTML 문자 표시와
+다운로드 후 비교 버튼을 검사한다. 이 임시 UI 알림은 저장된 audit 이력이 아니다.
+
+스타일 생성 modal은 하단 모바일 nav보다 위에 표시하고 불투명 배경과 viewport
+높이 제한, 내부 스크롤을 유지한다. Style lifecycle E2E는 1280x900, 390x844,
+390x420에서 modal 경계, 스타일/결과 화면의 가로 넘침과 DOCX 다운로드를 검사한다.
+Chromium viewport 검증이며 실제 모바일 기기·Safari·가상 키보드 검증은 아니다.
+E2E의 session-scoped Playwright plugin과 자체 `sync_playwright()` UI fixture는
+별도 pytest process로 실행한다. E2E를 먼저 실행한 같은 process에서 UI fixture를
+실행하면 이미 실행 중인 asyncio loop와 충돌할 수 있다.
+
+E2E `live_server`는 `DECISIONDOC_FREE_MODE=1`일 때 기본 `free` 계정을 유지하고
+실제 plan ID를 assert한다. 일반 모드에서만 기존 `enterprise` fixture를 사용한다.
+무료 모드 검증에는 아래 style lifecycle, `test_generate_from_documents_modal_flow`,
+`test_export_flow`와 `tests/test_free_mode.py`를 함께 실행한다. Free-mode flag를
+끄는 일반 API 회귀 테스트와 이 실행을 구분한다. 모두 mock/local 검증이며 실제
+로컬 LLM 설치·연결·내용 품질까지 검증하지 않는다.
+
+`tests/e2e/test_main_flow.py::test_manual_style_generation_and_edited_docx_download`는
+격리된 실제 uvicorn/Chromium에서 스타일 생성, 예시 저장, 생성 화면 복귀,
+브라우저 새로고침 후 같은 profile ID의 서버 재조회와 예시 문장 보존,
+선택 profile ID의 생성 요청 전달, 본문 편집 및 DOCX 다운로드를 검사한다.
+구성안 요청에 HTTP 422를 한 번 주입해 오류 표시, 생성 버튼 복구, 제목·목표·
+선택 스타일 보존과 성공 결과 미표시를 검사한다. 주입 해제 후 사용자의 새 클릭으로
+정상 생성·다운로드가 가능해야 한다. 스트리밍 중단·timeout 검증과는 구분한다.
+다운로드한 ZIP의 `word/document.xml`에서 편집 문장을 확인한다. 스타일 생성
+성공 시 제출한 modal만 제거하고 기존 문서/PDF 업로드 modal은 보존해야 한다.
+Mock 기반 자동 E2E이며 실제 AI의 문체 재현, model training, 사용자 계정 UAT나
+다운로드 문서의 시각적 품질을 보증하지 않는다.
+스타일 생성 요청 중에는 해당 창의 입력·생성·취소 버튼을 잠그고 같은 handler의
+중복 전송을 차단한다. HTTP/네트워크 오류 시 입력과 창을 유지하고 버튼을 복구하며
+자동 재전송하지 않는다. `test_style_creation_single_flight_and_failure_preserves_input`은
+성공과 두 오류 경로를 지연 응답으로 검사한다. 다중 탭과 응답 유실 후 사용자
+재시도의 서버 측 중복 생성 방지는 이 UI 보장에 포함되지 않는다.
+
+기본 문서 export label은 `adr` → `기술 의사결정 기록 (ADR)`, `onepager` →
+`한 페이지 요약`, `eval_plan` → `평가 계획`, `ops_checklist` → `운영 체크리스트`다.
+API doc_type과 파일 식별자는 유지한다. `tests/test_export_outline.py`에서 공통
+요약 label·입력 ID 보존·기존 fallback을, DOCX 테스트에서 표시 이름을 검사한다.
+일반 DOCX는 문서 시작 badge에 `page_break_before`를 적용한다. 표 뒤의 별도
+page-break 문단 때문에 빈 페이지가 추가되지 않는지 4종 묶음으로 렌더 검수한다.
+공문서 전용 page-break 경로는 유지한다.
+
+일반 DOCX 표지는 불필요한 빈 문단을 제거하고 목록·요약표 셀의 문단 간격만
+줄인다. 본문 글자 크기와 줄간격은 유지한다. 요약표의 반복 머리글, 행 분할 방지,
+셀의 paragraph after-spacing을 OOXML 테스트로 검사한다. 같은 기본 4종 합성
+샘플을 재렌더해 표지 1페이지와 본문 4페이지를 확인했다. 긴 제목·많은 문서가
+포함된 모든 표지를 1페이지로 제한하는 규칙은 아니다.
+
+DOCX Markdown table은 첫 행에 `w:tblHeader`, 각 행에 `w:cantSplit`을 설정한다.
+`tests/test_docx_endpoint.py`에서 해당 OOXML을 확인한다. Bundled LibreOffice로
+30행 합성 표를 렌더링해 반복 머리글과 페이지 경계의 행 보존을 확인했다.
+한 페이지보다 큰 행은 별도 검수가 필요하다. Bundled macOS renderer의 한글 누락은
+아래 process-local Fontconfig로 해소했다. 최신 한국어 합성 문서 7페이지에서
+한글 표시, 반복 머리글과 행 보존을 확인했다. 다른 운영체제·Word 환경은 별도 검수한다.
+
+macOS QA에서는 기존 Apple SD Gothic Neo를 사용하며 폰트를 설치하거나 배포하지 않는다.
+번들 runtime/renderer 경로를 확인한 뒤 다음처럼 해당 process에만 적용한다.
+`INPUT_DOCX`는 검수할 파일, `OUTPUT_DIR`는 새로운 임시 출력 경로다.
+
+```bash
+FONTCONFIG_FILE="$PWD/tests/fixtures/docx_fontconfig_macos.conf" \
+  "$BUNDLED_PYTHON" "$DOCX_RENDERER" "$INPUT_DOCX" \
+  --output_dir "$OUTPUT_DIR" --emit_pdf
+```
+
+`BUNDLED_PYTHON`은 workspace dependency loader의 Python이며 `DOCX_RENDERER`는
+documents skill의 `render_docx.py`다. Renderer가 격리 HOME/XDG cache를 생성한다.
+이 QA 설정을 서버 설정이나 Linux 배포에 적용하지 않는다.
+
+`tests/test_sketch_ui.py`는 실제 구성안 render/edit 함수를 Chromium에서 실행한다.
+문서형·발표형 제목, 항목, 페이지 카드, 검색 문구를 HTML이 아닌 문자로 표시하고,
+사용자 편집값을 `_captureSketchEdits()`가 보존하는지 검사한다. 빈 구성안으로
+전환할 때 이전 편집 항목과 선택 영역이 사라지는지도 확인한다. Synthetic 응답만
+사용하므로 실제 AI 내용 품질이나 검색 결과의 정확성 증거는 아니다.
+`runSketch()`의 겹친 요청은 최신 요청의 결과만 화면과 내부 결과에 반영한다.
+지연된 이전 성공·오류가 최신 구성안을 덮어쓰지 않고, 이전 호출의 finally가
+새 요청의 버튼을 해제하지 않는지 fixture로 검증한다. 이미 시작한 서버 작업의
+취소, 공통 retry/auth refresh 동작, 로그인 전환은 이 테스트의 검증 범위가 아니다.
+
+직접 예시 등록은 `POST /styles/{profile_id}/examples`에 `label`,
+`sample_sentences`, 선택 `bundle_id`를 전달한다. Label은 1~120자,
+문장은 1~8개이며 각각 1~1,000자의 앞뒤 공백·제어문자 없는 canonical 문자열이다.
+기존 `GET /styles/{profile_id}`와 example DELETE로 재조회·삭제한다.
+Server가 작성자·시각을 기록하며 provider 분석으로 취급하지 않는다.
+`tests/test_manual_style_ui.py`는 실제 render/save 함수를 격리 Chromium에서
+실행해 성공·실패 입력 보존, HTML 텍스트 표시와 POST/refresh 중 프로필 전환을
+검증한다. 외부 요청은 차단하고 fetch 결과만 synthetic fixture로 제공한다.
+상세 이름·설명·tone 입력·bundle override의 HTML escaping도 검사한다.
+Tone autosave는 편집 시점의 값을 프로필별로 저장하고, 프로필 전환 후에도
+각 입력을 보존하며 인증 문맥 변경 시 미전송 요청을 차단하는지 검증한다.
+이미 전송된 요청의 취소와 다중 client 동시 편집은 이 검증 범위가 아니다.
+같은 프로필의 자동저장 요청은 이전 요청이 종료된 뒤 전송한다. 연속 편집,
+선행 HTTP 오류 이후 후속 편집 저장, 대기 중 auth 변경에 대한 테스트를 포함한다.
+이전 입력의 완료 알림은 최신 편집을 저장했다는 의미로 표시하지 않는다.
+여러 탭의 동시 편집, 네트워크 응답 유실 후 서버 commit 순서는 보장하지 않는다.
+문서 업로드 분석은 기존 auth headers를 multipart 요청에 전달한다. 같은 입력의
+진행 중 중복 전송 차단, 오류 후 버튼 복구, profile/auth 변경 후 결과 무시와
+부분 성공 알림을 `test_style_analysis_*` Chromium fixture로 검사한다.
+실제 provider 분석은 실행하지 않으며 화면 이동이 서버 작업을 취소하지는 않는다.
+
+문서 생성 화면의 `스타일 관리` 버튼에서 프로필을 열고, `문서 생성으로` 버튼으로
+복귀한다. 프로필 재조회는 아직 존재하는 선택을 유지한다. 선택 스타일 검증은
+`tests/test_generation_style_selection.py`에서 명시 선택/기본값, current tenant와
+backend 분리, 스타일 수정/삭제/기본값 변경 시 cache 처리, 사전 검증 이후 재조회,
+첨부·SSE의 잘못된 선택 차단을 포함한다. Cache와 prompt는 service에서 확정한
+동일 snapshot을 사용하고 외부 요청에 private snapshot을 허용하지 않는다.
+`test_manual_example_generation_and_edited_docx_lifecycle`은 API로 등록한 예시가
+선택 스타일의 generation prompt에 도달하고, 생성 문서에 추가한 편집 내용이
+DOCX ZIP의 `word/document.xml`에 보존되는지 확인한다. 예시 등록·edited export는
+추가 provider 호출 없이 동작하고, 예시 삭제 후 새 generation prompt에서 해당
+문구가 제외되는지도 검사한다. Mock 생성 결과이며 DOCX 시각적 레이아웃이나
+실제 provider의 문체 재현 품질은 검증하지 않는다.
+
+- Onboarding: `tests/test_onboarding_ui.py`에서 실제 stylesheet의 불투명 배경과
+  desktop/mobile/짧은 화면 경계를 검사한다. 격리된 fixture 렌더링이며 사용자의
+  계정이나 안내 완료 상태를 초기화하지 않는다.
+- 문체 분석: `tests/test_style_system.py`에서 malformed JSON, 잘못된 필드와
+  분석 예외의 저장 거부, 여러 파일의 부분 성공, 저장 후 재조회를 검사한다.
+- 생성 반영: 같은 bundle의 최근 유효 예시 두 개, 빈 예시 제외, 수동 tone과
+  bundle override 보존 및 `build_bundle_prompt()` 연결을 검사한다.
+- 재현: `python3 -m pytest -q tests/test_onboarding_ui.py tests/test_style_system.py`.
+  외부 credential과 dotenv를 차단하고 임시 DATA_DIR/EXPORT_DIR를 사용한다.
+  Chromium은 기존 설치를 사용하며 테스트 때문에 설치하거나 provider를 호출하지 않는다.
+- Mock 결과는 내용 품질 또는 model weight training 증거가 아니다. 실제 문체 분석은
+  지원하는 provider가 필요하고, provider 분석 실패를 예시 저장 성공으로 취급하지 않는다.
+  현재 실행 결과는 [local pilot 기록](./superpowers/plans/2026-09-09-local-pilot-readiness-plan.md)의
+  이번 변경 검증 절을 따른다.
+
 ---
 
 ## 1. 시험 개요

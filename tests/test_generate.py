@@ -81,6 +81,13 @@ def test_generate_with_mock_provider_ok(tmp_path, monkeypatch):
 
 def test_generate_accepts_optional_style_profile_id(tmp_path, monkeypatch):
     client = _create_client(tmp_path, monkeypatch, provider="mock")
+    from app.storage.style_store import get_style_store
+
+    get_style_store(
+        "system",
+        data_dir=client.app.state.data_dir,
+        backend=client.app.state.state_backend,
+    ).initialize_defaults()
     response = client.post(
         "/generate",
         json={

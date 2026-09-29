@@ -17,6 +17,10 @@ from app.services.generation_service import (
     is_provider_rate_limited,
     provider_failure_retry_after_seconds,
 )
+from app.services.generation.errors import (
+    StyleProfileNotFoundError,
+    StyleSnapshotInvalidError,
+)
 from app.storage.base import StorageFailedError
 from app.storage.generation_export_source_store import GenerationExportSourceStoreError
 from app.storage.usage_store import UsageStoreError
@@ -112,6 +116,30 @@ def install_exception_handlers(app: FastAPI) -> None:
             message=message,
             status_code=status_code,
             errors=errors,
+        )
+
+    @app.exception_handler(StyleProfileNotFoundError)
+    async def style_profile_not_found_handler(
+        request: Request,
+        exc: StyleProfileNotFoundError,  # noqa: ARG001
+    ):
+        return _error_response(
+            request,
+            code="STYLE_PROFILE_NOT_FOUND",
+            message="Selected style profile was not found.",
+            status_code=404,
+        )
+
+    @app.exception_handler(StyleSnapshotInvalidError)
+    async def style_snapshot_invalid_handler(
+        request: Request,
+        exc: StyleSnapshotInvalidError,  # noqa: ARG001
+    ):
+        return _error_response(
+            request,
+            code="STYLE_SNAPSHOT_INVALID",
+            message="Style selection state could not be validated.",
+            status_code=500,
         )
 
     @app.exception_handler(EvalLintFailedError)

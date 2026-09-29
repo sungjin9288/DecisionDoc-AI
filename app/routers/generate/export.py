@@ -291,6 +291,11 @@ async def generate_stream(
     _ensure_procurement_override_reason_for_downstream(payload, request, tenant_id=tenant_id)
     _mark_procurement_downstream_resolved_context(payload, request, tenant_id=tenant_id)
     _mark_decision_council_handoff_context(payload, request, tenant_id=tenant_id)
+    if payload.style_profile_id is not None:
+        service.resolve_style_snapshot(
+            payload,
+            tenant_id=tenant_id,
+        )
     loop = asyncio.get_event_loop()
     q: asyncio.Queue = asyncio.Queue()
     worker_done = threading.Event()

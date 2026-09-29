@@ -3,6 +3,8 @@
 from enum import Enum
 from typing import Any
 
+import unicodedata
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
@@ -50,6 +52,17 @@ class GenerateRequest(BaseModel):
         if not isinstance(value, list):
             return value
         return [DocType(item) if isinstance(item, str) else item for item in value]
+
+    @field_validator("style_profile_id")
+    @classmethod
+    def validate_style_profile_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not value or value != value.strip() or any(
+            unicodedata.category(character).startswith("C") for character in value
+        ):
+            raise ValueError("style_profile_id must be a non-empty canonical identifier")
+        return value
 
 
 class FreeformRequest(BaseModel):
