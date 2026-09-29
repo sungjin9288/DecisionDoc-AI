@@ -128,7 +128,7 @@ class GovDocOptions:
 
 class EditedExportRequest(BaseModel):
     """Payload for POST /generate/export-edited — export pre-rendered (possibly
-    user-edited) docs without re-running LLM generation."""
+    user-edited) docs without re-generating text."""
 
     bundle_id: str = ""
     bundle_type: str = "tech_decision"
@@ -136,4 +136,8 @@ class EditedExportRequest(BaseModel):
     format: str  # "docx" | "pdf" | "excel" | "hwp"
     docs: list[EditedDocInput]
     visual_assets: list[GeneratedVisualAsset] = Field(default_factory=list)
+    generate_missing_visuals: bool = Field(
+        default=True, strict=True,
+        description="Set false for conversion only; omitted retains legacy visual generation.",
+    )
     gov_options: dict | None = None  # serialized GovDocOptions fields

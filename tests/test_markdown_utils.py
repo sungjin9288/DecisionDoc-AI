@@ -1,8 +1,44 @@
+import pytest
+
 from app.services.markdown_utils import (
     build_markdown_table,
     build_slide_outline_table,
     parse_markdown_blocks,
+    split_table_row,
 )
+
+
+@pytest.mark.parametrize("row,expected", [
+    (r"| Path | C:\reports\draft.docx |", ["Path", r"C:\reports\draft.docx"]),
+    ("Name | C:\\reports\\", ["Name", "C:\\reports\\"]),
+    (r"Name | value\|", ["Name", "value|"]),
+    (r"Name | value\\|", ["Name", "value\\"]),
+    (r"| Name | value\| |", ["Name", "value|"]),
+    ("| Name | |", ["Name", ""]),
+    (r"| Name | \*literal\* |", ["Name", "*literal*"]),
+])
+def test_split_table_row_preserves_content(row, expected):
+    assert split_table_row(row) == expected
+
+
+@pytest.mark.parametrize("rows", [
+    [["Comparison", r"A | B", r"C:\reports\draft.docx"]],
+    [r"| Comparison | A \| B | C:\reports\draft.docx |"],
+    [r"Comparison | A \| B | C:\reports\draft.docx"],
+])
+def test_table_rebuild_preserves_cells_across_input_forms(rows):
+    headers = ["Kind", "Options", "Path"]
+    table = build_markdown_table(rows, headers)
+    assert parse_markdown_blocks(table) == [{
+        "type": "table", "headers": headers,
+        "rows": [["Comparison", "A | B", r"C:\reports\draft.docx"]],
+    }]
+
+
+def test_single_cell_string_is_escaped_when_building_table():
+    table = build_markdown_table([r"C:\reports\draft.docx"], ["Path", "Notes"])
+    assert r"C:\\reports\\draft.docx" in table
+    assert parse_markdown_blocks(table)[0]["rows"] == [[r"C:\reports\draft.docx", ""]]
 
 
 def test_build_markdown_table_escapes_pipe_characters() -> None:

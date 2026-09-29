@@ -1,7 +1,8 @@
 """Tests for POST /generate/export-edited endpoint.
 
 The endpoint accepts pre-rendered (possibly user-edited) docs and converts them
-to the requested file format without re-running LLM generation.
+to the requested file format without re-generating text. Missing visual generation
+can be disabled explicitly while preserving existing supplied assets.
 Supported formats: docx, pdf, excel, hwp, pptx.
 """
 from __future__ import annotations
@@ -11,6 +12,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 from io import BytesIO
 from pptx import Presentation
+import pytest
 
 _ZIP_MAGIC  = b"PK\x03\x04"   # OOXML (.docx / .xlsx) and hwpx
 _PDF_MAGIC  = b"%PDF"
@@ -31,6 +33,37 @@ _SAMPLE_DOCS = [
     {"doc_type": "adr",      "markdown": "# 결정\n\n## 배경\n\n배경 내용입니다.\n\n- 항목 1\n- 항목 2"},
     {"doc_type": "onepager", "markdown": "## 요약\n\n**핵심 포인트**: 테스트 문서입니다."},
 ]
+
+
+@pytest.mark.parametrize('format', ['docx', 'excel', 'hwp', 'pptx', 'pdf'])
+def test_export_edited_explicit_conversion_does_not_generate_visuals(tmp_path, monkeypatch, format):
+    from app.services.visual_asset_service import requires_provider_visuals
+
+    client = _create_client(tmp_path, monkeypatch)
+    docs = [{
+        'doc_type': 'proposal_kr', 'markdown': '# Existing draft\n\nPreserve this text.',
+        'slide_outline': [{'title': 'Site', 'core_message': 'Existing', 'visual_type': '현장 사진'}],
+    }]
+    assert requires_provider_visuals(docs)
+    with patch('app.routers.generate.export.get_provider_for_capability', side_effect=AssertionError('Provider forbidden')) as provider, patch(
+        'app.routers.generate.generate_visual_assets_from_docs', side_effect=AssertionError('Visual generation forbidden')
+    ) as visuals, patch('app.routers.generate.export.acquire_billing_admission', side_effect=AssertionError('Billing forbidden')) as admission:
+        response = client.post('/generate/export-edited', json={
+            'format': format, 'docs': docs, 'generate_missing_visuals': False,
+        })
+    assert response.status_code == 200, response.text if response.status_code != 200 else ''
+    assert response.content.startswith(_PDF_MAGIC if format == 'pdf' else _ZIP_MAGIC)
+    provider.assert_not_called()
+    visuals.assert_not_called()
+    admission.assert_not_called()
+
+
+def test_export_edited_visual_generation_flag_is_strict(tmp_path, monkeypatch):
+    client = _create_client(tmp_path, monkeypatch)
+    response = client.post('/generate/export-edited', json={
+        'format': 'docx', 'docs': _SAMPLE_DOCS, 'generate_missing_visuals': 'false',
+    })
+    assert response.status_code == 422
 
 
 # ── /generate/export-edited — docx ─────────────────────────────────────────
@@ -121,7 +154,8 @@ def test_export_edited_docx_passes_slide_outline_and_visual_assets(tmp_path, mon
     assert visual_assets[0]["slide_title"] == "사업 추진 배경"
 
 
-def test_export_edited_reuses_provided_visual_assets_without_regeneration(tmp_path, monkeypatch):
+@pytest.mark.parametrize('generate_missing_visuals', [True, False])
+def test_export_edited_reuses_provided_visual_assets_without_regeneration(tmp_path, monkeypatch, generate_missing_visuals):
     client = _create_client(tmp_path, monkeypatch)
     captured: dict[str, object] = {}
 
@@ -136,6 +170,7 @@ def test_export_edited_reuses_provided_visual_assets_without_regeneration(tmp_pa
         res = client.post("/generate/export-edited", json={
             "format": "docx",
             "title": "편집된 제안서",
+            "generate_missing_visuals": generate_missing_visuals,
             "bundle_type": "proposal_kr",
             "docs": [
                 {

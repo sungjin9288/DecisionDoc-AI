@@ -680,7 +680,8 @@ async def generate_export_edited_endpoint(
 ) -> Response:
     """Export pre-rendered (possibly user-edited) docs to the requested format.
 
-    Does **not** call the LLM — uses the docs list directly.
+    Uses the docs list without text generation. Legacy callers can generate
+    missing visuals; downloads set generate_missing_visuals=False to opt out.
     Supported formats: docx, pdf, excel, hwp, pptx.
     """
     tenant_id = getattr(request.state, "tenant_id", "system") or "system"
@@ -702,7 +703,7 @@ async def generate_export_edited_endpoint(
     visual_provider = None
     if payload.visual_assets:
         visual_assets = [asset.model_dump() for asset in payload.visual_assets]
-    else:
+    elif payload.generate_missing_visuals:
         provider_visuals_required = requires_provider_visuals(docs, max_assets=6)
         admission_lock = None
         visual_usage: dict[str, int] = {}
@@ -740,6 +741,8 @@ async def generate_export_edited_endpoint(
         finally:
             if admission_lock is not None:
                 admission_lock.release()
+    else:
+        visual_assets = []
 
     if fmt == "docx":
         content = _facade().build_docx(docs, title=title, gov_options=gov_opts, visual_assets=visual_assets)
