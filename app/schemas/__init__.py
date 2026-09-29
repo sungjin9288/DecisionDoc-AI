@@ -174,6 +174,7 @@ from app.schemas.decision_evidence import (
     GuidedDecisionReviewStage,
 )
 from app.schemas.generated_document_reviews import (
+    CompleteGeneratedDocumentReviewRequest,
     CreateGeneratedDocumentReviewRequest,
 )
 
@@ -320,4 +321,5 @@ __all__ = [
     "GuidedDecisionReviewRecheckRequest",
     "GuidedDecisionReviewStage",
     "CreateGeneratedDocumentReviewRequest",
+    "CompleteGeneratedDocumentReviewRequest",
 ]

@@ -115,6 +115,8 @@ def document_source_sha256(
         "tenant_id": tenant_id,
         "title": document.title,
     }
+    if document.source_procurement_binding is not None:
+        source["source_procurement_binding"] = document.source_procurement_binding
     canonical = json.dumps(
         source,
         ensure_ascii=False,
@@ -274,6 +276,7 @@ class GeneratedDocumentReviewService:
                 bundle_id=document.bundle_id,
                 document_source_sha256=source_sha256,
                 formats=canonical_formats,
+                source_procurement_binding=document.source_procurement_binding,
             )
             packet_verification = verify_generation_export_packet(packet["content"])
             record, created = self._review_store.prepare(
@@ -369,6 +372,7 @@ class GeneratedDocumentReviewService:
         self,
         *,
         tenant_id: str,
+        review_status: str,
         access: GeneratedDocumentReviewAccess,
     ) -> list[GeneratedDocumentReviewRecord]:
         try:
@@ -377,7 +381,11 @@ class GeneratedDocumentReviewService:
             raise GeneratedDocumentReviewUnavailableError(
                 "generated document reviews are unavailable"
             ) from exc
-        return self._authorized(records, access)
+        return [
+            record
+            for record in self._authorized(records, access)
+            if record.review_status == review_status
+        ]
 
     def list_project(
         self,
@@ -441,5 +449,101 @@ class GeneratedDocumentReviewService:
         except (GeneratedDocumentReviewStoreError, ValueError) as exc:
             raise GeneratedDocumentReviewUnavailableError(
                 "generated document review packet is unavailable"
+            ) from exc
+        return record, content, self.source_status(record)
+
+    def complete(
+        self,
+        *,
+        tenant_id: str,
+        project_id: str,
+        packet_sha256: str,
+        operation_id: str,
+        decision: str,
+        rationale: str,
+        access: GeneratedDocumentReviewAccess,
+    ) -> tuple[GeneratedDocumentReviewRecord, bytes, bool]:
+        try:
+            packet_sha256 = require_sha256(packet_sha256, field="packet_sha256")
+        except ValueError as exc:
+            raise GeneratedDocumentReviewNotFoundError(
+                "generated document review is unavailable"
+            ) from exc
+        records = self.list_project(
+            tenant_id=tenant_id,
+            project_id=project_id,
+            access=access,
+        )
+        record = next(
+            (item for item in records if item.packet_sha256 == packet_sha256),
+            None,
+        )
+        if (
+            record is None
+            or record.reviewer_assignment["user_id"] != access.user_id
+            or record.reviewer_assignment["username"] != access.username
+            or record.reviewer_assignment["role"] != access.role
+        ):
+            raise GeneratedDocumentReviewNotFoundError(
+                "generated document review is unavailable"
+            )
+        if self.source_status(record) != "current":
+            raise GeneratedDocumentReviewConflictError(
+                "generated document review source changed"
+            )
+        try:
+            return self._review_store.complete(
+                record,
+                tenant_id=tenant_id,
+                completion_assignment=access.assignment(),
+                operation_id=operation_id,
+                decision=decision,
+                rationale=rationale,
+                reviewed_at=datetime.now(timezone.utc).isoformat(),
+            )
+        except GeneratedDocumentReviewStoreError as exc:
+            raise GeneratedDocumentReviewUnavailableError(
+                "generated document review state is unavailable"
+            ) from exc
+        except ValueError as exc:
+            raise GeneratedDocumentReviewConflictError(
+                "generated document review completion conflict"
+            ) from exc
+
+    def download_reviewed_package(
+        self,
+        *,
+        tenant_id: str,
+        project_id: str,
+        packet_sha256: str,
+        access: GeneratedDocumentReviewAccess,
+    ) -> tuple[GeneratedDocumentReviewRecord, bytes, str]:
+        try:
+            packet_sha256 = require_sha256(packet_sha256, field="packet_sha256")
+        except ValueError as exc:
+            raise GeneratedDocumentReviewNotFoundError(
+                "generated document review is unavailable"
+            ) from exc
+        records = self.list_project(
+            tenant_id=tenant_id,
+            project_id=project_id,
+            access=access,
+        )
+        record = next(
+            (item for item in records if item.packet_sha256 == packet_sha256),
+            None,
+        )
+        if record is None or record.review_status != "completed":
+            raise GeneratedDocumentReviewNotFoundError(
+                "generated document reviewed package is unavailable"
+            )
+        try:
+            content = self._review_store.read_reviewed_package(
+                record,
+                tenant_id=tenant_id,
+            )
+        except (GeneratedDocumentReviewStoreError, ValueError) as exc:
+            raise GeneratedDocumentReviewUnavailableError(
+                "generated document reviewed package is unavailable"
             ) from exc
         return record, content, self.source_status(record)

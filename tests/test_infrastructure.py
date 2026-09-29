@@ -4524,6 +4524,11 @@ def test_generated_document_review_handoff_keeps_separate_immutable_boundary():
     assert '"/generated-document-reviews"' in router
     assert '"/projects/{project_id}/generated-document-reviews"' in router
     assert '"/projects/{project_id}/generated-document-reviews/{packet_sha256}/packet"' in router
+    assert '"/projects/{project_id}/generated-document-reviews/{packet_sha256}/complete"' in router
+    assert '"/projects/{project_id}/generated-document-reviews/{packet_sha256}/reviewed-package"' in router
+    assert 'COMPLETED_RECORD_SCHEMA = "decisiondoc.generated_document_review_handoff.v2"' in (
+        root / "app/storage/generated_document_review_models.py"
+    ).read_text(encoding="utf-8")
     assert "app.state.generated_document_review_store" in main
     assert "app.state.generated_document_review_service" in main
     for source in (store, service, router):
@@ -4559,6 +4564,8 @@ def test_generated_document_review_observability_is_explicit_and_redacted():
         "generated_document_review.inbox_view",
         "generated_document_review.project_history_view",
         "generated_document_review.packet_download",
+        "generated_document_review.complete",
+        "generated_document_review.reviewed_package_download",
     ):
         assert action in projection
     assert "generated_document_review_audit.RULES" in audit

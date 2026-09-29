@@ -1,5 +1,9 @@
 # Generated Document Review Handoff v1 Design
 
+> Historical v1 scope note: this document intentionally ends at a pending
+> handoff. The separately approved completion slice is defined in
+> [Generated Document Review Completion Design](./2026-09-04-generated-document-review-completion-design.md).
+
 Status: Approved for specification review
 
 Date: 2026-09-03

@@ -79,6 +79,72 @@
 .venv/bin/bandit -r app/ -f json -o bandit_report.json
 ```
 
+### Generated-document Local Completion
+
+2026-09-14 Goal 실행에서 API/storage/CLI 등 163개, review 및 생성 browser 13개,
+review static/infrastructure 9개가 각각 통과했다. 상세 명령·환경·시간은
+`docs/superpowers/plans/2026-09-09-local-pilot-readiness-plan.md`의 Goal Execution
+절에 기록한다. Human UAT는 여전히 미실행이다.
+
+해당 Goal이 준비한 임시 UAT 서버는 `http://127.0.0.1:8788/`이며 HOME은
+`/tmp/decisiondoc-goal-human-uat-x6d7dlr6`, DATA_DIR는 그 아래 `data`다.
+기동 시 PID 9191, `/health`의 `status=ok`, `provider=mock`, `free_mode=true`와
+첫 화면 HTTP 200을 확인했다. 임시 process/path이므로 다음 세션에서 재확인한다.
+`quality_first=degraded`는 mock 설정에 따른 실제 provider 품질 미검증 상태이며
+외부 provider를 켜서 해소하지 않는다. 이 서버의 사용자 계정은 생성하지 않았다.
+
+제품 설계와 의존 순서는 `docs/architecture.md`의 Local-First Product Design과
+`docs/product_execution_plan.md`의 Current Local Completion Goal을 따른다.
+다음 명령은 repository root에서 실행하며 local/fake-S3와 synthetic browser
+response만 검증한다. 외부 API, AWS runtime, 실제 사람의 검토를 대신하지 않는다.
+
+```bash
+python3 -m pytest -q tests/storage/test_generated_document_review_store.py tests/test_generated_document_reviews.py --tb=short
+python3 -m pytest -q tests/test_generation_export_packet.py tests/test_generated_document_review_ui_static.py tests/test_future_feature_gate.py --tb=short
+python3 -m pytest -q tests/test_infrastructure.py -k generated_document_review --tb=short
+python3 -m pytest -q tests/e2e/test_main_flow.py -k generated_document_review --browser chromium --tb=short
+```
+
+필수 failure coverage는 foreign/inactive/sessionless principal, source drift,
+경쟁 completion과 exact replay, 변조 ZIP/receipt/manifest, boolean/integer 혼동,
+expected record의 원본 packet 크기 불일치, stale browser response다.
+검증 결과와 실행 시간은 `docs/development-plan.md`의 canonical snapshot에 기록한다.
+
+지정한 generated-document browser regression은 synthetic UI state와
+`page.route` handler의 `route.fulfill()` 응답을 사용하므로 browser/API 계약만 검증한다. 전체
+UI→persisted backend lifecycle이나 실제 파일의 내용·레이아웃에 대한 사람의 판단은
+증명하지 않으며, 아래 Human UAT에서 별도로 확인한다.
+
+Human UAT는 **미실행**이다. 새 격리 storage에는 계정이 없으므로 로그인 화면의
+**관리자 계정 만들기** UI에서 synthetic 최초 관리자를 등록한 뒤, **관리자 → 거점 관리 →
+팀원 관리**에서 같은 tenant의 active synthetic 사용자 두 명을 직접 만든다: pending
+handoff에 지정할 reviewer와 지정하지 않을 권한 경계 test user. 기존 계정 import나
+초대/이메일 발송, SMTP는 필요하지 않으며 project/document도 synthetic data만 사용한다.
+이 local UAT에는 뒤의 운영 UAT용 generic `/health`·Ops·`post-deploy` preflight/gates가
+적용되지 않는다. 다음 server command를 따른다. 포트가 사용 중이면 다른 미사용 loopback
+포트를 고른다. 이 문서를 작성하면서 계정 생성, 설정 변경, server 기동 또는 UAT를 실행한
+것은 아니다.
+
+```bash
+review_data="$(mktemp -d "${TMPDIR:-/tmp/}decisiondoc-review-uat.XXXXXX")"
+python3 scripts/run_free_local.py --provider mock --host 127.0.0.1 --port 8787 --data-dir "$review_data"
+```
+
+| 검수 순서 | 사람이 확인할 항목 | 기록할 증거 |
+|---|---|---|
+| 생성/보관 | Synthetic 문서를 생성해 project document로 저장하고 원본과 내용 비교 | 사용한 fixture, project/document 식별자, 예상/실제 내용 |
+| 검토 전달 | 기존 active test 계정에 pending handoff 생성, 대상과 담당자 확인 | packet hash, assignee 표시, pending 상태 |
+| 검토 완료 | 해당 담당자가 로그인해 결과와 근거 입력 | decision, 완료 시각, 실패/재시도 유무 |
+| 재다운로드 | Completed 목록/history에서 ZIP을 다시 받아 같은 결과 확인 | 두 package hash 일치 여부, 화면과 receipt의 decision 일치 |
+| 변경/권한 | 별도 fixture에서 source 변경, 비담당자 접근, context 변경 시 잘못된 완료가 없는지 확인 | 실제 차단 상태와 redacted screenshot; 기존 evidence 보존 |
+| 내용/출력 | 내려받은 실제 파일을 열어 읽을 수 있고 원본 의미·표·레이아웃을 검토할 수 있는지 확인 | 실제 앱/버전/형식, 페이지별 문제; 자동 ZIP 검증과 별개 |
+| 경계 이해 | 검토자가 accepted가 운영·법적 승인이나 source 최신성 증명이 아님을 설명 | 실제 수행자의 관찰과 미해결 문제 |
+
+전체 receipt, private rationale, stable identity 또는 테스트 계정 정보는 공개
+증거에 넣지 않는다. 다운로드한 완료 ZIP의 내부 무결성은 아래 standalone CLI로
+검증할 수 있다. 사용자는 여기서의 관찰을 기존 UAT
+결과 템플릿에 기록하되 mock 출력 품질을 실제 provider 품질로 표시하지 않는다.
+
 ### Future Feature Gate
 
 Feature-admission regression은 versioned JSON record의 exact key set, duplicate
