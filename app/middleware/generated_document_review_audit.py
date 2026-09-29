@@ -7,6 +7,8 @@ from fastapi import Request
 
 
 RULES: dict[tuple[str, str], str] = {
+    ('POST', '/projects/{id}/documents/{id}/edited-copies'): 'generated_document_review.edited_copy_save',
+    ('GET', '/projects/{id}/documents/{id}/editable-source'): 'generated_document_review.edited_copy_open',
     (
         "POST",
         "/projects/{id}/documents/{id}/generated-reviews",

@@ -66,6 +66,7 @@ from app.routers.projects.procurement import (
 )
 
 from app.routers.projects.core import router as _core_router
+from app.routers.projects.edited_copies import router as _edited_copies_router
 from app.routers.projects.meeting_recordings import router as _meeting_recordings_router
 from app.routers.projects.procurement import router as _procurement_router
 from app.routers.projects.decision_evidence import router as _decision_evidence_router
@@ -76,6 +77,7 @@ from app.routers.projects.generated_document_reviews import router as _generated
 router = APIRouter(tags=["projects"])
 
 router.include_router(_core_router)
+router.include_router(_edited_copies_router)
 router.include_router(_meeting_recordings_router)
 router.include_router(_procurement_router)
 router.include_router(_decision_evidence_router)

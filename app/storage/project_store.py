@@ -13,6 +13,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Literal, TypeVar
 
+from app.services.procurement_document_binding import (
+    validate_project_document_binding,
+)
 from app.storage.project_state_mutation import (
     ProjectStateMutationMixin,
     ProjectStoreError,
@@ -74,6 +77,8 @@ class ProjectDocument:
     source_procurement_review_source_updated_at: str | None = None
     source_procurement_review_operational_approval: bool | None = None
     source_evidence_refs: list[str] = field(default_factory=list)
+    source_procurement_binding: dict | None = None
+    edited_copy: dict | None = None
 
 
 @dataclass
@@ -112,13 +117,29 @@ class ProjectStore(ProjectStateMutationMixin):
         )
 
     @staticmethod
-    def _doc_from_dict(d: dict) -> ProjectDocument:
+    def _doc_from_dict(
+        d: dict,
+        *,
+        tenant_id: str,
+        project_id: str,
+    ) -> ProjectDocument:
         if not isinstance(d, dict):
             raise ProjectStoreError("Invalid project document record")
         doc_id = d.get("doc_id")
         if not isinstance(doc_id, str) or not doc_id:
             raise ProjectStoreError("Invalid project document identity")
-        return ProjectDocument(
+        try:
+            snapshot = json.loads(d.get("doc_snapshot", "[]"))
+            source_procurement_binding = validate_project_document_binding(
+                d.get("source_procurement_binding"),
+                docs=snapshot,
+                tenant_id=tenant_id,
+                project_id=project_id,
+                allow_unembedded=d.get("source_kind") == "edited_copy",
+            )
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise ProjectStoreError("Invalid project document source binding") from exc
+        doc = ProjectDocument(
             doc_id=doc_id,
             request_id=d.get("request_id", ""),
             bundle_id=d.get("bundle_id", ""),
@@ -154,7 +175,12 @@ class ProjectStore(ProjectStateMutationMixin):
             source_evidence_refs=_normalize_source_evidence_refs(
                 d.get("source_evidence_refs")
             ),
+            source_procurement_binding=source_procurement_binding,
+            edited_copy=d.get("edited_copy"),
         )
+        from app.storage.edited_project_copy_records import validate_edited_copy
+        validate_edited_copy(doc)
+        return doc
 
     @staticmethod
     def _from_dict(d: dict) -> Project:
@@ -172,10 +198,23 @@ class ProjectStore(ProjectStateMutationMixin):
         if not isinstance(documents, list):
             raise ProjectStoreError("Invalid project documents")
 
-        docs = [ProjectStore._doc_from_dict(doc) for doc in documents]
+        docs = [
+            ProjectStore._doc_from_dict(
+                doc,
+                tenant_id=tenant_id,
+                project_id=project_id,
+            )
+            for doc in documents
+        ]
         doc_ids = [doc.doc_id for doc in docs]
         if len(doc_ids) != len(set(doc_ids)):
             raise ProjectStoreError("Duplicate project document records")
+        copy_operations = [
+            (doc.edited_copy['actor_id'], doc.edited_copy['operation_id'])
+            for doc in docs if doc.edited_copy is not None
+        ]
+        if len(copy_operations) != len(set(copy_operations)):
+            raise ProjectStoreError("Duplicate edited-copy operations")
         return Project(
             project_id=project_id,
             tenant_id=tenant_id,
@@ -452,7 +491,14 @@ class ProjectStore(ProjectStateMutationMixin):
         source_procurement_review_source_updated_at: str | None = None,
         source_procurement_review_operational_approval: bool | None = None,
         source_evidence_refs: list[str] | None = None,
+        source_procurement_binding: dict | None = None,
     ) -> ProjectDocument:
+        source_procurement_binding = validate_project_document_binding(
+            source_procurement_binding,
+            docs=docs,
+            tenant_id=tenant_id,
+            project_id=project_id,
+        )
         docs_json = json.dumps(docs, ensure_ascii=False)
         file_size = sum(len(d.get("markdown", "")) for d in docs)
         doc = ProjectDocument(
@@ -489,6 +535,7 @@ class ProjectStore(ProjectStateMutationMixin):
             source_evidence_refs=_normalize_source_evidence_refs(
                 source_evidence_refs
             ),
+            source_procurement_binding=source_procurement_binding,
         )
 
         def append_document(project: Project) -> tuple[ProjectDocument, bool]:
