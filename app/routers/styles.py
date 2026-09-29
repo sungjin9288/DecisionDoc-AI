@@ -210,6 +210,53 @@ async def analyze_style_document(
     }
 
 
+@router.post("/styles/{profile_id}/import-examples")
+async def import_style_examples(
+    request: Request,
+    profile_id: str,
+    files: list[UploadFile] = File(...),
+    bundle_id: str | None = Form(None, max_length=100),
+):
+    """Save local source excerpts; never resolve a provider or run analysis."""
+    from starlette.concurrency import run_in_threadpool
+
+    from app.services.attachment_service import AttachmentError, MAX_FILE_SIZE_BYTES
+    from app.services.local_style_examples import MAX_FILES, extract_local_examples
+    from app.storage.style_store import StyleExample
+
+    style_store = _get_style_store(request)
+    user_id = get_user_id(request)
+    if not style_store.get(profile_id):
+        raise HTTPException(404, "스타일 프로필을 찾을 수 없습니다.")
+    if not 1 <= len(files) <= MAX_FILES:
+        raise HTTPException(422, "한 번에 최대 8개 파일을 가져올 수 있습니다.")
+    if bundle_id and (bundle_id != bundle_id.strip() or any(ord(c) < 32 or ord(c) == 127 for c in bundle_id)):
+        raise HTTPException(422, "올바른 번들 식별자가 필요합니다.")
+    imported = []
+    failed = []
+    for file in files:
+        filename = (file.filename or "").strip()[:255]
+        raw = await file.read(MAX_FILE_SIZE_BYTES + 1)
+        try:
+            sentences = await run_in_threadpool(extract_local_examples, filename, raw)
+        except AttachmentError:
+            failed.append({"filename": filename, "error": "텍스트를 추출하지 못했습니다. 파일 형식, 내용과 20 MB 제한을 확인하세요."})
+            continue
+        example = StyleExample(
+            example_id=str(_uuid.uuid4()),
+            source_filename=filename,
+            bundle_id=bundle_id or None,
+            extracted_patterns=[],
+            sample_sentences=sentences,
+            uploaded_at=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            uploaded_by=user_id,
+        )
+        # The store rechecks tenant ownership inside its atomic mutation.
+        style_store.add_example(profile_id, example)
+        imported.append({"filename": filename, "example_id": example.example_id})
+    return {"imported": imported, "failed": failed, "method": "local_text", "provider_calls": 0}
+
+
 @router.delete("/styles/{profile_id}/examples/{example_id}")
 async def remove_style_example(request: Request, profile_id: str, example_id: str):
     """Remove a style example from a profile."""

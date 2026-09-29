@@ -1,0 +1,34 @@
+{
+  "schema_version": "decisiondoc.future_feature_gate.v1",
+  "gate_id": "local-style-example-import",
+  "title": "Local source-grounded style example import",
+  "target_user": "A free/local user who wants to reuse examples from an existing document",
+  "observed_problem": "The existing uploaded-style workflow fails with the actual mock provider because it requires structured LLM style analysis.",
+  "evidence": [
+    {"kind": "repository", "reference": "app/routers/styles.py: analyze_style_document", "observation": "Document upload always resolves a generation provider and calls analyze_document_style."},
+    {"kind": "repository", "reference": "app/providers/mock/provider.py: generate_raw", "observation": "The mock response does not satisfy the analyzer's required style fields."},
+    {"kind": "repository", "reference": "docs/superpowers/specs/2026-09-15-local-style-example-import-design.md", "observation": "A synthetic TXT probe with the actual MockProvider reproduced a style-analysis ValueError without external calls."}
+  ],
+  "current_workaround": "Paste example sentences manually; document upload cannot complete the same no-cost path.",
+  "desired_outcome": "Import inspectable verbatim document excerpts into a style profile and reuse them in generation without LLM analysis or model training.",
+  "acceptance_criteria": [
+    "A distinct local import route and UI command reuse the non-AI attachment parser and existing StyleStore without invoking provider factories or AI fallback.",
+    "TXT, MD, DOCX, HWPX and text-layer PDF inputs yield deterministic bounded source excerpts; unsupported, scanned, empty or malformed inputs never create fabricated examples.",
+    "Eight-file batches, existing per-file byte/text caps and eight 1000-character excerpts per file are enforced before persistence.",
+    "Current tenant/profile authorization remains intact; partial failures preserve prior examples and tone guides.",
+    "Real local import, reload and selected-style generation tests prove persisted excerpts reach the prompt and affect style cache identity.",
+    "Single-flight and stale auth/profile response guards prevent misleading UI results; no automatic retry duplicates an uncertain import."
+  ],
+  "affected_boundaries": ["Style router and focused local extraction service", "Existing StyleStore and non-AI attachment parsers", "Style browser actions and local/API/browser tests"],
+  "authority_scope": {
+    "review_only": true,
+    "allowed_effects": ["Persist source-grounded style examples in local/fake-S3 verification", "Reuse saved examples in the existing mock generation prompt"],
+    "excluded_effects": ["Fabricate analysis or change model weights", "Modify other tenants or existing tone guides", "Commit, push, install or modify credentials"],
+    "separate_approval_required_for": ["Provider calls, dataset upload or training", "Live AWS/G2B, deployment or publication"]
+  },
+  "local_verification": [
+    {"command": "python3 -m pytest -q tests/test_local_style_example_import.py tests/test_local_style_import_ui.py tests/test_generation_style_selection.py tests/test_style_system.py", "proves": "Source-grounded local import, reload, generation prompt and existing style regression checks; exact run evidence and isolated environment are recorded in the implementation spec."},
+    {"command": "git diff --check", "proves": "Patch whitespace integrity only"}
+  ],
+  "decision": {"status": "approved", "rationale": "The repository operator approved this exact local import implementation and verification scope in the current conversation. External effects remain excluded.", "decided_by": "repository-operator", "decided_at": "2026-09-14T23:20:40Z"}
+}
