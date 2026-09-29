@@ -29,8 +29,14 @@ from app.services.pptx.primitives import (
     _add_text_box,
     _clean_slide_text,
     _expand_slide_line,
+    _fit_card_lines,
     _style_text_frame,
 )
+
+
+# Panel header cards hold a title and one wrapped subtitle line; panel content
+# starts at least 0.82in below the panel top.
+_PANEL_HEADER_HEIGHT = 0.78
 
 
 def _structured_visual_lines(item: dict[str, Any]) -> list[str]:
@@ -148,17 +154,19 @@ def _render_visual_image_asset(
         return False
 
     caption = _clean_slide_text(asset.get("visual_brief", "")) or slide_outline_visual(item)
-    if caption:
-        _add_text_box(
+    caption_lines = _fit_card_lines([caption], width=width - 0.4, max_lines=1, font_size_pt=9)
+    if caption_lines:
+        caption_box = _add_text_box(
             slide,
             left=left + 0.2,
             top=top + height - 0.24,
             width=width - 0.4,
             height=0.18,
-            text=caption,
+            text=caption_lines[0],
             font_size_pt=9,
             color=_COLOR_TEXT_MUTED,
         )
+        caption_box.text_frame.word_wrap = True
     return True
 
 
@@ -227,7 +235,7 @@ def _render_visual_cards(
         left=left,
         top=top,
         width=width,
-        height=0.55,
+        height=_PANEL_HEADER_HEIGHT,
         title="비교 카드",
         body="핵심 근거를 시각 카드로 배치",
         fill_color=_COLOR_CARD_SOFT,
@@ -235,7 +243,7 @@ def _render_visual_cards(
         body_color=_COLOR_TEXT_DARK,
     )
     points = slide_outline_evidence(item)[:4] or _structured_visual_lines(item)[1:4]
-    positions = [(left, top + 0.72), (left + 2.0, top + 0.72), (left, top + 1.92), (left + 2.0, top + 1.92)]
+    positions = [(left, top + 0.84), (left + 2.0, top + 0.84), (left, top + 2.0), (left + 2.0, top + 2.0)]
     for point, (card_left, card_top) in zip(points, positions, strict=False):
         _add_card(
             slide,
@@ -265,7 +273,7 @@ def _render_visual_kpi(
         left=left,
         top=top,
         width=width,
-        height=0.55,
+        height=_PANEL_HEADER_HEIGHT,
         title="KPI / 핵심 지표",
         body="성과 지표를 editable scorecard로 배치",
         fill_color=_COLOR_CARD_SOFT,
@@ -305,7 +313,7 @@ def _render_visual_matrix(
         left=left,
         top=top,
         width=width,
-        height=0.55,
+        height=_PANEL_HEADER_HEIGHT,
         title="의사결정 매트릭스",
         body="기준별 판단을 editable table로 정리",
         fill_color=_COLOR_CARD_SOFT,
@@ -365,7 +373,7 @@ def _render_visual_timeline(
         left=left,
         top=top,
         width=width,
-        height=0.55,
+        height=_PANEL_HEADER_HEIGHT,
         title="타임라인 도식",
         body="단계별 흐름과 마일스톤을 시각화",
         fill_color=_COLOR_CARD_SOFT,
@@ -419,7 +427,7 @@ def _render_visual_flow(
         left=left,
         top=top,
         width=width,
-        height=0.55,
+        height=_PANEL_HEADER_HEIGHT,
         title="프로세스 흐름",
         body="단계별 업무 흐름과 전환 포인트를 표현",
         fill_color=_COLOR_CARD_SOFT,
@@ -429,33 +437,34 @@ def _render_visual_flow(
     points = slide_outline_evidence(item)[:3] or _structured_visual_lines(item)[1:4]
     if not points:
         points = ["입력", "처리", "결과"]
-    for idx, point in enumerate(points, start=1):
-        box_top = top + 0.82 + (idx - 1) * 0.88
+    box_tops = [top + 0.82 + (idx - 1) * 0.8 for idx in range(1, len(points) + 1)]
+    for idx, (point, box_top) in enumerate(zip(points, box_tops, strict=True), start=1):
         _add_card(
             slide,
             left=left + 0.3,
             top=box_top,
             width=width - 0.6,
-            height=0.62,
+            height=0.72,
             title=f"단계 {idx}",
             body=_expand_slide_line(point, max_len=28)[:2],
             fill_color=_COLOR_CARD,
             title_color=_COLOR_TEXT_DARK,
             body_color=_COLOR_TEXT_MUTED,
         )
-        if idx < len(points):
-            _add_text_box(
-                slide,
-                left=left + (width / 2) - 0.1,
-                top=box_top + 0.58,
-                width=0.2,
-                height=0.2,
-                text="↓",
-                font_size_pt=18,
-                bold=True,
-                color=_COLOR_BG_ACCENT,
-                align=PP_ALIGN.CENTER,
-            )
+    # Arrows are drawn after the cards so the next card does not cover them.
+    for box_top in box_tops[:-1]:
+        _add_text_box(
+            slide,
+            left=left + (width / 2) - 0.1,
+            top=box_top + 0.66,
+            width=0.2,
+            height=0.2,
+            text="↓",
+            font_size_pt=18,
+            bold=True,
+            color=_COLOR_BG_ACCENT,
+            align=PP_ALIGN.CENTER,
+        )
 
 
 def _render_visual_governance(
@@ -472,7 +481,7 @@ def _render_visual_governance(
         left=left,
         top=top,
         width=width,
-        height=0.55,
+        height=_PANEL_HEADER_HEIGHT,
         title="거버넌스 구조",
         body="의사결정과 보고 흐름을 시각화",
         fill_color=_COLOR_CARD_SOFT,

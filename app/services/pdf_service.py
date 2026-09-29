@@ -13,6 +13,7 @@ Government format (행안부 공문서 표준):
 from __future__ import annotations
 
 import html as _html
+import re
 from typing import Any
 
 from playwright.async_api import async_playwright
@@ -27,6 +28,38 @@ from app.services.visual_asset_service import group_visual_assets_by_doc_type, v
 # ---------------------------------------------------------------------------
 # Markdown → HTML conversion
 # ---------------------------------------------------------------------------
+
+# Table cells keep Korean words whole (CSS keep-all). Long unbroken tokens such
+# as URLs, paths or compound nouns get <wbr> break points so they cannot widen
+# the table past the page; a character-level wrap rule would also split short
+# Korean words. The break interval shrinks with the column count so every
+# column can fall back to roughly its share of the 170mm A4 body width.
+_TABLE_TOKEN_CHUNK = 20
+_TABLE_BODY_WIDTH_MM = 170
+_TABLE_CELL_PADDING_MM = 5
+_TABLE_GLYPH_MM = 3.5
+_HTML_TAG_RE = re.compile(r"(<[^>]+>)")
+_HTML_TEXT_UNIT_RE = re.compile(r"&#?\w+;|\S")
+
+
+def _table_token_chunk(column_count: int) -> int:
+    column_mm = _TABLE_BODY_WIDTH_MM / max(1, column_count) - _TABLE_CELL_PADDING_MM
+    return max(4, min(_TABLE_TOKEN_CHUNK, int(column_mm / _TABLE_GLYPH_MM)))
+
+
+def _insert_token_breaks(token: str, chunk: int) -> str:
+    units = _HTML_TEXT_UNIT_RE.findall(token)
+    return "<wbr>".join("".join(units[i:i + chunk]) for i in range(0, len(units), chunk))
+
+
+def _table_cell_html(cell: str, chunk: int = _TABLE_TOKEN_CHUNK) -> str:
+    long_token = re.compile(r"\S{%d,}" % (chunk + 1))
+    parts = _HTML_TAG_RE.split(render_inline_html(cell))
+    return "".join(
+        part if part.startswith("<") else long_token.sub(lambda m: _insert_token_breaks(m.group(0), chunk), part)
+        for part in parts
+    )
+
 
 def _markdown_to_html(markdown: str) -> str:
     """Very lightweight markdown → HTML converter."""
@@ -52,10 +85,11 @@ def _markdown_to_html(markdown: str) -> str:
             lines.append(f"<li>{render_inline_html(block['text'])}</li>")
         elif block_type == "table":
             close_list()
-            header_cells = "".join(f"<th>{render_inline_html(cell)}</th>" for cell in block["headers"])
+            chunk = _table_token_chunk(len(block["headers"]))
+            header_cells = "".join(f"<th>{_table_cell_html(cell, chunk)}</th>" for cell in block["headers"])
             body_rows = []
             for row in block["rows"]:
-                cells = "".join(f"<td>{render_inline_html(cell)}</td>" for cell in row)
+                cells = "".join(f"<td>{_table_cell_html(cell, chunk)}</td>" for cell in row)
                 body_rows.append(f"<tr>{cells}</tr>")
             lines.append(
                 "<table class='markdown-table'>"
@@ -204,7 +238,8 @@ def _build_css(opts: Any | None) -> str:
         padding: 6px 8px;
         vertical-align: top;
         text-align: left;
-        word-break: break-word;
+        word-break: keep-all;
+        overflow-wrap: break-word;
     }}
     .markdown-table th {{
         background: #eef3fb;

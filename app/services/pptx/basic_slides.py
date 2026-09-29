@@ -18,6 +18,7 @@ from app.services.pptx.constants import (
 from app.services.pptx.primitives import (
     _add_card,
     _clean_slide_text,
+    _place_shape,
     _set_slide_background,
     _style_text_frame,
 )
@@ -96,6 +97,10 @@ def _render_section_divider(
     section_lines = [_clean_slide_text(line) for line in (section_lines or []) if _clean_slide_text(line)]
     metric_lines = [_clean_slide_text(line) for line in (metric_lines or []) if _clean_slide_text(line)]
     if section_lines or metric_lines:
+        # The layout's placeholders extend below y=4.2in; keep them above the cards.
+        _place_shape(slide.shapes.title, top=1.1, height=1.3)
+        if len(slide.placeholders) > 1:
+            _place_shape(slide.placeholders[1], top=2.5, height=1.5)
         _add_card(
             slide,
             left=0.8,
@@ -152,9 +157,9 @@ def _render_agenda_slide(prs: Presentation, title: str, items: list[str | dict[s
         _add_card(
             slide,
             left=0.7 + (4.5 * col),
-            top=1.4 + (0.92 * row),
+            top=1.4 + (1.25 * row),
             width=4.0,
-            height=0.9,
+            height=1.15,
             title=f"{idx:02d}",
             body=[item["title"], item["detail"]] if item["detail"] else item["title"],
             fill_color=_COLOR_CARD,
@@ -210,7 +215,7 @@ def _render_summary_slide(prs: Presentation, summaries: list[dict[str, str]]) ->
                 fill_color=_COLOR_CARD,
                 title_color=_COLOR_TEXT_DARK,
                 body_color=_COLOR_TEXT_MUTED,
-            )
+                )
 
 
 def _render_table_slide(prs: Presentation, title: str, headers: list[str], rows: list[list[str]], subtitle: str = "") -> None:

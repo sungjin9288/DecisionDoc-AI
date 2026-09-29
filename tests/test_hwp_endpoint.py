@@ -284,3 +284,40 @@ def test_hwp_endpoint_returns_valid_zip(tmp_path, monkeypatch):
     client = _create_client(tmp_path, monkeypatch)
     res = client.post("/generate/hwp", json={"title": "t", "goal": "g"})
     assert zipfile.is_zipfile(BytesIO(res.content))
+
+
+def _separator_widths_mm(hwpx: bytes, font_size_pt: float) -> list[float]:
+    import re
+
+    with zipfile.ZipFile(BytesIO(hwpx)) as archive:
+        section = archive.read("Contents/section0.xml").decode("utf-8")
+    runs = [text for text in re.findall(r"<hp:t>([^<]*)</hp:t>", section) if text and set(text) == {"─"}]
+    # Hancom Hangul renders "─" about 1.25 em wide in the configured body font.
+    return [len(text) * 1.25 * font_size_pt * 25.4 / 72 for text in runs]
+
+
+def test_build_hwp_separators_fit_the_page_content_width():
+    from app.schemas.visual_assets import GovDocOptions
+    from app.services.hwp_service import build_hwp
+
+    docs = [{"doc_type": "adr", "markdown": "# 결정\n\n본문"}, {"doc_type": "onepager", "markdown": "## 요약\n\n본문"}]
+    default_widths = _separator_widths_mm(build_hwp(docs, title="구분선"), 10.5)
+    assert len(default_widths) >= 2
+    assert max(default_widths) <= 210 - 20 - 20
+
+    gov = GovDocOptions(is_government_format=True, org_name="기관", left_margin_mm=30, right_margin_mm=30, font_size_pt=12)
+    gov_widths = _separator_widths_mm(build_hwp(docs, title="구분선", gov_options=gov), 12)
+    assert gov_widths
+    assert max(gov_widths) <= 210 - 30 - 30
+
+
+def test_build_hwp_separator_handles_zero_font_and_uses_cover_margins():
+    from app.schemas.visual_assets import GovDocOptions
+    from app.services.hwp_service import build_hwp
+
+    docs = [{"doc_type": "adr", "markdown": "# 결정\n\n본문"}, {"doc_type": "onepager", "markdown": "## 요약\n\n본문"}]
+    assert build_hwp(docs, title="글꼴", gov_options=GovDocOptions(font_size_pt=0))[:2] == b"PK"
+
+    wide_margins = GovDocOptions(left_margin_mm=60, right_margin_mm=60)
+    widths = _separator_widths_mm(build_hwp(docs, title="여백", gov_options=wide_margins), 10.5)
+    assert widths and max(widths) <= 210 - 60 - 60

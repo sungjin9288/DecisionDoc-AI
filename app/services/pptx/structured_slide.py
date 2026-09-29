@@ -21,6 +21,7 @@ from app.services.pptx.constants import (
 )
 from app.services.pptx.primitives import (
     _add_card,
+    _card_height_for,
     _clean_slide_text,
     _expand_slide_line,
     _set_slide_background,
@@ -145,69 +146,50 @@ def _render_structured_guided_slide(
     role = _structured_slide_narrative_role(item)
     role_lines = _expand_slide_line(f"스토리 역할: {role}", max_len=38)[:1] if role else []
     content_lines = message_lines + role_lines + evidence_lines[:2]
-    _add_card(
-        slide,
-        left=0.65,
-        top=1.25,
-        width=4.15,
-        height=1.72,
-        title="핵심 메시지",
-        body=content_lines or ["핵심 메시지 없음"],
-        fill_color=_COLOR_CARD,
-        title_color=_COLOR_TEXT_DARK,
-        body_color=_COLOR_TEXT_DARK,
-    )
+    # Left column cards are sized to their wrapped text and stacked so a card
+    # never hides the next one; each height is capped to keep the column on the slide.
+    left_cards = [
+        ("핵심 메시지", content_lines or ["핵심 메시지 없음"], 2.0, _COLOR_CARD, _COLOR_TEXT_DARK, _COLOR_TEXT_DARK),
+        ("장표 구성", _structured_slide_content_blocks(item), 1.3, _COLOR_CARD, _COLOR_TEXT_DARK, _COLOR_TEXT_MUTED),
+        (
+            "의사결정 질문",
+            _expand_slide_line(_structured_slide_decision_question(item), max_len=34)[:2],
+            1.0,
+            _COLOR_CARD_SOFT,
+            _COLOR_BG_ACCENT,
+            _COLOR_TEXT_DARK,
+        ),
+        ("승인 기준", _structured_slide_acceptance_criteria(item), 1.3, _COLOR_CARD, _COLOR_TEXT_DARK, _COLOR_TEXT_MUTED),
+    ]
+    card_top = 1.25
+    for card_title, body, max_height, fill_color, title_color, body_color in left_cards:
+        card_height = _card_height_for(body, width=4.15, max_height=max_height)
+        _add_card(
+            slide,
+            left=0.65,
+            top=card_top,
+            width=4.15,
+            height=card_height,
+            title=card_title,
+            body=body,
+            fill_color=fill_color,
+            title_color=title_color,
+            body_color=body_color,
+        )
+        card_top += card_height + 0.1
 
-    _add_card(
-        slide,
-        left=0.65,
-        top=3.1,
-        width=4.15,
-        height=0.56,
-        title="장표 구성",
-        body=_structured_slide_content_blocks(item),
-        fill_color=_COLOR_CARD,
-        title_color=_COLOR_TEXT_DARK,
-        body_color=_COLOR_TEXT_MUTED,
-    )
-
-    _add_card(
-        slide,
-        left=0.65,
-        top=3.82,
-        width=4.15,
-        height=0.76,
-        title="의사결정 질문",
-        body=_expand_slide_line(_structured_slide_decision_question(item), max_len=34)[:2],
-        fill_color=_COLOR_CARD_SOFT,
-        title_color=_COLOR_BG_ACCENT,
-        body_color=_COLOR_TEXT_DARK,
-    )
-
-    _add_card(
-        slide,
-        left=0.65,
-        top=4.72,
-        width=4.15,
-        height=0.78,
-        title="승인 기준",
-        body=_structured_slide_acceptance_criteria(item),
-        fill_color=_COLOR_CARD,
-        title_color=_COLOR_TEXT_DARK,
-        body_color=_COLOR_TEXT_MUTED,
-    )
-
+    guidance_lines = (
+        _structured_slide_guidance(item)
+        + [f"검증 필요: {need}" for need in _structured_slide_data_needs(item)]
+    )[:4] or ["배치 가이드 없음"]
     _add_card(
         slide,
         left=5.0,
         top=4.45,
         width=4.0,
-        height=0.95,
+        height=_card_height_for(guidance_lines, width=4.0, max_height=2.75),
         title="시각자료 배치 / 검증 가이드",
-        body=(
-            _structured_slide_guidance(item)
-            + [f"검증 필요: {need}" for need in _structured_slide_data_needs(item)]
-        )[:4] or ["배치 가이드 없음"],
+        body=guidance_lines,
         fill_color=_COLOR_CARD,
         title_color=_COLOR_TEXT_DARK,
         body_color=_COLOR_TEXT_MUTED,
