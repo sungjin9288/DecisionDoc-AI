@@ -1,0 +1,83 @@
+{
+  "schema_version": "decisiondoc.future_feature_gate.v1",
+  "gate_id": "procurement-multi-opportunity",
+  "title": "Project-scoped independent procurement opportunities",
+  "target_user": "A DecisionDoc project operator comparing and retaining multiple opportunities without mixing evaluation or review evidence",
+  "observed_problem": "Import replaces the project's sole opportunity. Historical snapshots do not retain independently selectable decisions, and Council session identity is currently project-scoped.",
+  "evidence": [
+    {
+      "kind": "repository",
+      "reference": "app/storage/procurement_store.py:_owned_records",
+      "observation": "Owned records reject duplicate project IDs and get resolves only a project."
+    },
+    {
+      "kind": "repository",
+      "reference": "app/storage/decision_council_store.py:build_session_key",
+      "observation": "The canonical session key lacks a decision/opportunity identity."
+    },
+    {
+      "kind": "repository",
+      "reference": "docs/specs/public_procurement_copilot/PRD.md:FR1",
+      "observation": "Multiple opportunities within a project remain a stated incomplete requirement."
+    },
+    {
+      "kind": "repository",
+      "reference": "docs/superpowers/specs/2026-09-21-procurement-opportunity-and-applicability-design.md:sections 3-6",
+      "observation": "Proposed stable decision identity, versioned aggregate, explicit selection and consumer bindings; not implemented."
+    }
+  ],
+  "current_workaround": "Use a separate project per opportunity; this duplicates shared context and does not fulfill the within-project requirement.",
+  "desired_outcome": "A/B opportunity selection preserves each evaluation, Council session, review and document source, with explicit stale-state handling.",
+  "acceptance_criteria": [
+    "Different source identities yield independent decision IDs; refreshing one identity updates only its own snapshots and derived judgment.",
+    "A versioned project aggregate atomically updates selection and records through existing StateBackend CAS; conflicting revisions return 409 and duplicate operations do not duplicate effects.",
+    "Legacy GET performs no writes; only isolated approved test mutations exercise conversion while preserving legacy decision identity and immutable evidence.",
+    "Project-only mutation/generation remains compatible for a single opportunity and rejects ambiguous multi-opportunity requests without explicit decision identity.",
+    "Council, review, generated documents, edited copies, shares and evidence projections retain exact opportunity and source-revision bindings.",
+    "Cross-tenant and non-assignee access remains denied; A-to-B switches never transfer an override, approval or stale response.",
+    "Local mobile/desktop A/B lifecycle and fake-S3 conflict/failure tests pass without external calls or real-data migration."
+  ],
+  "affected_boundaries": [
+    "app/schemas/procurement.py and app/storage/procurement_store.py",
+    "Project procurement routes and procurement evaluation services",
+    "Decision Council, procurement review/package storage and validators",
+    "Generation context, cache identity, project documents, edited copies, share and evidence-map consumers",
+    "app/static/index.html, scoped API/browser tests and related specifications"
+  ],
+  "authority_scope": {
+    "review_only": true,
+    "allowed_effects": [
+      "After scoped approval, implement and verify only isolated local and fake-S3 workflows described by the candidate design",
+      "Preserve existing snapshots, completed packages, receipts and unrelated dirty changes"
+    ],
+    "excluded_effects": [
+      "Modify real user DATA_DIR contents or perform an unapproved migration",
+      "Invoke live G2B, AWS, providers, training, deployment or publication",
+      "Commit, push, install dependencies, change credentials or grant operational authority"
+    ],
+    "separate_approval_required_for": [
+      "Real-data migration and production rollout",
+      "External service calls, paid execution, deployment, commit or push"
+    ]
+  },
+  "local_verification": [
+    {
+      "command": "python3 -m pytest -q tests/test_procurement_store_integrity.py tests/test_project_management.py tests/test_decision_council.py tests/test_procurement_review_authorization.py tests/test_procurement_bundle_handoff.py",
+      "proves": "Existing ownership, CAS, review and handoff regression gate; not proof of the proposed feature by itself."
+    },
+    {
+      "command": "python3 -m pytest -q tests/test_procurement_multi_opportunity.py",
+      "proves": "Planned new test file: identity, A/B isolation, legacy read/transition, explicit revision conflicts and local/fake-S3 idempotence. Not yet implemented or run."
+    },
+    {
+      "command": "python3 -m pytest -q -p pytest_playwright.pytest_playwright tests/e2e/test_procurement_multi_opportunity.py --browser chromium",
+      "proves": "Planned new test file: real local API/browser import, selection, evaluation, review, generation and source-bound reopening. Not yet implemented or run."
+    }
+  ],
+  "decision": {
+    "status": "approved",
+    "rationale": "The repository operator accepted the linked design and local/fake-S3 scope with '좋아 이어서 완벽하게 계획 세워서 진행하자' after the explicit design approval request. Proceed in the current task; real-data migration and all excluded effects remain unauthorized.",
+    "decided_by": "repository-operator",
+    "decided_at": "2026-09-21T12:09:24Z"
+  }
+}

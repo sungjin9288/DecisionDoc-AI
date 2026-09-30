@@ -45,17 +45,31 @@ def _merge_short_clauses(parts: list[str], *, max_len: int, min_chunk_len: int =
     return merged
 
 
+_ORDINAL_MARKER_RE = re.compile(r"\d+(?:\.\d+)*\.")
+
+
+def _join_ordinal_markers(parts: list[str]) -> list[str]:
+    """Reattach a list number such as ``1.`` split off as its own sentence."""
+    joined: list[str] = []
+    for part in parts:
+        if joined and _ORDINAL_MARKER_RE.fullmatch(joined[-1]):
+            joined[-1] = f"{joined[-1]} {part}"
+        else:
+            joined.append(part)
+    return joined
+
+
 def presentation_points(text: str, *, max_len: int = 78, max_points: int = 4) -> list[str]:
     compact = _clean_text(text)
     if not compact:
         return []
 
     points: list[str] = []
-    sentence_parts = [
+    sentence_parts = _join_ordinal_markers([
         part.strip()
         for part in re.split(r"(?<=[.!?])\s+|(?<=다\.)\s+", compact)
         if part.strip()
-    ]
+    ])
     for sentence in sentence_parts:
         if len(sentence) <= max_len:
             points.append(sentence)

@@ -4,6 +4,9 @@ from __future__ import annotations
 from typing import Any, Iterable
 
 from app.services.decision_evidence.common import as_mapping, list_of_text, text
+from app.services.procurement_document_binding import (
+    normalize_procurement_document_binding,
+)
 
 
 class ProjectRecordEvidenceMixin:
@@ -23,6 +26,24 @@ class ProjectRecordEvidenceMixin:
             node_id = f"document:{doc_id}"
             updated_at = text(document.get("generated_at"))
             status = text(document.get("approval_status")) or "draft"
+            source_binding = normalize_procurement_document_binding(
+                document.get("source_procurement_binding")
+            )
+            source_binding_status = text(
+                document.get("source_procurement_binding_status")
+            ) or ("unknown" if source_binding is not None else "")
+            binding_matches_projection = bool(
+                source_binding is not None
+                and source_binding_status == "current"
+                and source_binding["decision_id"] == self.procurement_id
+            )
+            if source_binding is not None:
+                self._add_source_revision(
+                    source_kind="procurement_source_binding",
+                    source_id=source_binding["decision_id"],
+                    revision=str(source_binding["decision_revision"]),
+                    content=source_binding,
+                )
             self._add_source_revision(
                 source_kind="project_document",
                 source_id=doc_id,
@@ -41,6 +62,9 @@ class ProjectRecordEvidenceMixin:
                         "source_procurement_review_packet_sha256",
                         "source_procurement_review_decision",
                         "source_evidence_refs",
+                        "source_procurement_binding",
+                        "source_procurement_binding_status",
+                        "source_procurement_binding_reason_code",
                     )
                 },
             )
@@ -56,7 +80,11 @@ class ProjectRecordEvidenceMixin:
             document_council_id = text(
                 document.get("source_decision_council_session_id")
             )
-            if self.council_node_id and document_council_id == self.council_session_id:
+            if (
+                self.council_node_id
+                and document_council_id == self.council_session_id
+                and (source_binding is None or binding_matches_projection)
+            ):
                 self._add_edge(
                     relation_type="informed_document",
                     source_node_id=self.council_node_id,
@@ -69,9 +97,33 @@ class ProjectRecordEvidenceMixin:
                     content=document_council_id,
                     evidence_level="record_binding",
                 )
+            if source_binding is not None and not binding_matches_projection:
+                diagnostic_status = (
+                    "stale"
+                    if (
+                        source_binding_status == "stale"
+                        or source_binding["decision_id"] != self.procurement_id
+                    )
+                    else "unknown"
+                )
+                self._diagnose(
+                    code=f"document_procurement_binding_{diagnostic_status}",
+                    severity="warning",
+                    message=(
+                        "The project document procurement source does not match "
+                        "the current evidence-map decision."
+                    ),
+                    node_ids=[node_id],
+                    next_action=(
+                        "Resolve the stored document binding before relying on its "
+                        "requirement coverage."
+                    ),
+                )
             for index, requirement_node_id in enumerate(
                 list_of_text(document.get("source_evidence_refs"))
             ):
+                if source_binding is not None and not binding_matches_projection:
+                    continue
                 if requirement_node_id not in self.nodes:
                     self._diagnose(
                         code="evidence_reference_unresolved",

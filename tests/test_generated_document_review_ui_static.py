@@ -114,3 +114,60 @@ def test_generated_document_review_layout_has_mobile_overflow_guards() -> None:
     assert ".generated-document-review-row { grid-template-columns: 1fr; }" in html
     assert ".generated-document-review-actions { justify-content: flex-start; }" in html
     assert ".generated-document-review-dialog { width: min(100%, 560px); }" in html
+
+
+def test_generated_document_review_ui_completes_only_current_assignments() -> None:
+    html = Path("app/static/index.html").read_text(encoding="utf-8")
+    source = _review_source(html)
+
+    assert 'data-generated-document-review-status="pending"' in html
+    assert 'data-generated-document-review-status="completed"' in html
+    assert "inboxStatus: 'pending'" in source
+    assert "review?.assigned_to_current_user === true" in source
+    assert "reviewStatus === 'pending' && sourceStatus === 'current'" in source
+    assert "data-generated-document-review-complete" in source
+    assert "data-generated-document-review-decision" in source
+    assert "data-generated-document-review-rationale" in source
+    assert "crypto.randomUUID()" in source
+    assert (
+        "/generated-document-reviews/${encodeURIComponent(context.packetSha256)}/complete"
+        in source
+    )
+    assert "body: JSON.stringify({" in source
+    assert "operation_id: context.operationId" in source
+    assert "await loadGeneratedDocumentReviewInbox()" in source
+    assert "await loadProjectDetail(context.projectId)" in source
+
+
+def test_generated_document_reviewed_package_fails_closed_and_stays_context_bound() -> None:
+    html = Path("app/static/index.html").read_text(encoding="utf-8")
+    source = _review_source(html)
+    verification = source[
+        source.index("async function readVerifiedGeneratedDocumentReviewedPackage") :
+        source.index("function generatedDocumentReviewSourceStatusMeta")
+    ]
+
+    for header in (
+        "Content-Length",
+        "X-DecisionDoc-Packet-SHA256",
+        "X-DecisionDoc-Reviewed-Package-SHA256",
+        "X-DecisionDoc-Completion-Receipt-SHA256",
+        "X-DecisionDoc-Review-Status",
+        "X-DecisionDoc-Review-Decision",
+        "X-DecisionDoc-Reviewer-Identity-Bound",
+        "X-DecisionDoc-Replay",
+        "X-DecisionDoc-Human-Review-Completed",
+        "X-DecisionDoc-Operational-Approval",
+    ):
+        assert header in verification
+    assert "actualPackageSha256 !== reviewedPackageSha256" in verification
+    assert "new Blob([packageBytes], { type: 'application/zip' })" in verification
+    assert verification.index(
+        "actualPackageSha256 !== reviewedPackageSha256"
+    ) < verification.index("new Blob([packageBytes], { type: 'application/zip' })")
+    assert "inbox-complete" in source
+    assert "project-complete" in source
+    assert "inbox-reviewed-download" in source
+    assert "project-reviewed-download" in source
+    assert "if (!requestIsCurrent()) return;" in source
+    assert "_generatedDocumentReviewState.pendingOperations.has(operationKey)" in source

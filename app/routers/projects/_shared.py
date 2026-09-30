@@ -19,6 +19,11 @@ from app.services.procurement_review_handoff import (
     describe_procurement_review_document_status,
     load_validated_procurement_review_evidence,
 )
+from app.services.procurement_document_binding import (
+    resolve_procurement_document_binding,
+    resolver_from_app_state,
+)
+from app.schemas.procurement_binding import ProcurementSourceBinding
 
 
 def _resolve_gov_options(gov_options_dict: dict | None):
@@ -88,30 +93,80 @@ def _serialize_project_documents(
     project,
 ) -> list[dict]:
     documents = asdict(project).get("documents", [])
+    resolver = resolver_from_app_state(request.app.state)
+    resolved_documents = []
+    for doc in documents:
+        source = resolve_procurement_document_binding(
+            doc.get("source_procurement_binding"),
+            resolver=resolver,
+        )
+        doc["source_procurement_binding_status"] = source.status
+        doc["source_procurement_binding_reason_code"] = source.reason_code
+        resolved_documents.append((doc, source))
     if not getattr(request.app.state, "procurement_copilot_enabled", False):
         return documents
 
     service = getattr(request.app.state, "decision_council_service", None)
     procurement_store = getattr(request.app.state, "procurement_store", None)
-    if procurement_store is None:
-        return documents
-
-    procurement_record = procurement_store.get(project.project_id, tenant_id=tenant_id)
-    latest_session = None
-    if service is not None:
-        latest_session = service.get_latest_procurement_council(
+    legacy_procurement_record = None
+    legacy_latest_session = None
+    if resolver is None and procurement_store is not None:
+        legacy_procurement_record = procurement_store.get(
+            project.project_id,
+            tenant_id=tenant_id,
+        )
+    if resolver is None and service is not None:
+        legacy_latest_session = service.get_latest_procurement_council(
             tenant_id=tenant_id,
             project_id=project.project_id,
         )
-        if latest_session is not None:
-            latest_session = service.attach_procurement_binding(
-                session=latest_session,
-                procurement_record=procurement_record,
+        if legacy_latest_session is not None:
+            legacy_latest_session = service.attach_procurement_binding(
+                session=legacy_latest_session,
+                procurement_record=legacy_procurement_record,
             )
 
     review_store = getattr(request.app.state, "procurement_review_store", None)
 
-    for doc in documents:
+    for doc, source in resolved_documents:
+        source_binding = source.binding
+        procurement_record = (
+            source.record
+            if source_binding is not None
+            else legacy_procurement_record
+        )
+        latest_session = legacy_latest_session
+        if service is not None and source_binding is not None:
+            latest_session = service.get_latest_procurement_council(
+                tenant_id=tenant_id,
+                project_id=project.project_id,
+                decision_id=source_binding["decision_id"],
+            )
+            if latest_session is not None:
+                current_binding = (
+                    ProcurementSourceBinding.model_validate(source.current_binding)
+                    if source.current_binding is not None
+                    else None
+                )
+                latest_session = service.attach_procurement_binding(
+                    session=latest_session,
+                    procurement_record=procurement_record,
+                    source_binding=current_binding,
+                )
+                stored_binding = ProcurementSourceBinding.model_validate(source_binding)
+                if latest_session.source_binding != stored_binding:
+                    latest_session = latest_session.model_copy(
+                        update={
+                            "current_procurement_binding_status": "stale",
+                            "current_procurement_binding_reason_code": (
+                                "document_procurement_binding_mismatch"
+                            ),
+                            "current_procurement_binding_summary": (
+                                "Council source binding does not match the saved "
+                                "document source binding."
+                            ),
+                        }
+                    )
         status_meta = describe_procurement_council_document_status(
             bundle_id=str(doc.get("bundle_id") or ""),
             source_session_id=doc.get("source_decision_council_session_id"),
@@ -146,6 +201,29 @@ def _serialize_project_documents(
             review_record=review_record,
             procurement_record=procurement_record,
         )
+        if (
+            review_status_meta
+            and review_status_meta["status"] == "current"
+            and source_binding is not None
+            and source.status != "current"
+        ):
+            review_status_meta = {
+                "status": (
+                    "stale_procurement_review"
+                    if source.status == "stale"
+                    else "review_source_unverified"
+                ),
+                "tone": "danger" if source.status == "stale" else "warning",
+                "copy": (
+                    "현재 procurement 대비 이전 review 기준"
+                    if source.status == "stale"
+                    else "검토 source 확인 필요"
+                ),
+                "summary": (
+                    "문서의 procurement source binding이 현재 source와 일치하지 "
+                    "않아 timestamp만으로 review를 current로 판정할 수 없습니다."
+                ),
+            }
         if not review_status_meta:
             continue
         doc["procurement_review_document_status"] = review_status_meta["status"]

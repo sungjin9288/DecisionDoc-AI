@@ -60,7 +60,9 @@ jobs:
           NODE_OPTIONS: --no-deprecation
         run: python -m playwright install chromium --with-deps
 
-      - name: Run full test suite
+      # Browser E2E runs in its own process and time budget so the full
+      # suite (tests/ plus tests/e2e) still runs without one oversized step.
+      - name: Run test suite excluding browser E2E
         timeout-minutes: 25
         env:
           ENVIRONMENT: test
@@ -70,7 +72,20 @@ jobs:
           DECISIONDOC_TEMPLATE_VERSION: v1
           DECISIONDOC_ENV: dev
         run: |
-          pytest tests/ -q --tb=short
+          pytest tests/ -q --tb=short --ignore=tests/e2e
+
+      - name: Run browser E2E tests
+        if: ${{ !cancelled() }}
+        timeout-minutes: 10
+        env:
+          ENVIRONMENT: test
+          JWT_SECRET_KEY: test-secret-key-32-chars-minimum!!
+          DECISIONDOC_PROVIDER: mock
+          DECISIONDOC_STORAGE: local
+          DECISIONDOC_TEMPLATE_VERSION: v1
+          DECISIONDOC_ENV: dev
+        run: |
+          pytest tests/e2e -q --tb=short
 
   security-scan:
     name: Security Scan (advisory)

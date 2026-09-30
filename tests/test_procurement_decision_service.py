@@ -200,7 +200,7 @@ class TestProcurementDecisionService:
         assert "deadline" in record.missing_data
         assert any(item.status == "insufficient_data" for item in record.score_breakdown)
 
-    def test_recommendation_go_case_builds_ready_checklist(self, tmp_path):
+    def _recommend_go_case(self, tmp_path):
         _attach_snapshot(
             tmp_path,
             project_id="proj-go-rec",
@@ -222,14 +222,43 @@ class TestProcurementDecisionService:
             ),
         )
 
-        record = _service(tmp_path).recommend_project(project_id="proj-go-rec", tenant_id="tenant-a")
+        return _service(tmp_path).recommend_project(project_id="proj-go-rec", tenant_id="tenant-a")
 
+    def test_recommendation_go_case_builds_ready_checklist(self, tmp_path):
+        record = self._recommend_go_case(tmp_path)
         assert record.recommendation is not None
         assert record.recommendation.value == "GO"
         assert record.recommendation.remediation_notes == []
         assert len(record.checklist_items) == 10
         assert any(item.category == "eligibility_and_compliance" for item in record.checklist_items)
         assert all(item.status in {"ready", "action_needed"} for item in record.checklist_items)
+
+    def test_reevaluation_clears_recommendation_until_rebuilt_for_current_inputs(self, tmp_path):
+        previous = self._recommend_go_case(tmp_path)
+        store = _store(tmp_path)
+        assert previous.recommendation.value == "GO"
+        service = ProcurementDecisionService(
+            procurement_store=store,
+            data_dir=str(tmp_path),
+            now_provider=lambda: datetime(2026, 6, 1, tzinfo=timezone.utc),
+        )
+
+        evaluated = service.evaluate_project(project_id="proj-go-rec", tenant_id="tenant-a")
+
+        assert any(item.code == "impossible_deadline" and item.status == "fail" for item in evaluated.hard_filters)
+        assert evaluated.recommendation is None
+        assert evaluated.checklist_items == []
+        assert evaluated.source_snapshots == previous.source_snapshots
+        assert evaluated.notes == previous.notes
+        assert evaluated.decision_id == previous.decision_id
+        assert store.get("proj-go-rec", tenant_id="tenant-a") == evaluated
+
+        refreshed = service.recommend_project(project_id="proj-go-rec", tenant_id="tenant-a")
+
+        assert refreshed.recommendation.value == "NO_GO"
+        assert any(item.status == "blocked" for item in refreshed.checklist_items)
+        assert refreshed.source_snapshots == previous.source_snapshots
+        assert store.get("proj-go-rec", tenant_id="tenant-a") == refreshed
 
     def test_recommendation_conditional_case_has_action_items(self, tmp_path):
         _attach_snapshot(

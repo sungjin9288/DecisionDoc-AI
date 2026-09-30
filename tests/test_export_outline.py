@@ -1,4 +1,23 @@
 from app.services.export_outline import presentation_points, summarize_export_docs
+from app.services.export_labels import humanize_doc_type
+
+
+def test_core_document_export_labels_preserve_ids_and_existing_fallbacks():
+    labels = {
+        "adr": "기술 의사결정 기록 (ADR)",
+        "onepager": "한 페이지 요약",
+        "eval_plan": "평가 계획",
+        "ops_checklist": "운영 체크리스트",
+    }
+    docs = [{"doc_type": key, "markdown": "# Title\n\nBody"} for key in labels]
+    summaries = summarize_export_docs(docs)
+    for doc, summary in zip(docs, summaries):
+        assert summary["label"] == labels[doc["doc_type"]]
+        assert labels[doc["doc_type"]] == humanize_doc_type(doc["doc_type"])
+    assert [doc["doc_type"] for doc in docs] == list(labels)
+    assert humanize_doc_type("business_understanding") == "사업 이해"
+    assert humanize_doc_type("future_document") == "Future Document"
+    assert humanize_doc_type("") == "문서"
 
 
 def test_presentation_points_split_long_sentence_into_clauses() -> None:
@@ -55,3 +74,33 @@ def test_summarize_export_docs_exposes_structured_section_and_metric_items() -> 
     summary = summarize_export_docs(docs)[0]
     assert summary["section_items"] == ["제안 요약", "사업 배경"]
     assert summary["metric_items"] == ["표 1개", "목록 1개"]
+
+
+def test_presentation_points_keep_ordinal_markers_with_their_text() -> None:
+    assert presentation_points("1. 번호 목록 하나", max_len=78, max_points=6) == ["1. 번호 목록 하나"]
+    assert presentation_points("2.1. 세부 단계입니다. 다음 문장입니다.", max_len=78, max_points=6) == [
+        "2.1. 세부 단계입니다.",
+        "다음 문장입니다.",
+    ]
+
+
+def test_pptx_numbered_paragraphs_stay_on_one_bullet() -> None:
+    from io import BytesIO
+
+    from pptx import Presentation
+
+    from app.services.pptx_service import build_pptx_from_docs
+
+    markdown = "# 실행\n\n## 실행 항목\n\n- 첫째\n- 둘째\n- 셋째\n1. 번호 목록 하나\n2. 번호 목록 둘\n"
+    deck = Presentation(BytesIO(build_pptx_from_docs([{"doc_type": "adr", "markdown": markdown}], "번호")))
+    paragraphs = [
+        paragraph.text
+        for slide in deck.slides
+        for shape in slide.shapes
+        if shape.has_text_frame
+        for paragraph in shape.text_frame.paragraphs
+    ]
+
+    assert "1. 번호 목록 하나" in paragraphs
+    assert "2. 번호 목록 둘" in paragraphs
+    assert "1." not in paragraphs and "2." not in paragraphs

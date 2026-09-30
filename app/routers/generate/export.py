@@ -48,6 +48,8 @@ from app.services.excel_service import build_excel
 from app.services.hwp_service import build_hwp
 from app.services.pptx_service import build_pptx_from_docs
 from app.services.generation.context_store import record_direct_provider_usage
+from app.services.generation.procurement_source import ProcurementGenerationError
+from app.services.procurement_document_binding import binding_sha256
 from app.services.visual_asset_service import requires_provider_visuals
 from app.storage.usage_store import UsageStoreError
 from app.storage.generation_export_source_store import GenerationExportSourceStoreError
@@ -71,6 +73,22 @@ from app.routers.generate._shared import (
 logger = logging.getLogger("decisiondoc.generate")
 
 router = APIRouter(tags=["generate"])
+
+
+def _bound_export_headers(request: Request, result: dict, *, title: str, tenant_id: str) -> dict[str, str]:
+    """Keep a bound binary's source available for a separately verified ZIP."""
+    binding = result["metadata"].get("source_procurement_binding")
+    if binding is None:
+        return {}
+    _store_zip_docs(
+        request.state.request_id, result["docs"], title, tenant_id=tenant_id,
+        source_store=request.app.state.generation_export_source_store,
+    )
+    return {
+        "X-DecisionDoc-Procurement-Decision-Id": binding["decision_id"],
+        "X-DecisionDoc-Procurement-Decision-Revision": str(binding["decision_revision"]),
+        "X-DecisionDoc-Procurement-Binding-Sha256": binding_sha256(binding),
+    }
 
 
 def _facade():
@@ -142,6 +160,7 @@ def generate_export(
         cache_hit=metadata["cache_hit"],
         export_dir=str(export_dir),
         files=files,
+        source_procurement_binding=metadata.get("source_procurement_binding"),
     )
 
 
@@ -227,6 +246,7 @@ def generate_pptx_endpoint(
         content=pptx_bytes,
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
         headers={
+            **_bound_export_headers(request, result, title=payload.title, tenant_id=tenant_id),
             "Content-Disposition": (
                 f"attachment; filename=\"presentation.pptx\"; "
                 f"filename*=UTF-8''{encoded_title}.pptx"
@@ -291,6 +311,11 @@ async def generate_stream(
     _ensure_procurement_override_reason_for_downstream(payload, request, tenant_id=tenant_id)
     _mark_procurement_downstream_resolved_context(payload, request, tenant_id=tenant_id)
     _mark_decision_council_handoff_context(payload, request, tenant_id=tenant_id)
+    if payload.style_profile_id is not None:
+        service.resolve_style_snapshot(
+            payload,
+            tenant_id=tenant_id,
+        )
     loop = asyncio.get_event_loop()
     q: asyncio.Queue = asyncio.Queue()
     worker_done = threading.Event()
@@ -380,6 +405,7 @@ async def generate_stream(
                         "procurement_review_operational_approval", False
                     ),
                     decision_evidence_refs=metadata.get("decision_evidence_refs", []),
+                    source_procurement_binding=metadata.get("source_procurement_binding"),
                     docs=result["docs"],
                 )
                 store_generation_history(
@@ -392,11 +418,10 @@ async def generate_stream(
                     ),
                     applied_references=metadata.get("applied_references", []),
                 )
-                yield f"event: complete\ndata: {resp.model_dump_json()}\n\n"
                 # Auto-link to project if project_id provided
                 if getattr(payload, "project_id", None):
                     try:
-                        project_store.add_document(
+                        linked_document = project_store.add_document(
                             project_id=payload.project_id,
                             tenant_id=tenant_id,
                             request_id=request_id,
@@ -426,18 +451,34 @@ async def generate_stream(
                             source_evidence_refs=metadata.get(
                                 "decision_evidence_refs", []
                             ),
+                            source_procurement_binding=metadata.get("source_procurement_binding"),
                         )
+                        if linked_document is None and metadata.get("source_procurement_binding"):
+                            raise ValueError("Bound project document was not persisted")
                     except Exception:
-                        pass  # project link is non-critical
+                        if metadata.get("source_procurement_binding"):
+                            request.state.error_code = "PROJECT_DOCUMENT_UNAVAILABLE"
+                            yield (
+                                "event: error\ndata: "
+                                f"{json.dumps({'code': 'PROJECT_DOCUMENT_UNAVAILABLE', 'message': 'Generated document could not be linked to its project.'})}\n\n"
+                            )
+                            return
+                yield f"event: complete\ndata: {resp.model_dump_json()}\n\n"
                 return
             else:  # error
-                if isinstance(data, UsageStoreError):
+                if isinstance(data, ProcurementGenerationError):
+                    error_payload = {
+                        "code": data.code,
+                        "message": "Procurement generation source could not be validated.",
+                    }
+                elif isinstance(data, UsageStoreError):
                     error_payload = {
                         "code": "USAGE_STATE_UNAVAILABLE",
                         "message": "Usage state could not be verified.",
                     }
                 else:
                     error_payload = {"code": type(data).__name__, "message": str(data)}
+                request.state.error_code = error_payload["code"]
                 err = json.dumps(error_payload)
                 yield f"event: error\ndata: {err}\n\n"
                 return
@@ -487,6 +528,7 @@ def generate_docx_endpoint(
         content=docx_bytes,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={
+            **_bound_export_headers(request, result, title=payload.title, tenant_id=tenant_id),
             "Content-Disposition": (
                 f"attachment; filename=\"document.docx\"; "
                 f"filename*=UTF-8''{encoded_title}.docx"
@@ -534,6 +576,7 @@ async def generate_pdf_endpoint(
         content=pdf_bytes,
         media_type="application/pdf",
         headers={
+            **_bound_export_headers(request, result, title=payload.title, tenant_id=tenant_id),
             "Content-Disposition": (
                 f"attachment; filename=\"document.pdf\"; "
                 f"filename*=UTF-8''{encoded_title}.pdf"
@@ -571,6 +614,7 @@ def generate_excel_endpoint(
         content=excel_bytes,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={
+            **_bound_export_headers(request, result, title=payload.title, tenant_id=tenant_id),
             "Content-Disposition": (
                 f"attachment; filename=\"document.xlsx\"; "
                 f"filename*=UTF-8''{encoded_title}.xlsx"
@@ -617,6 +661,7 @@ def generate_hwp_endpoint(
         content=hwp_bytes,
         media_type="application/hwp+zip",
         headers={
+            **_bound_export_headers(request, result, title=payload.title, tenant_id=tenant_id),
             "Content-Disposition": (
                 f"attachment; filename=\"document.hwpx\"; "
                 f"filename*=UTF-8''{encoded_title}.hwpx"
@@ -635,7 +680,8 @@ async def generate_export_edited_endpoint(
 ) -> Response:
     """Export pre-rendered (possibly user-edited) docs to the requested format.
 
-    Does **not** call the LLM — uses the docs list directly.
+    Uses the docs list without text generation. Legacy callers can generate
+    missing visuals; downloads set generate_missing_visuals=False to opt out.
     Supported formats: docx, pdf, excel, hwp, pptx.
     """
     tenant_id = getattr(request.state, "tenant_id", "system") or "system"
@@ -657,7 +703,7 @@ async def generate_export_edited_endpoint(
     visual_provider = None
     if payload.visual_assets:
         visual_assets = [asset.model_dump() for asset in payload.visual_assets]
-    else:
+    elif payload.generate_missing_visuals:
         provider_visuals_required = requires_provider_visuals(docs, max_assets=6)
         admission_lock = None
         visual_usage: dict[str, int] = {}
@@ -695,6 +741,8 @@ async def generate_export_edited_endpoint(
         finally:
             if admission_lock is not None:
                 admission_lock.release()
+    else:
+        visual_assets = []
 
     if fmt == "docx":
         content = _facade().build_docx(docs, title=title, gov_options=gov_opts, visual_assets=visual_assets)

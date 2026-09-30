@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import html as _html
 import re
-import struct
 import zipfile
 from io import BytesIO
 from typing import Any
@@ -21,6 +20,7 @@ from typing import Any
 from app.services.export_labels import humanize_doc_type
 from app.services.export_outline import summarize_export_docs, summarize_export_package
 from app.services.export_reproducibility import write_archive_entry
+from app.services.hwp_image_metadata import _media_extension, _parse_jpeg_size, _parse_png_size
 from app.services.markdown_utils import parse_markdown_blocks
 from app.services.visual_asset_service import decode_visual_asset_bytes, group_visual_assets_by_doc_type
 
@@ -74,6 +74,21 @@ def _line_seg_array_xml(*, width: int = _DEFAULT_LINE_WIDTH, height: int = _mm(6
         f'horzpos="0" horzsize="{safe_width}" flags="393216"/>\n'
         '    </hp:linesegarray>\n'
     )
+
+
+_SEPARATOR_CHAR_EM = 1.25
+
+
+def _separator_line(opts: Any | None = None) -> str:
+    """A box-drawing rule that fits the body width without wrapping.
+
+    Hancom Hangul draws "─" about 1.25 em wide in the default body font (a
+    50-character rule wrapped after roughly 37 characters on A4); keep 5% slack.
+    """
+    width_mm = 210 - (opts.left_margin_mm if opts else 20) - (opts.right_margin_mm if opts else 20)
+    font_size_pt = opts.font_size_pt if opts and opts.font_size_pt > 0 else 10.5
+    char_mm = font_size_pt * 25.4 / 72 * _SEPARATOR_CHAR_EM
+    return "─" * max(10, int(width_mm / char_mm * 0.95))
 
 
 def _escape(text: str) -> str:
@@ -368,7 +383,7 @@ def _gov_header_paras(title: str, opts: Any) -> list[str]:
         paras.append(_para_xml(opts.dept_name, "제목2"))
     if opts.org_name or opts.dept_name:
         paras.append(_para_xml(""))
-    paras.append(_para_xml("─" * 50, "본문"))
+    paras.append(_para_xml(_separator_line(opts), "본문"))
     if opts.doc_number:
         paras.append(_para_xml(f"문서번호: {opts.doc_number}", "본문"))
     if opts.recipient:
@@ -383,52 +398,6 @@ def _gov_header_paras(title: str, opts: Any) -> list[str]:
     paras.append(_para_xml(""))
 
     return paras
-
-
-def _media_extension(media_type: str) -> str:
-    lowered = str(media_type or "").lower()
-    if lowered == "image/png":
-        return "png"
-    if lowered in {"image/jpeg", "image/jpg"}:
-        return "jpg"
-    if lowered == "image/gif":
-        return "gif"
-    if lowered == "image/bmp":
-        return "bmp"
-    return ""
-
-
-def _parse_png_size(raw: bytes) -> tuple[int, int] | None:
-    if len(raw) >= 24 and raw.startswith(b"\x89PNG\r\n\x1a\n"):
-        return struct.unpack(">II", raw[16:24])
-    return None
-
-
-def _parse_jpeg_size(raw: bytes) -> tuple[int, int] | None:
-    if len(raw) < 4 or raw[:2] != b"\xff\xd8":
-        return None
-    index = 2
-    while index + 9 < len(raw):
-        if raw[index] != 0xFF:
-            index += 1
-            continue
-        marker = raw[index + 1]
-        index += 2
-        if marker in {0xD8, 0xD9}:
-            continue
-        if index + 2 > len(raw):
-            break
-        segment_length = int.from_bytes(raw[index:index + 2], "big")
-        if segment_length < 2 or index + segment_length > len(raw):
-            break
-        if marker in {0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF}:
-            height = int.from_bytes(raw[index + 3:index + 5], "big")
-            width = int.from_bytes(raw[index + 5:index + 7], "big")
-            if width > 0 and height > 0:
-                return width, height
-            break
-        index += segment_length
-    return None
 
 
 def _image_hwpu_size(raw: bytes, media_type: str) -> tuple[int, int]:
@@ -571,7 +540,7 @@ def _prepare_hwp_visual_assets(visual_assets: list[dict[str, Any]] | None) -> tu
     return prepared, binary_items
 
 
-def _export_cover_paras(title: str, docs: list[dict[str, Any]]) -> list[str]:
+def _export_cover_paras(title: str, docs: list[dict[str, Any]], opts: Any | None = None) -> list[str]:
     summaries = summarize_export_docs(docs)
     package = summarize_export_package(docs)
     paras = [
@@ -599,7 +568,7 @@ def _export_cover_paras(title: str, docs: list[dict[str, Any]]) -> list[str]:
         paras.append(_para_xml(f"핵심 섹션: {section_text}", "본문"))
         paras.append(_para_xml(f"구성 지표: {metric_text}", "본문"))
         paras.append(_para_xml(""))
-    paras.append(_para_xml("─" * 50, "본문"))
+    paras.append(_para_xml(_separator_line(opts), "본문"))
     paras.append(_para_xml(""))
     return paras
 
@@ -643,13 +612,13 @@ def _section_xml(
     if opts and opts.is_government_format:
         paras.extend(_gov_header_paras(title, opts))
     else:
-        paras.extend(_export_cover_paras(title, docs))
+        paras.extend(_export_cover_paras(title, docs, opts))
 
     # Content
     summaries = summarize_export_docs(docs)
     for i, doc in enumerate(docs):
         if i > 0:
-            paras.append(_para_xml("─" * 40, "본문"))
+            paras.append(_para_xml(_separator_line(opts), "본문"))
             paras.append(_para_xml(""))
         if not (opts and opts.is_government_format):
             doc_title = humanize_doc_type(str(doc.get("doc_type", "document")))

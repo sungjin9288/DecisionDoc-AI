@@ -12,15 +12,18 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from app.schemas import (
-    NormalizedProcurementOpportunity,
-    ProcurementChecklistItem,
-    ProcurementDecisionRecord,
-    ProcurementDecisionUpsert,
-    ProcurementHardFilterResult,
-    ProcurementRecommendation,
-    ProcurementScoreBreakdownItem,
+from app.schemas.procurement_binding import ProcurementSourceBinding
+from app.services.procurement_source_binding import require_binding_matches_record
+from app.services.procurement_decision_package.applicability import (
+    APPLICABILITY_DOCX_NAME,
+    PACKAGE_SCHEMA_PURPOSE_V2,
+    V3_ARTIFACT_ORDER,
+    artifact_order,
+    build_applicability_docx,
+    validate_applicability,
 )
+
+from app.schemas import ProcurementDecisionRecord
 from app.storage.procurement_store import ProcurementDecisionStore
 
 from app.services.procurement_decision_package.constants import (
@@ -31,9 +34,7 @@ from app.services.procurement_decision_package.constants import (
     DECISION_PACKAGE_NAME,
     DECISION_SUMMARY_NAME,
     DEFAULT_DECISION_PACKAGE_OUTPUT_BASE,
-    DEMO_PROJECT_ID,
     DEMO_RECOMMENDATION,
-    DEMO_TENANT_ID,
     EVIDENCE_SUMMARY_NAME,
     EXCLUDED_ACTION_ORDER,
     EXPECTED_DECISION_PACKAGE_SCHEMA_PURPOSE,
@@ -71,6 +72,15 @@ from app.services.procurement_decision_package.sample_validation import (
 )
 from app.services.procurement_decision_package.review_workspace import (
     render_procurement_review_workspace,
+)
+from app.services.procurement_decision_package.demo_seed import (  # noqa: F401
+    _demo_decision_checklist_items,
+    _demo_decision_hard_filters,
+    _demo_decision_missing_data,
+    _demo_decision_opportunity,
+    _demo_decision_recommendation,
+    _demo_decision_score_breakdown,
+    seed_demo_decision_record,
 )
 
 def build_decision_package(sample_input: dict[str, Any]) -> dict[str, Any]:
@@ -257,139 +267,19 @@ def build_decision_package(sample_input: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def seed_demo_decision_record(
-    *,
-    data_dir: Path,
-    tenant_id: str = DEMO_TENANT_ID,
-    project_id: str = DEMO_PROJECT_ID,
-) -> str:
-    store = ProcurementDecisionStore(base_dir=str(data_dir))
-
-    record = store.upsert(
-        ProcurementDecisionUpsert(
-            project_id=project_id,
-            tenant_id=tenant_id,
-            opportunity=_demo_decision_opportunity(),
-            hard_filters=_demo_decision_hard_filters(),
-            score_breakdown=_demo_decision_score_breakdown(),
-            soft_fit_score=68.0,
-            soft_fit_status="scored",
-            missing_data=_demo_decision_missing_data(),
-            checklist_items=_demo_decision_checklist_items(),
-            recommendation=_demo_decision_recommendation(),
-            notes=(
-                "Local package demo seed record. "
-                "Does not authorize operational action."
-            ),
-        )
-    )
-
-    return record.decision_id
-
-
-def _demo_decision_opportunity() -> NormalizedProcurementOpportunity:
-    return NormalizedProcurementOpportunity(
-        source_kind="local_demo",
-        source_id="local-procurement-demo-001",
-        title="Public Agency Document Workflow Modernization Pilot",
-        issuer="Sample Public Agency",
-        budget="KRW 80M-120M",
-        deadline="21 days",
-        bid_type="local_fixture",
-        category="document_operations",
-        region="sample",
-        raw_text_preview="Local deterministic procurement package demo.",
-    )
-
-
-def _demo_decision_hard_filters() -> list[ProcurementHardFilterResult]:
-    return [
-        ProcurementHardFilterResult(
-            code="security_plan",
-            label="Security handling plan",
-            status="unknown",
-            blocking=True,
-            reason=(
-                "Security handling plan owner must be confirmed "
-                "before proposal drafting."
-            ),
-        ),
-    ]
-
-
-def _demo_decision_score_breakdown() -> list[ProcurementScoreBreakdownItem]:
-    return [
-        ProcurementScoreBreakdownItem(
-            key="domain_fit",
-            label="Domain fit",
-            score=78.0,
-            weight=0.25,
-            weighted_score=19.5,
-            summary="Document workflow capability is aligned with the opportunity.",
-            evidence=["document workflow consulting"],
-        ),
-        ProcurementScoreBreakdownItem(
-            key="security_readiness",
-            label="Security readiness",
-            score=52.0,
-            weight=0.25,
-            weighted_score=13.0,
-            summary="Security plan requires owner assignment.",
-            evidence=["security plan draft required"],
-        ),
-    ]
-
-
-def _demo_decision_checklist_items() -> list[ProcurementChecklistItem]:
-    return [
-        ProcurementChecklistItem(
-            category="security_plan",
-            title="Finalize security handling plan",
-            status="action_needed",
-            severity="high",
-            remediation_note="Assign owner before proposal drafting.",
-        ),
-        ProcurementChecklistItem(
-            category="training_staffing",
-            title="Assign operator training staffing owner",
-            status="action_needed",
-            severity="medium",
-            remediation_note="Confirm trainer availability before kickoff.",
-        ),
-    ]
-
-
-def _demo_decision_recommendation() -> ProcurementRecommendation:
-    return ProcurementRecommendation(
-        value=DEMO_RECOMMENDATION,
-        summary=(
-            "Conditional go pending security and "
-            "training ownership confirmation."
-        ),
-        evidence=[
-            "Weighted fit score: 68.00",
-            "Document workflow capability aligns with the opportunity.",
-        ],
-        missing_data=_demo_decision_missing_data(),
-        remediation_notes=[
-            "Assign security plan owner.",
-            "Assign operator training staffing owner.",
-        ],
-    )
-
-
-def _demo_decision_missing_data() -> list[str]:
-    return [
-        "security plan owner",
-        "operator training staffing owner",
-    ]
-
-
 def build_decision_package_from_record(
     record: ProcurementDecisionRecord,
     *,
     reviewer_owner: str = "executive-reviewer",
+    source_binding: ProcurementSourceBinding | None = None,
+    requirement_applicability: dict | None = None,
 ) -> dict[str, Any]:
+    projection = None
+    if requirement_applicability is not None:
+        if source_binding is None:
+            raise ValueError("requirement applicability requires source_binding")
+        source_binding = require_binding_matches_record(source_binding, record)
+        projection = validate_applicability(requirement_applicability, source_binding)
     if record.opportunity is None:
         raise ValueError("procurement decision record must include an opportunity")
     if record.recommendation is None:
@@ -502,6 +392,12 @@ def build_decision_package_from_record(
     scenario_id = f"procurement-record-{record.project_id}"
     schema_purpose = PROCUREMENT_DECISION_PACKAGE_SCHEMA_PURPOSE
     updated_at = record.updated_at
+    if projection is not None:
+        schema_purpose = PACKAGE_SCHEMA_PURPOSE_V2
+        package["requirement_applicability"] = projection
+        for name in ("audit_manifest", "export_manifest"):
+            package[name]["included_artifacts"] = list(V3_ARTIFACT_ORDER)
+        package["audit_manifest"]["evidence_artifacts"].append(APPLICABILITY_DOCX_NAME)
 
     return {
         "scenario_id": scenario_id,
@@ -582,7 +478,9 @@ def _package_checklist_status(status: str) -> str:
         return "blocked"
     if status in {"action_needed", "unknown"}:
         return "needs_review"
-    return "ready"
+    if status == "ready":
+        return "ready"
+    raise ValueError(f"unsupported procurement checklist status: {status!r}")
 
 
 def _score_band(recommendation: str, score: int) -> str:
@@ -754,12 +652,16 @@ def write_package_artifacts(
         output_dir / PROCUREMENT_REVIEW_NAME,
         render_procurement_review_workspace(package_doc),
     )
+    if "requirement_applicability" in package:
+        from app.services.procurement_decision_package.review_packet import write_bytes_atomic
+        write_bytes_atomic(output_dir / APPLICABILITY_DOCX_NAME,
+                           build_applicability_docx(package["requirement_applicability"]))
 
     return {
         "schema_purpose": package_doc["schema_purpose"],
         "status": "passed",
         "output_dir": str(output_dir),
-        "artifacts": list(INCLUDED_ARTIFACT_ORDER),
+        "artifacts": list(artifact_order(package_doc)),
         "recommendation": package["recommendation"],
         "authorization_boundary": EXPLICIT_AUTHORIZATION_BOUNDARY,
     }

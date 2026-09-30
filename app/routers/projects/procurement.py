@@ -5,191 +5,40 @@ Extracted from app/routers/projects.py (moved verbatim; no behavior changes).
 from __future__ import annotations
 
 from dataclasses import asdict
-from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from app.auth.api_key import require_api_key
 from app.config import get_g2b_api_key
 from app.dependencies import get_tenant_id
+from app.routers.projects._procurement_helpers import (
+    _append_procurement_override_reason,
+    _apply_decision_council_observability,
+    _apply_procurement_observability,
+    _attach_decision_council_binding,
+    _build_g2b_structured_context,
+    _ensure_procurement_copilot_enabled,
+    _load_decision_council_procurement_context_or_raise,
+    _normalize_procurement_opportunity,
+    _raise_scoped_error,
+    _record_remediation_link_event,
+    _require_scoped_fields,
+    _resolve_scoped_procurement_context as _resolve_scoped_procurement_context,
+)
 from app.schemas import (
     DecisionCouncilRunRequest,
     DecisionCouncilSessionResponse,
     ImportProjectProcurementOpportunityRequest,
-    NormalizedProcurementOpportunity,
     ProcurementDecisionUpsert,
+    ProcurementUUID,
     RecordProjectProcurementRemediationLinkCopyRequest,
     RecordProjectProcurementRemediationLinkOpenRequest,
     UpdateProjectProcurementOverrideReasonRequest,
 )
+from app.services.generation.procurement_source import ProcurementGenerationError
+from app.storage.procurement_project_store import ProcurementProjectConflict
 
 router = APIRouter()
-
-
-# ── Helpers ──────────────────────────────────────────────────────────────
-
-
-def _normalize_procurement_opportunity(announcement, *, url_or_number: str) -> NormalizedProcurementOpportunity:
-    source_id = announcement.bid_number or url_or_number
-    source_url = announcement.detail_url or (url_or_number if url_or_number.startswith("http") else "")
-    return NormalizedProcurementOpportunity(
-        source_kind="g2b",
-        source_id=source_id,
-        source_url=source_url,
-        title=announcement.title or source_id,
-        issuer=announcement.issuer,
-        budget=announcement.budget,
-        deadline=announcement.deadline,
-        bid_type=announcement.bid_type,
-        category=announcement.category,
-        region="",
-        raw_text_preview=(announcement.raw_text or "")[:1_000],
-    )
-
-
-def _build_g2b_structured_context(announcement) -> str:
-    return (
-        f"발주기관: {announcement.issuer}\n"
-        f"사업명: {announcement.title}\n"
-        f"예산: {announcement.budget}\n"
-        f"마감: {announcement.deadline}\n\n"
-        + ((announcement.raw_text or "")[:5_000] if announcement.raw_text else "")
-    )
-
-
-def _append_procurement_override_reason(
-    existing_notes: str,
-    *,
-    username: str,
-    reason: str,
-) -> str:
-    timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    block = (
-        f"[override_reason ts={timestamp} actor={username}]\n"
-        f"{reason.strip()}\n"
-        "[/override_reason]"
-    )
-    if not existing_notes.strip():
-        return block
-    return f"{existing_notes.rstrip()}\n\n{block}"
-
-
-def _ensure_procurement_copilot_enabled(request: Request) -> None:
-    if getattr(request.app.state, "procurement_copilot_enabled", False):
-        return
-    request.state.error_code = "FEATURE_DISABLED"
-    raise HTTPException(
-        status_code=403,
-        detail={
-            "code": "FEATURE_DISABLED",
-            "message": "Public Procurement Go/No-Go Copilot is disabled in this environment.",
-        },
-    )
-
-
-def _apply_procurement_observability(
-    request: Request,
-    *,
-    action: str,
-    project_id: str,
-    operation: str | None = None,
-    source_kind: str | None = None,
-    source_id: str | None = None,
-    record=None,
-    hard_failures: list[dict] | None = None,
-    packet_sha256: str | None = None,
-    review_status: str | None = None,
-    review_decision: str | None = None,
-) -> None:
-    request.state.procurement_action = action
-    request.state.procurement_project_id = project_id
-    request.state.procurement_operation = operation
-    request.state.procurement_source_kind = source_kind
-    request.state.procurement_source_id = source_id
-    request.state.procurement_packet_sha256 = packet_sha256
-    request.state.procurement_review_status = review_status
-    request.state.procurement_review_decision = review_decision
-
-    if record is None:
-        return
-
-    request.state.procurement_soft_fit_score = record.soft_fit_score
-    request.state.procurement_soft_fit_status = record.soft_fit_status
-    request.state.procurement_missing_data_count = len(record.missing_data)
-    request.state.procurement_recommendation = (
-        record.recommendation.value if record.recommendation else None
-    )
-    request.state.procurement_checklist_action_count = sum(
-        1 for item in record.checklist_items if item.status in {"action_needed", "blocked"}
-    )
-    if hard_failures is not None:
-        request.state.procurement_hard_failure_count = len(hard_failures)
-    else:
-        request.state.procurement_hard_failure_count = sum(
-            1 for item in record.hard_filters if item.blocking and item.status == "fail"
-        )
-
-
-def _load_decision_council_procurement_context_or_raise(
-    request: Request,
-    *,
-    project_id: str,
-    tenant_id: str,
-):
-    project_store = request.app.state.project_store
-    project = project_store.get(project_id, tenant_id=tenant_id)
-    if project is None:
-        raise HTTPException(status_code=404, detail=f"프로젝트를 찾을 수 없습니다: {project_id}")
-
-    procurement_store = request.app.state.procurement_store
-    record = procurement_store.get(project_id, tenant_id=tenant_id)
-    if record is None or record.opportunity is None or record.recommendation is None:
-        request.state.error_code = "decision_council_procurement_context_required"
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "decision_council_procurement_context_required",
-                "message": (
-                    "Decision Council v1은 procurement opportunity 연결과 recommendation 생성이 완료된 "
-                    "project에서만 실행할 수 있습니다."
-                ),
-                "project_id": project_id,
-                "required_steps": [
-                    "imports/g2b-opportunity",
-                    "procurement/evaluate",
-                    "procurement/recommend",
-                ],
-            },
-        )
-    return project, record
-
-
-def _apply_decision_council_observability(
-    request: Request,
-    *,
-    project_id: str,
-    session: DecisionCouncilSessionResponse,
-) -> None:
-    request.state.decision_council_session_id = session.session_id
-    request.state.decision_council_session_revision = session.session_revision
-    request.state.decision_council_project_id = project_id
-    request.state.decision_council_use_case = session.use_case
-    request.state.decision_council_target_bundle = session.target_bundle_type
-    request.state.decision_council_direction = session.consensus.recommended_direction
-    request.state.decision_council_binding_status = session.current_procurement_binding_status
-
-
-def _attach_decision_council_binding(
-    request: Request,
-    *,
-    session: DecisionCouncilSessionResponse,
-    record,
-) -> DecisionCouncilSessionResponse:
-    service = request.app.state.decision_council_service
-    return service.attach_procurement_binding(
-        session=session,
-        procurement_record=record,
-    )
 
 
 # ── Endpoints ────────────────────────────────────────────────────────────
@@ -223,6 +72,82 @@ async def import_project_procurement_g2b_endpoint(
     if project is None:
         raise HTTPException(status_code=404, detail=f"프로젝트를 찾을 수 없습니다: {project_id}")
 
+    scoped = getattr(request.app.state, "procurement_opportunity_service", None)
+    scoped_fields = (
+        payload.expected_selection_revision,
+        payload.expected_decision_revision,
+        payload.operation_id,
+    )
+    _require_scoped_fields(
+        request,
+        scoped=scoped,
+        scoped_fields=scoped_fields,
+        missing_message=(
+            "opt-in import에는 expected_selection_revision, "
+            "expected_decision_revision, operation_id가 필요합니다."
+        ),
+    )
+
+    request_identity = payload.model_dump(
+        mode="json",
+        exclude={
+            "expected_selection_revision",
+            "expected_decision_revision",
+            "operation_id",
+        },
+    )
+    if scoped is not None:
+        command = scoped.store.import_command(
+            payload=None,
+            expected_selection_revision=payload.expected_selection_revision,
+            expected_decision_revision=payload.expected_decision_revision,
+            request_identity=request_identity,
+        )
+        try:
+            replay = scoped.store.replay_operation(
+                project_id,
+                tenant_id=tenant_id,
+                operation_id=payload.operation_id,
+                command=command,
+            )
+        except ProcurementProjectConflict:
+            _raise_scoped_error(
+                request,
+                code="procurement_context_changed",
+                status=409,
+                message="operation_id가 다른 import 요청에 이미 사용되었습니다.",
+            )
+        if replay is not None:
+            _apply_procurement_observability(
+                request,
+                action="import",
+                project_id=project_id,
+                operation="replayed",
+            )
+            request.state.procurement_operation_id = replay.operation_id
+            request.state.procurement_decision_id = replay.decision_id
+            request.state.procurement_decision_revision = replay.decision_revision
+            request.state.procurement_selection_revision = replay.selection_revision
+            return {
+                "project_id": project_id,
+                "operation": "replayed",
+                "project_name": project.name,
+                "receipt": replay.model_dump(mode="json"),
+            }
+        try:
+            scoped.store.assert_import_preconditions(
+                project_id,
+                tenant_id=tenant_id,
+                expected_selection_revision=payload.expected_selection_revision,
+            )
+        except ProcurementProjectConflict:
+            _raise_scoped_error(
+                request,
+                code="procurement_context_changed",
+                status=409,
+                message="공고 선택 상태가 변경되었습니다. 최신 상태를 확인하세요.",
+            )
+
     try:
         announcement = await fetch_announcement_detail(
             url_or_number=payload.url_or_number,
@@ -233,6 +158,28 @@ async def import_project_procurement_g2b_endpoint(
 
     if not announcement:
         raise HTTPException(status_code=404, detail="공고를 찾을 수 없습니다.")
+
+    normalized_opportunity = _normalize_procurement_opportunity(
+        announcement,
+        url_or_number=payload.url_or_number,
+    )
+    if scoped is not None:
+        try:
+            scoped.store.assert_import_preconditions(
+                project_id,
+                tenant_id=tenant_id,
+                expected_selection_revision=payload.expected_selection_revision,
+                expected_decision_revision=payload.expected_decision_revision,
+                source_kind=normalized_opportunity.source_kind,
+                source_id=normalized_opportunity.source_id,
+            )
+        except ProcurementProjectConflict:
+            _raise_scoped_error(
+                request,
+                code="procurement_context_changed",
+                status=409,
+                message="공고 상태가 변경되었습니다. 최신 상태를 확인하세요.",
+            )
 
     parsed_rfp_fields = payload.parsed_rfp_fields
     if parsed_rfp_fields is None and announcement.raw_text:
@@ -254,8 +201,16 @@ async def import_project_procurement_g2b_endpoint(
         parsed_rfp_fields = {}
 
     structured_context = payload.structured_context or _build_g2b_structured_context(announcement)
-    procurement_store = request.app.state.procurement_store
-    existing = procurement_store.get(project_id, tenant_id=tenant_id)
+    procurement_store = (
+        request.app.state.procurement_opportunity_snapshot_store
+        if scoped is not None
+        else request.app.state.procurement_store
+    )
+    existing = (
+        procurement_store.get(project_id, tenant_id=tenant_id)
+        if scoped is None
+        else None
+    )
     snapshot = procurement_store.save_source_snapshot(
         tenant_id=tenant_id,
         project_id=project_id,
@@ -270,30 +225,50 @@ async def import_project_procurement_g2b_endpoint(
         },
     )
 
-    source_snapshots = list(existing.source_snapshots) if existing else []
-    source_snapshots.append(snapshot)
-    record = procurement_store.upsert(
-        ProcurementDecisionUpsert(
-            project_id=project_id,
-            tenant_id=tenant_id,
-            schema_version=existing.schema_version if existing else "v1",
-            opportunity=_normalize_procurement_opportunity(
-                announcement,
-                url_or_number=payload.url_or_number,
-            ),
-            capability_profile=existing.capability_profile if existing else None,
-            hard_filters=list(existing.hard_filters) if existing else [],
-            score_breakdown=list(existing.score_breakdown) if existing else [],
-            soft_fit_score=existing.soft_fit_score if existing else None,
-            soft_fit_status=existing.soft_fit_status if existing else "insufficient_data",
-            missing_data=list(existing.missing_data) if existing else [],
-            checklist_items=list(existing.checklist_items) if existing else [],
-            recommendation=existing.recommendation if existing else None,
-            source_snapshots=source_snapshots,
-            notes=payload.notes if payload.notes else (existing.notes if existing else ""),
+    if scoped is None:
+        source_snapshots = list(existing.source_snapshots) if existing else []
+        source_snapshots.append(snapshot)
+        # A new snapshot invalidates derived judgments, even for the same notice ID.
+        record = procurement_store.upsert(
+            ProcurementDecisionUpsert(
+                project_id=project_id,
+                tenant_id=tenant_id,
+                schema_version=existing.schema_version if existing else "v1",
+                opportunity=normalized_opportunity,
+                source_snapshots=source_snapshots,
+                notes=payload.notes if payload.notes else (existing.notes if existing else ""),
+            )
         )
-    )
-    operation = "updated" if existing else "created"
+        receipt = None
+        operation = "updated" if existing else "created"
+    else:
+        try:
+            receipt = scoped.store.import_opportunity(
+                ProcurementDecisionUpsert(
+                    project_id=project_id,
+                    tenant_id=tenant_id,
+                    opportunity=normalized_opportunity,
+                    source_snapshots=[snapshot],
+                    notes=payload.notes,
+                ),
+                expected_selection_revision=payload.expected_selection_revision,
+                expected_decision_revision=payload.expected_decision_revision,
+                operation_id=payload.operation_id,
+                request_identity=request_identity,
+            )
+        except ProcurementProjectConflict:
+            _raise_scoped_error(
+                request,
+                code="procurement_context_changed",
+                status=409,
+                message="공고 상태가 변경되었습니다. 최신 상태를 확인하세요.",
+            )
+        record = scoped.get_decision(
+            project_id,
+            tenant_id=tenant_id,
+            decision_id=receipt.decision_id,
+        ).record
+        operation = "created" if receipt.decision_revision == 1 else "updated"
     _apply_procurement_observability(
         request,
         action="import",
@@ -304,7 +279,7 @@ async def import_project_procurement_g2b_endpoint(
         record=record,
     )
 
-    return {
+    response = {
         "project_id": project_id,
         "operation": operation,
         "project_name": project.name,
@@ -312,6 +287,13 @@ async def import_project_procurement_g2b_endpoint(
         "decision": record.model_dump(mode="json"),
         "source_snapshot": snapshot.model_dump(mode="json"),
     }
+    if receipt is not None:
+        response["receipt"] = receipt.model_dump(mode="json")
+        request.state.procurement_operation_id = receipt.operation_id
+        request.state.procurement_decision_id = receipt.decision_id
+        request.state.procurement_decision_revision = receipt.decision_revision
+        request.state.procurement_selection_revision = receipt.selection_revision
+    return response
 
 
 @router.get(
@@ -332,8 +314,20 @@ def get_project_procurement_endpoint(project_id: str, request: Request) -> dict:
     if project is None:
         raise HTTPException(status_code=404, detail=f"프로젝트를 찾을 수 없습니다: {project_id}")
 
-    procurement_store = request.app.state.procurement_store
-    record = procurement_store.get(project_id, tenant_id=tenant_id)
+    scoped = getattr(request.app.state, "procurement_opportunity_service", None)
+    selection = {}
+    if scoped is None:
+        record = request.app.state.procurement_store.get(project_id, tenant_id=tenant_id)
+    else:
+        from app.routers.projects.procurement_opportunities import procurement_errors
+        with procurement_errors(request):
+            state = scoped.store.get(project_id, tenant_id=tenant_id)
+        record = None
+        if state is not None:
+            record = next((entry.record for entry in state.entries
+                           if entry.record.decision_id == state.active_decision_id), None)
+        selection = {"active_decision_id": state.active_decision_id if state else None,
+                     "selection_revision": state.selection_revision if state else 0}
     if record is not None:
         _apply_procurement_observability(
             request,
@@ -345,6 +339,7 @@ def get_project_procurement_endpoint(project_id: str, request: Request) -> dict:
         "project_id": project_id,
         "project_name": project.name,
         "decision": record.model_dump(mode="json") if record else None,
+        **selection,
     }
 
 
@@ -374,7 +369,13 @@ def evaluate_project_procurement_endpoint(project_id: str, request: Request) -> 
         state_backend=request.app.state.state_backend,
     )
     try:
-        record = service.evaluate_project(project_id=project_id, tenant_id=tenant_id)
+        scoped = getattr(request.app.state, "procurement_opportunity_service", None)
+        if scoped is None:
+            record = service.evaluate_project(project_id=project_id, tenant_id=tenant_id)
+        else:
+            from app.routers.projects.procurement_opportunities import procurement_errors
+            with procurement_errors(request):
+                record = scoped.calculate_legacy(project_id, tenant_id=tenant_id, action="evaluate")
     except KeyError as exc:
         if str(exc).strip("'") == "procurement_opportunity_not_attached":
             request.state.error_code = "procurement_opportunity_not_attached"
@@ -433,7 +434,13 @@ def recommend_project_procurement_endpoint(project_id: str, request: Request) ->
         state_backend=request.app.state.state_backend,
     )
     try:
-        record = service.recommend_project(project_id=project_id, tenant_id=tenant_id)
+        scoped = getattr(request.app.state, "procurement_opportunity_service", None)
+        if scoped is None:
+            record = service.recommend_project(project_id=project_id, tenant_id=tenant_id)
+        else:
+            from app.routers.projects.procurement_opportunities import procurement_errors
+            with procurement_errors(request):
+                record = scoped.calculate_legacy(project_id, tenant_id=tenant_id, action="recommend")
     except KeyError as exc:
         if str(exc).strip("'") == "procurement_opportunity_not_attached":
             request.state.error_code = "procurement_opportunity_not_attached"
@@ -470,14 +477,18 @@ def run_project_decision_council_endpoint(
     project_id: str,
     payload: DecisionCouncilRunRequest,
     request: Request,
+    decision_id: ProcurementUUID | None = Query(default=None),
+    expected_decision_revision: int | None = Query(default=None, ge=1),
 ) -> DecisionCouncilSessionResponse:
     """Run the procurement-scoped deterministic Decision Council v1."""
     _ensure_procurement_copilot_enabled(request)
     tenant_id = get_tenant_id(request)
-    _, record = _load_decision_council_procurement_context_or_raise(
+    _, record, source_binding = _load_decision_council_procurement_context_or_raise(
         request,
         project_id=project_id,
         tenant_id=tenant_id,
+        decision_id=decision_id,
+        expected_decision_revision=expected_decision_revision,
     )
 
     service = request.app.state.decision_council_service
@@ -488,11 +499,38 @@ def run_project_decision_council_endpoint(
         context=payload.context,
         constraints=payload.constraints,
         procurement_record=record,
+        source_binding=source_binding,
     )
+    if source_binding is not None:
+        resolver = request.app.state.procurement_generation_resolver
+        try:
+            current_source = resolver.capture(
+                project_id,
+                tenant_id=tenant_id,
+                decision_id=source_binding.decision_id,
+                expected_revision=source_binding.decision_revision,
+            )
+        except ProcurementGenerationError:
+            current_source = None
+        if current_source is None:
+            scoped = request.app.state.procurement_opportunity_service
+            try:
+                record = scoped.get_decision(
+                    project_id,
+                    tenant_id=tenant_id,
+                    decision_id=source_binding.decision_id,
+                ).record
+            except LookupError:
+                pass
+            source_binding = None
+        else:
+            record = current_source.record
+            source_binding = current_source.binding
     session = _attach_decision_council_binding(
         request,
         session=session,
         record=record,
+        source_binding=source_binding,
     )
     _apply_decision_council_observability(
         request,
@@ -510,20 +548,25 @@ def run_project_decision_council_endpoint(
 def get_project_decision_council_endpoint(
     project_id: str,
     request: Request,
+    decision_id: ProcurementUUID | None = Query(default=None),
+    expected_decision_revision: int | None = Query(default=None, ge=1),
 ) -> DecisionCouncilSessionResponse:
     """Return the latest canonical Decision Council session for the project."""
     _ensure_procurement_copilot_enabled(request)
     tenant_id = get_tenant_id(request)
-    _, record = _load_decision_council_procurement_context_or_raise(
+    _, record, source_binding = _load_decision_council_procurement_context_or_raise(
         request,
         project_id=project_id,
         tenant_id=tenant_id,
+        decision_id=decision_id,
+        expected_decision_revision=expected_decision_revision,
     )
 
     service = request.app.state.decision_council_service
     session = service.get_latest_procurement_council(
         tenant_id=tenant_id,
         project_id=project_id,
+        decision_id=record.decision_id if source_binding is not None else None,
     )
     if session is None:
         request.state.error_code = "decision_council_not_found"
@@ -540,6 +583,7 @@ def get_project_decision_council_endpoint(
         request,
         session=session,
         record=record,
+        source_binding=source_binding,
     )
     _apply_decision_council_observability(
         request,
@@ -571,8 +615,40 @@ def update_project_procurement_override_reason_endpoint(
     if project is None:
         raise HTTPException(status_code=404, detail=f"프로젝트를 찾을 수 없습니다: {project_id}")
 
-    procurement_store = request.app.state.procurement_store
-    existing = procurement_store.get(project_id, tenant_id=tenant_id)
+    scoped = getattr(request.app.state, "procurement_opportunity_service", None)
+    scoped_fields = (
+        payload.decision_id,
+        payload.expected_decision_revision,
+        payload.operation_id,
+    )
+    _require_scoped_fields(
+        request,
+        scoped=scoped,
+        scoped_fields=scoped_fields,
+        missing_message=(
+            "opt-in override에는 decision_id, expected_decision_revision, "
+            "operation_id가 필요합니다."
+        ),
+    )
+
+    if scoped is None:
+        procurement_store = request.app.state.procurement_store
+        existing = procurement_store.get(project_id, tenant_id=tenant_id)
+    else:
+        try:
+            entry = scoped.get_decision(
+                project_id,
+                tenant_id=tenant_id,
+                decision_id=payload.decision_id,
+            )
+        except LookupError:
+            _raise_scoped_error(
+                request,
+                code="procurement_opportunity_not_found",
+                status=404,
+                message="공고를 찾을 수 없습니다.",
+            )
+        existing = entry.record
     if existing is None or existing.opportunity is None:
         request.state.error_code = "procurement_opportunity_not_attached"
         raise HTTPException(
@@ -588,15 +664,44 @@ def update_project_procurement_override_reason_endpoint(
         or getattr(request.state, "user_id", None)
         or "api_key_client"
     )
-    updated = procurement_store.update_notes(
-        project_id=project_id,
-        tenant_id=tenant_id,
-        notes=_append_procurement_override_reason(
-            existing.notes,
-            username=username,
-            reason=payload.reason,
-        ),
-    )
+    if scoped is None:
+        updated = procurement_store.update_notes(
+            project_id=project_id,
+            tenant_id=tenant_id,
+            notes=_append_procurement_override_reason(
+                existing.notes,
+                username=username,
+                reason=payload.reason,
+            ),
+        )
+        receipt = None
+    else:
+        try:
+            receipt = scoped.store.update_notes(
+                project_id,
+                tenant_id=tenant_id,
+                decision_id=payload.decision_id,
+                expected_decision_revision=payload.expected_decision_revision,
+                operation_id=payload.operation_id,
+                command_identity={"actor": username, "reason": payload.reason},
+                update=lambda notes: _append_procurement_override_reason(
+                    notes,
+                    username=username,
+                    reason=payload.reason,
+                ),
+            )
+        except ProcurementProjectConflict:
+            _raise_scoped_error(
+                request,
+                code="procurement_context_changed",
+                status=409,
+                message="공고 상태가 변경되었습니다. 최신 상태를 확인하세요.",
+            )
+        updated = scoped.get_decision(
+            project_id,
+            tenant_id=tenant_id,
+            decision_id=receipt.decision_id,
+        ).record
     _apply_procurement_observability(
         request,
         action="override_reason",
@@ -604,12 +709,18 @@ def update_project_procurement_override_reason_endpoint(
         operation="updated",
         record=updated,
     )
-    return {
+    response = {
         "project_id": project_id,
         "project_name": project.name,
         "decision": updated.model_dump(mode="json"),
         "override_reason_saved": True,
     }
+    if receipt is not None:
+        response["receipt"] = receipt.model_dump(mode="json")
+        request.state.procurement_operation_id = receipt.operation_id
+        request.state.procurement_decision_id = receipt.decision_id
+        request.state.procurement_decision_revision = receipt.decision_revision
+    return response
 
 
 @router.post(
@@ -629,21 +740,13 @@ def record_project_procurement_remediation_link_copy_endpoint(
     if project is None:
         raise HTTPException(status_code=404, detail=f"프로젝트를 찾을 수 없습니다: {project_id}")
 
-    request.state.procurement_action = "remediation_link_copied"
-    request.state.procurement_project_id = project_id
-    request.state.procurement_operation = payload.source
-    request.state.procurement_context_kind = payload.context_kind
-    request.state.procurement_recommendation = payload.recommendation.strip() or None
-    request.state.bundle_type = payload.bundle_type.strip() or None
-    request.state.procurement_error_code = payload.error_code.strip() or None
-
-    return {
-        "project_id": project_id,
-        "project_name": project.name,
-        "logged": True,
-        "source": payload.source,
-        "context_kind": payload.context_kind,
-    }
+    return _record_remediation_link_event(
+        request,
+        action="remediation_link_copied",
+        project_id=project_id,
+        project_name=project.name,
+        payload=payload,
+    )
 
 
 @router.post(
@@ -663,18 +766,10 @@ def record_project_procurement_remediation_link_open_endpoint(
     if project is None:
         raise HTTPException(status_code=404, detail=f"프로젝트를 찾을 수 없습니다: {project_id}")
 
-    request.state.procurement_action = "remediation_link_opened"
-    request.state.procurement_project_id = project_id
-    request.state.procurement_operation = payload.source
-    request.state.procurement_context_kind = payload.context_kind
-    request.state.procurement_recommendation = payload.recommendation.strip() or None
-    request.state.bundle_type = payload.bundle_type.strip() or None
-    request.state.procurement_error_code = payload.error_code.strip() or None
-
-    return {
-        "project_id": project_id,
-        "project_name": project.name,
-        "logged": True,
-        "source": payload.source,
-        "context_kind": payload.context_kind,
-    }
+    return _record_remediation_link_event(
+        request,
+        action="remediation_link_opened",
+        project_id=project_id,
+        project_name=project.name,
+        payload=payload,
+    )

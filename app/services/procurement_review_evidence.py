@@ -20,7 +20,28 @@ from app.services.procurement_decision_package.reviewer_attestation import (
 )
 
 if TYPE_CHECKING:
+    from app.schemas import ProcurementDecisionRecord
+    from app.storage.procurement_project_store import ProcurementProjectStore
     from app.storage.procurement_review_store import ProcurementReviewRecord
+    from app.storage.procurement_store import ProcurementDecisionStore
+
+
+def resolve_legacy_review_record(
+    *, tenant_id: str, project_id: str, package_id: str,
+    decision_store: ProcurementDecisionStore,
+    project_store: ProcurementProjectStore | None = None,
+) -> ProcurementDecisionRecord | None:
+    """Locate an unbound packet's record without adopting the active opportunity."""
+    if project_store is None:
+        record = decision_store.get(project_id, tenant_id=tenant_id)
+        candidates = [record] if record is not None else []
+    else:
+        project = project_store.get(project_id, tenant_id=tenant_id)
+        candidates = [entry.record for entry in project.entries] if project else []
+    return next(
+        (record for record in candidates if f"{record.decision_id}-package" == package_id),
+        None,
+    )
 
 
 def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -40,6 +61,8 @@ def validate_persisted_procurement_review_packet(
     verification = validate_procurement_review_receipt(
         record.receipt,
         packet_content,
+        expected_tenant_id=record.tenant_id,
+        expected_project_id=record.project_id,
     )
     expected = {
         "review_status": record.review_status,

@@ -40,6 +40,7 @@ from app.services.pptx.primitives import (
     _chunk_lines,
     _clean_slide_text,
     _expand_slide_line,
+    _place_shape,
     _set_slide_background,
     _style_text_frame,
     _table_block_lines,
@@ -178,6 +179,10 @@ def build_pptx_from_docs(docs: list[dict[str, Any]], title: str) -> bytes:
             align=PP_ALIGN.CENTER,
         )
     if summaries:
+        # The title-slide subtitle placeholder extends below y=4.8in; keep it above the card.
+        _place_shape(cover.shapes.title, top=1.2, height=1.5)
+        if len(cover.placeholders) > 1:
+            _place_shape(cover.placeholders[1], top=2.9, height=1.6)
         _add_card(
             cover,
             left=0.8,

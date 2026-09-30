@@ -47,6 +47,16 @@ class ServiceCoreMixin:
         existing = self._procurement_store.get(project_id, tenant_id=tenant_id)
         if existing is None or existing.opportunity is None:
             raise KeyError("procurement_opportunity_not_attached")
+        evaluated = self.evaluate_record(existing)
+        payload = ProcurementDecisionUpsert.model_validate(evaluated.model_dump(
+            mode="json", exclude={"decision_id", "created_at", "updated_at"},
+        ))
+        return self._procurement_store.upsert(payload)
+
+    def evaluate_record(self, existing: ProcurementDecisionRecord) -> ProcurementDecisionRecord:
+        """Compute against the captured decision without writing procurement state."""
+        if existing.opportunity is None:
+            raise KeyError("procurement_opportunity_not_attached")
 
         inputs = self._build_inputs(existing)
         hard_filters, missing_data = self._evaluate_hard_filters(existing, inputs)
@@ -65,12 +75,23 @@ class ServiceCoreMixin:
             soft_fit_score=soft_fit_score,
             soft_fit_status=soft_fit_status,
             missing_data=_unique(missing_data + scoring_missing),
-            checklist_items=list(existing.checklist_items),
-            recommendation=existing.recommendation,
+            checklist_items=[],
+            recommendation=None,
             source_snapshots=list(existing.source_snapshots),
             notes=existing.notes,
         )
-        return self._procurement_store.upsert(payload)
+        return ProcurementDecisionRecord(
+            **payload.model_dump(), decision_id=existing.decision_id,
+            created_at=existing.created_at, updated_at=existing.updated_at,
+        )
+
+    def recommend_record(self, existing: ProcurementDecisionRecord) -> ProcurementDecisionRecord:
+        """Evaluate and recommend in memory so the caller can persist one revision."""
+        evaluated = self.evaluate_record(existing)
+        return evaluated.model_copy(update={
+            "recommendation": self._build_recommendation(evaluated),
+            "checklist_items": self._build_checklist(evaluated),
+        }, deep=True)
 
     def recommend_project(self, *, project_id: str, tenant_id: str) -> ProcurementDecisionRecord:
         evaluated = self.evaluate_project(project_id=project_id, tenant_id=tenant_id)

@@ -7,6 +7,8 @@ from fastapi import Request
 
 
 RULES: dict[tuple[str, str], str] = {
+    ('POST', '/projects/{id}/documents/{id}/edited-copies'): 'generated_document_review.edited_copy_save',
+    ('GET', '/projects/{id}/documents/{id}/editable-source'): 'generated_document_review.edited_copy_open',
     (
         "POST",
         "/projects/{id}/documents/{id}/generated-reviews",
@@ -20,6 +22,14 @@ RULES: dict[tuple[str, str], str] = {
         "GET",
         "/projects/{id}/generated-document-reviews/{id}/packet",
     ): "generated_document_review.packet_download",
+    (
+        "POST",
+        "/projects/{id}/generated-document-reviews/{id}/complete",
+    ): "generated_document_review.complete",
+    (
+        "GET",
+        "/projects/{id}/generated-document-reviews/{id}/reviewed-package",
+    ): "generated_document_review.reviewed_package_download",
 }
 
 
@@ -55,6 +65,7 @@ def detail(request: Request) -> dict[str, Any]:
         "generated_document_review_status": "review_status",
         "generated_document_review_access_scope": "access_scope",
         "generated_document_review_source_status": "source_status",
+        "generated_document_review_decision": "review_decision",
     }
     for state_field, detail_field in text_fields.items():
         value = getattr(request.state, state_field, "") or ""

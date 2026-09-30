@@ -86,6 +86,7 @@ from app.schemas.procurement import (
     ProcurementScoreBreakdownItem,
     ProcurementScoreStatus,
     ProcurementSourceSnapshotMetadata,
+    ProcurementUUID,
     RecordProjectProcurementRemediationLinkCopyRequest,
     RecordProjectProcurementRemediationLinkOpenRequest,
     UpdateProjectProcurementOverrideReasonRequest,
@@ -107,6 +108,7 @@ from app.schemas.finetune import (
     FineTuneTrainingTriggerRequest,
 )
 from app.schemas.messages_styles import (
+    CreateManualStyleExampleRequest,
     CreateStyleProfileRequest,
     EditMessageRequest,
     PostMessageRequest,
@@ -174,6 +176,7 @@ from app.schemas.decision_evidence import (
     GuidedDecisionReviewStage,
 )
 from app.schemas.generated_document_reviews import (
+    CompleteGeneratedDocumentReviewRequest,
     CreateGeneratedDocumentReviewRequest,
 )
 
@@ -224,6 +227,7 @@ __all__ = [
     "TranscribeMeetingRecordingRequest",
     "GenerateMeetingRecordingDocumentsRequest",
     "G2BFetchRequest",
+    "ProcurementUUID",
     "ImportProjectProcurementOpportunityRequest",
     "CompleteProjectProcurementReviewRequest",
     "ExportProjectProcurementReviewPacketRequest",
@@ -261,6 +265,7 @@ __all__ = [
     "UpdateUserRequest",
     "PostMessageRequest",
     "EditMessageRequest",
+    "CreateManualStyleExampleRequest",
     "CreateStyleProfileRequest",
     "UpdateToneGuideRequest",
     "UpdateKnowledgeMetadataRequest",
@@ -320,4 +325,5 @@ __all__ = [
     "GuidedDecisionReviewRecheckRequest",
     "GuidedDecisionReviewStage",
     "CreateGeneratedDocumentReviewRequest",
+    "CompleteGeneratedDocumentReviewRequest",
 ]

@@ -205,7 +205,12 @@ class DecisionCouncilStore:
         project_id: str,
         use_case: str,
         target_bundle_type: str,
+        decision_id: str | None = None,
     ) -> str:
+        if decision_id is not None:
+            if not decision_id:
+                raise ValueError("Decision Council decision ID must not be empty")
+            return "v2:" + json.dumps([project_id, decision_id, use_case, target_bundle_type], separators=(",", ":"))
         return f"{project_id}:{use_case}:{target_bundle_type}"
 
     @staticmethod
@@ -219,7 +224,7 @@ class DecisionCouncilStore:
     def _to_dict(session: DecisionCouncilSessionResponse) -> dict:
         return session.model_dump(
             mode="json",
-            exclude=DecisionCouncilStore._DERIVED_RESPONSE_FIELDS,
+            exclude=DecisionCouncilStore._DERIVED_RESPONSE_FIELDS | ({"source_binding"} if session.source_binding is None else set()),
         )
 
     def _owned_sessions(
@@ -240,13 +245,16 @@ class DecisionCouncilStore:
                 session = self._from_dict(record)
             except DecisionCouncilStoreError:
                 raise
-            except (TypeError, ValueError):
+            except (TypeError, ValueError) as exc:
+                if record.get("source_binding") is not None:
+                    raise DecisionCouncilStoreError("Invalid bound Council session") from exc
                 continue
 
             expected_key = self.build_session_key(
                 project_id=session.project_id,
                 use_case=session.use_case,
                 target_bundle_type=session.target_bundle_type,
+                decision_id=session.source_procurement_decision_id if session.source_binding is not None else None,
             )
             if session.session_key != expected_key:
                 raise DecisionCouncilStoreError(
@@ -291,6 +299,7 @@ class DecisionCouncilStore:
         tenant_id: str,
     ) -> tuple[DecisionCouncilSessionResponse, Literal["created", "updated"]]:
         tenant_id = require_tenant_id(tenant_id)
+        session = DecisionCouncilSessionResponse.model_validate(session.model_dump(mode="json"))
         if session.tenant_id != tenant_id:
             raise ValueError(
                 "Decision Council session tenant does not match store scope"
@@ -299,6 +308,7 @@ class DecisionCouncilStore:
             project_id=session.project_id,
             use_case=session.use_case,
             target_bundle_type=session.target_bundle_type,
+            decision_id=session.source_procurement_decision_id if session.source_binding is not None else None,
         )
         if session.session_key != session_key:
             raise ValueError(
@@ -309,10 +319,7 @@ class DecisionCouncilStore:
         new_session_id = session.session_id or str(uuid.uuid4())
         target_session_id: str | None = None
         target_bound = False
-        session_payload = session.model_dump(
-            mode="json",
-            exclude=self._DERIVED_RESPONSE_FIELDS,
-        )
+        session_payload = self._to_dict(session)
 
         def apply(
             records: list[Any],
@@ -421,12 +428,14 @@ class DecisionCouncilStore:
         project_id: str,
         use_case: str = "public_procurement",
         target_bundle_type: str = "bid_decision_kr",
+        decision_id: str | None = None,
     ) -> DecisionCouncilSessionResponse | None:
         tenant_id = require_tenant_id(tenant_id)
         session_key = self.build_session_key(
             project_id=project_id,
             use_case=use_case,
             target_bundle_type=target_bundle_type,
+            decision_id=decision_id,
         )
         with self._lock(tenant_id):
             records = self._load(tenant_id)
@@ -436,5 +445,11 @@ class DecisionCouncilStore:
                 session_key=session_key,
             )
             if found is None:
+                if decision_id is not None:
+                    legacy_key = self.build_session_key(project_id=project_id, use_case=use_case,
+                                                        target_bundle_type=target_bundle_type)
+                    legacy = self._find(records, tenant_id=tenant_id, session_key=legacy_key)
+                    if legacy is not None and legacy[1].source_procurement_decision_id == decision_id and legacy[1].handoff.source_procurement_decision_id == decision_id:
+                        return legacy[1]
                 return None
             return found[1]

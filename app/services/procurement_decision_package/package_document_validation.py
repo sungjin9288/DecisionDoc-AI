@@ -8,6 +8,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from app.services.procurement_decision_package.applicability import (
+    APPLICABILITY_DOCX_NAME, PACKAGE_SCHEMA_PURPOSE_V2, V3_ARTIFACT_ORDER,
+    validate_applicability,
+)
+
 from app.services.procurement_decision_package.constants import (
     DECISION_PACKAGE_DOCUMENT_PATH,
     DECISION_PACKAGE_FIELD_ORDER,
@@ -56,7 +61,12 @@ def validate_package_document(package_doc: dict[str, Any]) -> dict[str, Any]:
         package,
         package_id=identity.package_id,
         recommendation=identity.recommendation,
+        applicability=package_doc["schema_purpose"] == PACKAGE_SCHEMA_PURPOSE_V2,
     )
+    if package_doc["schema_purpose"] == PACKAGE_SCHEMA_PURPOSE_V2:
+        projection = validate_applicability(package["requirement_applicability"])
+        if identity.package_id != f"{projection['decision_id']}-package":
+            raise ValueError("requirement applicability decision identity mismatch")
     return package
 
 
@@ -69,6 +79,7 @@ def _require_package_document_root(package_doc: dict[str, Any]) -> None:
     if package_doc.get("schema_purpose") not in {
         EXPECTED_DECISION_PACKAGE_SCHEMA_PURPOSE,
         PROCUREMENT_DECISION_PACKAGE_SCHEMA_PURPOSE,
+        PACKAGE_SCHEMA_PURPOSE_V2,
     }:
         raise ValueError(
             "package_doc.schema_purpose must be a supported decision package schema"
@@ -85,7 +96,9 @@ def _require_package_document_package(package_doc: dict[str, Any]) -> dict[str, 
     package = _require_mapping(package_doc.get("package"), package_path)
     _require_exact_mapping_fields(
         package,
-        DECISION_PACKAGE_FIELD_ORDER,
+        [*DECISION_PACKAGE_FIELD_ORDER, "requirement_applicability"]
+        if package_doc["schema_purpose"] == PACKAGE_SCHEMA_PURPOSE_V2
+        else DECISION_PACKAGE_FIELD_ORDER,
         package_path,
     )
     return package
@@ -189,6 +202,7 @@ def _validate_package_operator_handoff_sections(
     *,
     package_id: str,
     recommendation: str,
+    applicability: bool = False,
 ) -> None:
     pending_signoff_value, pending_signoff_path = _package_section(
         package,
@@ -204,12 +218,15 @@ def _validate_package_operator_handoff_sections(
         audit_manifest_path,
         package_id=package_id,
         recommendation=recommendation,
+        included_artifacts=V3_ARTIFACT_ORDER if applicability else None,
+        extra_evidence=APPLICABILITY_DOCX_NAME if applicability else None,
     )
     export_manifest_value, export_manifest_path = _package_section(
         package,
         "export_manifest",
     )
-    _validate_export_manifest(export_manifest_value, export_manifest_path)
+    _validate_export_manifest(export_manifest_value, export_manifest_path,
+                              included_artifacts=V3_ARTIFACT_ORDER if applicability else None)
 
 
 def _package_section(package: dict[str, Any], field: str) -> tuple[Any, str]:

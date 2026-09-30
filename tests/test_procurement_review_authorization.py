@@ -161,6 +161,57 @@ def _original_packet_path(project_id: str, packet_sha256: str) -> str:
     )
 
 
+def test_decision_filter_is_applied_after_assignment_access(client: TestClient) -> None:
+    from uuid import uuid4
+    from app.services.procurement_source_binding import capture_procurement_source_binding
+    from app.storage.procurement_project_state import ProcurementDecisionEntry
+    from app.services.procurement_decision_package.review_packet import build_project_procurement_review_packet
+    from app.services.procurement_decision_package.review_receipt import build_pending_procurement_review_receipt
+
+    admin = _login(client, "binding-admin", role="admin")
+    reviewer = _create_user(client, admin, "binding-reviewer")
+    outsider = _create_user(client, admin, "binding-outsider")
+    project_id = _ready_project(client, admin, name="Bound opportunity access")
+    assert _prepare_packet(client, project_id, admin, "binding-reviewer").status_code == 200
+    user = get_user_store("system", data_dir=client.app.state.data_dir).get_by_username("binding-reviewer")
+    record = client.app.state.procurement_store.get(project_id, tenant_id="system")
+    snapshot = client.app.state.procurement_store.save_source_snapshot(
+        tenant_id="system", project_id=project_id, source_kind="manual_fixture",
+        payload={"source": record.opportunity.source_id, "text": "Local review source"},
+    )
+    record = record.model_copy(update={"source_snapshots": [snapshot]})
+    entry = ProcurementDecisionEntry(record=record, decision_revision=1)
+    binding = capture_procurement_source_binding(entry, backend=client.app.state.procurement_store._backend)
+    packet = build_project_procurement_review_packet(record, reviewer_owner="binding-reviewer", source_binding=binding)
+    client.app.state.procurement_review_store.prepare(
+        tenant_id="system", project_id=project_id, packet_content=packet.content,
+        receipt=build_pending_procurement_review_receipt(packet.content), prepared_at="2026-09-21T00:00:00Z",
+        reviewer_assignment={"user_id": user.user_id, "username": user.username},
+    )
+    url = f"/projects/{project_id}/procurement/reviews"
+    response = client.get(url, params={"decision_id": record.decision_id}, headers=reviewer)
+    assert response.status_code == 200
+    assert [item["packet_sha256"] for item in response.json()["reviews"]] == [packet.sha256]
+    assert len(client.get(url, headers=reviewer).json()["reviews"]) == 2
+    absent = client.get(url, params={"decision_id": str(uuid4())}, headers=reviewer)
+    assert absent.status_code == 200
+    assert absent.json()["reviews"] == []
+    assert client.get(url, params={"decision_id": record.decision_id}, headers=outsider).status_code == 403
+    assert client.get(url, params={"decision_id": "../escape"}, headers=reviewer).status_code == 422
+    pending = client.app.state.procurement_review_store.get(
+        tenant_id="system", project_id=project_id, packet_sha256=packet.sha256,
+    )
+    completion = client.post(
+        f"{url}/{packet.sha256}/complete", headers=reviewer,
+        json={"decision": "accepted", "rationale": "Bound API activation is pending"},
+    )
+    assert completion.status_code == 409
+    assert completion.json()["detail"]["code"] == "procurement_review_source_changed"
+    assert client.app.state.procurement_review_store.get(
+        tenant_id="system", project_id=project_id, packet_sha256=packet.sha256,
+    ) == pending
+
+
 def test_packet_preparation_requires_bound_session_and_authorized_assignment(
     client: TestClient,
 ) -> None:

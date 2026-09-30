@@ -8,17 +8,22 @@ from typing import Any, Mapping
 
 from app.services.generation_export_packet import (
     PERSISTED_PACKET_SCHEMA,
+    PERSISTED_PACKET_SCHEMA_V2,
     GenerationExportPacketError,
     verify_generation_export_packet,
 )
 from app.storage.generated_document_review_models import (
+    COMPLETED_RECORD_SCHEMA,
     RECORD_SCHEMA,
     GeneratedDocumentReviewRecord,
     GeneratedDocumentReviewRecordError,
+    GeneratedDocumentReviewedPackageError,
+    build_generated_document_reviewed_package,
     parse_record,
     require_sha256,
     safe_segment,
     serialize_record,
+    verify_generated_document_reviewed_package,
 )
 from app.storage.state_backend import StateBackend, StateBackendError, get_state_backend
 from app.tenant import require_tenant_id
@@ -45,6 +50,22 @@ class GeneratedDocumentReviewStore:
     def packet_path(self, *, tenant_id: str, packet_sha256: str) -> str:
         packet_sha256 = require_sha256(packet_sha256, field="packet_sha256")
         return str(self._root(tenant_id) / "packets" / f"{packet_sha256}.zip")
+
+    def reviewed_package_path(
+        self,
+        *,
+        tenant_id: str,
+        reviewed_package_sha256: str,
+    ) -> str:
+        reviewed_package_sha256 = require_sha256(
+            reviewed_package_sha256,
+            field="reviewed_package_sha256",
+        )
+        return str(
+            self._root(tenant_id)
+            / "reviewed_packages"
+            / f"{reviewed_package_sha256}.zip"
+        )
 
     def record_path(
         self,
@@ -128,7 +149,10 @@ class GeneratedDocumentReviewStore:
             verified = verify_generation_export_packet(packet_content)
         except GenerationExportPacketError as exc:
             raise ValueError("generated document review packet is invalid") from exc
-        if verified["schema"] != PERSISTED_PACKET_SCHEMA:
+        if verified["schema"] not in {
+            PERSISTED_PACKET_SCHEMA,
+            PERSISTED_PACKET_SCHEMA_V2,
+        }:
             raise ValueError("generated document review packet schema is invalid")
         compared_fields = {
             "artifact_count",
@@ -138,6 +162,7 @@ class GeneratedDocumentReviewStore:
             "packet_sha256",
             "schema",
             "source",
+            "source_procurement_binding",
             "verified",
         }
         if any(packet_verification.get(key) != verified[key] for key in compared_fields):
@@ -370,7 +395,8 @@ class GeneratedDocumentReviewStore:
             ) from exc
         source = verified["source"]
         if (
-            verified["schema"] != PERSISTED_PACKET_SCHEMA
+            verified["schema"]
+            not in {PERSISTED_PACKET_SCHEMA, PERSISTED_PACKET_SCHEMA_V2}
             or verified["manifest_sha256"] != record.manifest_sha256
             or verified["artifact_count"] != record.artifact_count
             or verified["formats"] != record.formats
@@ -385,6 +411,234 @@ class GeneratedDocumentReviewStore:
             raise GeneratedDocumentReviewStoreError(
                 "generated document review packet binding is invalid"
             )
+        return content
+
+    @staticmethod
+    def _same_handoff_identity(
+        first: GeneratedDocumentReviewRecord,
+        second: GeneratedDocumentReviewRecord,
+    ) -> bool:
+        fields = (
+            "tenant_id",
+            "project_id",
+            "project_document_id",
+            "request_id",
+            "bundle_id",
+            "title",
+            "document_source_sha256",
+            "packet_sha256",
+            "packet_size_bytes",
+            "manifest_sha256",
+            "artifact_count",
+            "formats",
+            "prepared_at",
+            "creator_assignment",
+            "reviewer_assignment",
+        )
+        return all(getattr(first, field) == getattr(second, field) for field in fields)
+
+    @staticmethod
+    def _matches_completion(
+        record: GeneratedDocumentReviewRecord,
+        *,
+        completion_assignment: Mapping[str, str],
+        operation_id: str,
+        decision: str,
+        rationale: str,
+    ) -> bool:
+        return (
+            record.review_status == "completed"
+            and record.completion_assignment == dict(completion_assignment)
+            and record.completion_operation_id == operation_id
+            and record.review_decision == decision
+            and record.review_rationale == rationale
+        )
+
+    def complete(
+        self,
+        record: GeneratedDocumentReviewRecord,
+        *,
+        tenant_id: str,
+        completion_assignment: Mapping[str, str],
+        operation_id: str,
+        decision: str,
+        rationale: str,
+        reviewed_at: str,
+    ) -> tuple[GeneratedDocumentReviewRecord, bytes, bool]:
+        """Complete one pending review through immutable package write and record CAS."""
+        tenant_id = require_tenant_id(tenant_id)
+        if record.tenant_id != tenant_id:
+            raise ValueError("generated document review tenant identity drift")
+        completion = self._require_assignment(
+            completion_assignment,
+            field="completion_assignment",
+        )
+        record_path = self.record_path(
+            tenant_id=tenant_id,
+            project_id=record.project_id,
+            project_document_id=record.project_document_id,
+            packet_sha256=record.packet_sha256,
+        )
+        current = self._load_record(record_path)
+        if current is None:
+            raise GeneratedDocumentReviewStoreError(
+                "generated document review record is unavailable"
+            )
+        self._validate_record_path_binding(
+            current,
+            tenant_id=tenant_id,
+            project_id=record.project_id,
+            project_document_id=record.project_document_id,
+            packet_sha256=record.packet_sha256,
+        )
+        if not self._same_handoff_identity(current, record):
+            raise ValueError("generated document review completion conflict")
+        if current.review_status == "completed":
+            if not self._matches_completion(
+                current,
+                completion_assignment=completion,
+                operation_id=operation_id,
+                decision=decision,
+                rationale=rationale,
+            ):
+                raise ValueError("generated document review completion conflict")
+            return (
+                current,
+                self.read_reviewed_package(current, tenant_id=tenant_id),
+                False,
+            )
+
+        packet_content = self.read_packet(current, tenant_id=tenant_id)
+        reviewed_package, _receipt, receipt_sha256 = (
+            build_generated_document_reviewed_package(
+                current,
+                packet_content,
+                completion_assignment=completion,
+                operation_id=operation_id,
+                decision=decision,
+                rationale=rationale,
+                reviewed_at=reviewed_at,
+            )
+        )
+        package_sha256 = hashlib.sha256(reviewed_package).hexdigest()
+        candidate = replace(
+            current,
+            schema_version=COMPLETED_RECORD_SCHEMA,
+            review_status="completed",
+            human_review_completed=True,
+            completion_operation_id=operation_id,
+            review_decision=decision,
+            review_rationale=rationale,
+            reviewed_at=reviewed_at,
+            completion_assignment=completion,
+            completion_receipt_sha256=receipt_sha256,
+            reviewed_package_sha256=package_sha256,
+            reviewed_package_size_bytes=len(reviewed_package),
+        )
+        pending_raw = serialize_record(current)
+        completed_raw = serialize_record(candidate)
+        package_path = self.reviewed_package_path(
+            tenant_id=tenant_id,
+            reviewed_package_sha256=package_sha256,
+        )
+        try:
+            self._backend.write_bytes_if_absent(
+                package_path,
+                reviewed_package,
+                content_type="application/zip",
+            )
+        except StateBackendError as exc:
+            observed = self._read_bytes(
+                self._backend,
+                package_path,
+                label="generated document reviewed package",
+            )
+            if observed != reviewed_package:
+                raise GeneratedDocumentReviewStoreError(
+                    "failed to persist generated document reviewed package"
+                ) from exc
+        observed_package = self._read_bytes(
+            self._backend,
+            package_path,
+            label="generated document reviewed package",
+        )
+        if observed_package != reviewed_package:
+            raise GeneratedDocumentReviewStoreError(
+                "generated document reviewed package is inconsistent"
+            )
+
+        try:
+            transitioned = self._backend.replace_text_if_equal(
+                record_path,
+                expected=pending_raw,
+                replacement=completed_raw,
+            )
+        except StateBackendError as exc:
+            observed = self._load_record(record_path)
+            if observed != candidate:
+                raise GeneratedDocumentReviewStoreError(
+                    "failed to complete generated document review"
+                ) from exc
+            transitioned = True
+        stored = self._load_record(record_path)
+        if stored is None:
+            raise GeneratedDocumentReviewStoreError(
+                "completed generated document review is unavailable"
+            )
+        if stored != candidate:
+            if self._matches_completion(
+                stored,
+                completion_assignment=completion,
+                operation_id=operation_id,
+                decision=decision,
+                rationale=rationale,
+            ):
+                return (
+                    stored,
+                    self.read_reviewed_package(stored, tenant_id=tenant_id),
+                    False,
+                )
+            raise ValueError("generated document review completion conflict")
+        verified_package = self.read_reviewed_package(stored, tenant_id=tenant_id)
+        return stored, verified_package, transitioned
+
+    def read_reviewed_package(
+        self,
+        record: GeneratedDocumentReviewRecord,
+        *,
+        tenant_id: str,
+    ) -> bytes:
+        tenant_id = require_tenant_id(tenant_id)
+        if record.tenant_id != tenant_id or record.review_status != "completed":
+            raise ValueError("generated document review completion identity drift")
+        package_path = self.reviewed_package_path(
+            tenant_id=tenant_id,
+            reviewed_package_sha256=record.reviewed_package_sha256,
+        )
+        content = self._read_bytes(
+            self._backend,
+            package_path,
+            label="generated document reviewed package",
+        )
+        if (
+            content is None
+            or len(content) != record.reviewed_package_size_bytes
+            or hashlib.sha256(content).hexdigest() != record.reviewed_package_sha256
+        ):
+            raise GeneratedDocumentReviewStoreError(
+                "generated document reviewed package is invalid"
+            )
+        packet_content = self.read_packet(record, tenant_id=tenant_id)
+        try:
+            verify_generated_document_reviewed_package(
+                content,
+                expected_record=record,
+                expected_packet_content=packet_content,
+            )
+        except GeneratedDocumentReviewedPackageError as exc:
+            raise GeneratedDocumentReviewStoreError(
+                "generated document reviewed package is invalid"
+            ) from exc
         return content
 
     def list_by_tenant(

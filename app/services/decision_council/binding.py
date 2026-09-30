@@ -12,6 +12,8 @@ from app.schemas import (
     DecisionCouncilSessionResponse,
     ProcurementDecisionRecord,
 )
+from app.schemas.procurement_binding import ProcurementSourceBinding
+from app.services.procurement_source_binding import require_binding_matches_record
 
 _DECISION_COUNCIL_SUPPORTED_BUNDLE_TYPES = ("bid_decision_kr", "proposal_kr")
 
@@ -54,8 +56,23 @@ def describe_procurement_council_binding(
     *,
     session: DecisionCouncilSessionResponse,
     procurement_record: ProcurementDecisionRecord | None,
+    source_binding: ProcurementSourceBinding | None = None,
 ) -> dict[str, str]:
     """Describe whether a stored council session still matches current procurement state."""
+
+    if procurement_record is not None and (session.tenant_id, session.project_id) != (procurement_record.tenant_id, procurement_record.project_id):
+        return {"status": "stale", "reason_code": "procurement_scope_mismatch",
+                "summary": "Council과 공고의 소속이 다릅니다."}
+    if session.source_binding is not None:
+        try:
+            if source_binding is None or procurement_record is None:
+                raise ValueError("Current source binding is unavailable")
+            current = require_binding_matches_record(source_binding, procurement_record)
+            if current != session.source_binding:
+                raise ValueError("Source binding changed")
+        except ValueError:
+            return {"status": "stale", "reason_code": "procurement_binding_changed",
+                    "summary": "공고 revision 또는 원문 증빙이 변경되었거나 현재 결속을 확인할 수 없습니다."}
 
     if (
         procurement_record is None

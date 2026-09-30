@@ -31,6 +31,43 @@ class CreateStyleProfileRequest(BaseModel):
         return value
 
 
+class CreateManualStyleExampleRequest(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    label: str = Field(min_length=1, max_length=120)
+    sample_sentences: list[str] = Field(min_length=1, max_length=8)
+    bundle_id: str | None = Field(default=None, min_length=1, max_length=120)
+
+    @field_validator("label", "bundle_id")
+    @classmethod
+    def validate_identifier(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if value != value.strip() or any(
+            ord(character) < 32 or ord(character) == 127 for character in value
+        ):
+            raise ValueError("value must be a canonical non-empty string")
+        return value
+
+    @field_validator("sample_sentences")
+    @classmethod
+    def validate_sample_sentences(cls, value: list[str]) -> list[str]:
+        for sentence in value:
+            if (
+                not sentence
+                or len(sentence) > 1000
+                or sentence != sentence.strip()
+                or any(
+                    ord(character) < 32 or ord(character) == 127
+                    for character in sentence
+                )
+            ):
+                raise ValueError(
+                    "sample sentences must be canonical strings up to 1000 characters"
+                )
+        return value
+
+
 class UpdateToneGuideRequest(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid")
 

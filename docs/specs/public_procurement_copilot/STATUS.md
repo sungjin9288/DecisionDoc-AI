@@ -3,6 +3,1040 @@
 ## Current milestone
 Milestone 6 completed
 
+The later multi-opportunity/applicability plan is separate: steps 1-8 are
+implemented and locally verified in an isolated opt-in app. Default/user-data
+activation and native Office application validation remain open.
+
+## 2026-09-28 review packet read de-duplication
+
+Measured repeated applicability DOCX reconstruction using a wrapping spy that
+still executes the real renderer and validators. Six regression cases failed
+before the correction (local and fake-S3); afterward the per-operation counts are:
+
+| One v3 packet operation | Before | After |
+|---|---:|---:|
+| Persisted receipt/record validation | 2 | 1 |
+| Decision filter without optional validator | 6 | 2 |
+| Decision filter with the application's persisted-evidence validator | 8 | 3 |
+
+Receipt validation now passes expected tenant/project ownership to its existing
+full packet verifier. The decision filter uses bytes and binding from the same
+locked, validated read instead of verifying that packet again. There is no global
+cache, trusted-input flag, changed archive format or skipped DOCX comparison.
+The optional validator still runs on every read. Repeated reads, scope/record
+drift, post-read packet tampering and callback rejection have direct regressions;
+failed reads preserve the stored bytes. Legacy packet compatibility and default
+application activation are unchanged.
+
+Normal-exit Python 3.12.12 results, each a separate run:
+
+- Related service/storage/authorization/lifecycle gate: **275 passed**, 120.96s.
+- Final applicability packet gate after four extra failure-path cases:
+  **65 passed**, 9.44s (overlaps the gate above; do not add the counts).
+- Combined Chromium gate: **26 passed**, 77.10s, including 24 browser cases and
+  two route-callback cases. This closes the previously interrupted combined run.
+- Ruff E/F/W excluding E501 and `git diff --check`: passed.
+
+The related gate used `python3 -m pytest -q -p no:cacheprovider --tb=short` on
+`tests/test_procurement_applicability_packet.py`,
+`tests/test_procurement_opportunity_bindings.py`,
+`tests/test_procurement_review_store.py`,
+`tests/test_procurement_review_authorization.py`,
+`tests/test_procurement_decision_package_review_packet.py`,
+`tests/test_procurement_decision_package_review_receipt.py`,
+`tests/test_procurement_decision_package_reviewed_package.py`,
+`tests/test_procurement_reviewer_attestation.py`,
+`tests/test_procurement_scoped_lifecycle.py`,
+`tests/test_procurement_applicability_lifecycle.py` and
+`tests/test_procurement_transition_lifecycle.py`. The final focused run used only
+the first file. The combined browser command was:
+
+```bash
+python3 -m pytest -v -p pytest_playwright.pytest_playwright -p no:cacheprovider \
+  tests/e2e/test_edited_project_copy.py tests/e2e/test_local_style_import.py \
+  tests/e2e/test_generated_review_local_lifecycle.py \
+  tests/e2e/test_knowledge_local_lifecycle.py \
+  tests/e2e/test_procurement_multi_opportunity.py \
+  tests/e2e/test_procurement_requirement_applicability.py \
+  --browser chromium --tb=short --show-capture=no
+```
+
+All commands used the dotenv-disabled clean-environment bootstrap, temporary
+mock/local data, synthetic sources, disabled AWS metadata and Python non-loopback
+connection rejection. Playwright was used for the existing desktop/mobile user
+flows; the external diagnostic limit remained 180 seconds per case, without
+changing browser action/assertion limits. Evidence: `red.xml`, `regression.xml`,
+`focused-final.xml`, `browser.xml` and browser artifacts under
+`output/playwright/packet-read-20260928-73T5lP/`. Counts measure reconstruction work,
+not an end-to-end latency guarantee; one combined run is not endurance proof.
+
+This is local/mock verification, not real-model output quality, native Word
+open/edit/save, human UAT or production readiness. No user-data activation,
+provider/AWS/G2B calls, training, deployment, staging, commit or push was performed.
+Test processes and temporary servers exited normally.
+
+## 2026-09-28 E2E route matching and response synchronization
+
+The previously unclassified selection-test stall had a reproducible fixture
+defect: `_selection_fixture` treated every `opportunities/` subpath as a detail
+request, then raised `StopIteration` for `/<decision>/requirements` and
+`/<decision>/requirements/sources`. Two direct callback regression cases failed
+before correction and passed afterward. The fixture now matches only its exact
+known detail paths and delegates child resources to the local API.
+
+The first broad rerun completed with **24 passed, 2 failed**, 309.86s. The two
+failures were missing UI elements immediately after asynchronous refreshes.
+A diagnostic rerun reproduced the mobile selection failure: selection returned
+200, but follow-up reads were still running and the page showed its loading state
+when the five-second DOM assertion expired. The source-refresh failure did not
+reproduce in that diagnostic run. Both test actions now await the exact scoped
+GET response and require 200 before their unchanged UI/content assertions.
+No sleeps, global Playwright timeout increases or product-code changes were added.
+
+A subsequent 26-case run passed the original stall and both previously failing
+cases, but stopped at the 90-second per-case diagnostic limit during the mobile
+requirement scenario. The captured server stack was regenerating the applicability
+DOCX while validating a persisted review packet for a review-list read. This is
+not the earlier route callback exception, nor proof of a deadlock or its total
+latency cause. That interrupted run is not recorded as a full pass.
+
+Final affected gate: **16 passed**, 252.79s, normal exit zero. It contains 14 browser
+cases plus the two callback cases and covers both edited test files together:
+
+```bash
+python3 -m pytest -v -p pytest_playwright.pytest_playwright -p no:cacheprovider \
+  tests/e2e/test_procurement_multi_opportunity.py \
+  tests/e2e/test_procurement_requirement_applicability.py \
+  --browser chromium --tb=short --show-capture=no
+```
+
+Execution used Python 3.12.12, Chromium, the dotenv-disabled clean-environment
+bootstrap, temporary mock/local data, synthetic procurement sources and a Python
+non-loopback connection guard. The final external diagnostic limit was 180 seconds
+per case; Playwright response/action/assertion limits stayed unchanged. Passing
+this functional gate is not a performance guarantee or a 26-case/full-suite pass.
+Ruff E/F/W excluding E501 for both tests and `git diff --check` passed.
+
+Evidence is under `output/playwright/combined-stall-20260928-TBI6Q0/`: `red.xml`,
+`green.xml`, `combined.xml`, diagnostic request/screen records, `final-timeout.log`
+and the successful `affected.xml`. Failed and interrupted records are retained.
+Playwright was used to reproduce the browser integration issue; product handlers,
+authorization, packet validation and default activation remain unchanged.
+
+At this checkpoint, profiling repeated DOCX regeneration and rechecking the wider
+combined run remained open; the subsequent bounded correction is recorded above.
+No actual user data, paid/provider/AWS/G2B calls, training, deployment, staging,
+commit or push was used. Test processes and temporary servers have exited.
+
+## 2026-09-28 isolated sample browser verification
+
+Rechecked the approved workflows with newly created synthetic accounts, projects
+and sources. Product code and default-app settings were not changed. Two procurement
+E2E tests now save screenshots/exports under their own `tmp_path / "artifacts"`
+instead of overwriting the shared Step 6/8 evidence files.
+
+Normal-exit runs on Python 3.12.12 and Chromium:
+
+| Scope | Result |
+|---|---|
+| Edited-copy save/reopen/DOCX, style import/default/delete, separate-session review, project knowledge isolation | 10 passed, 38.98s |
+| Real local opportunity import/selection/review/generation/export, desktop and mobile | 2 passed, 49.93s |
+| Requirement quote/N/A/export, assigned-reviewer read access and stale-source handling, desktop and mobile | 2 passed, 42.91s |
+| Delayed source response after page/auth change | 2 passed, 7.25s |
+
+These are 16 distinct cases across four processes, not one full-suite result.
+The first combined run stopped progressing after ten cases and was terminated;
+its partial XML is not a successful run. A subsequent six-case diagnostic run
+hit its overall 90-second limit after four cases. Final runs used a 60-second
+per-case diagnostic limit and all exited zero. The initial combined-run stall
+was unclassified at this checkpoint; the correction and later affected gate are
+recorded above. These narrower runs alone did not establish pass evidence for
+the other mocked opportunity tests in that combined selection.
+
+Commands used the existing dotenv-disabled bootstrap, a clean environment,
+temporary DATA_DIR, mock provider/local storage, disabled AWS metadata and
+Python non-loopback connection rejection. Browser routes restricted test-page
+requests to localhost; procurement collection used synthetic responses. Tests
+used real local uvicorn/API persistence and did not replace the generation or
+review APIs. Run each group separately with
+`python3 -m pytest -v -p pytest_playwright.pytest_playwright -p no:cacheprovider
+--browser chromium --tb=short --show-capture=no`, appending:
+
+1. `tests/e2e/test_edited_project_copy.py tests/e2e/test_local_style_import.py tests/e2e/test_generated_review_local_lifecycle.py tests/e2e/test_knowledge_local_lifecycle.py`
+2. `tests/e2e/test_procurement_multi_opportunity.py::test_real_local_opportunity_lifecycle`
+3. `tests/e2e/test_procurement_requirement_applicability.py::test_requirement_review_export_source_change`
+4. `tests/e2e/test_procurement_requirement_applicability.py::test_delayed_source_response_does_not_restore_invalid_editor`
+
+Artifacts are under `output/playwright/local-workflows-20260928-qnJjwO/`;
+`document-results.xml`, `opportunity-results.xml` and `requirement-results.xml`
+record their respective final runs. The delayed-response result is recorded in
+the terminal result. Representative desktop/mobile screenshots were inspected
+for saved content, source labels, reviewer controls and requirement history.
+This is not an exhaustive visual audit or human UAT. Ruff E/F/W excluding E501
+for the two edited tests and `git diff --check` passed. Playwright was used for
+browser-to-API workflow and screenshot verification.
+
+Existing user data was not read, copied or converted. No default activation,
+native Office open/edit/save, actual model-quality evaluation, live AWS/G2B/provider,
+training, deployment, staging, commit or push occurred. Temporary test servers
+were stopped; this run does not expose a persistent user-facing demo.
+
+## 2026-09-22 cold-process restart and offline fixture restore
+
+Added `tests/test_procurement_transition_process.py`; no product code changed.
+One integrated scenario runs four separate Python subprocesses: seed a local v1
+fixture, transition a backup copy to v2 and complete a bound review, reopen that
+copy and replay its receipts, then open a full pre-transition backup restored to
+a new directory with the default app. Each subprocess exits before the next step.
+
+The test compares every file's SHA before/after the offline backup copy, checks
+v1/v3 packet and completed ZIP hashes, snapshot/review artifact inventories,
+active opportunity and original operation receipt replay. Restored state matches
+the original v1 state, while the original fixture, backup and transitioned copy
+remain unchanged by restoration. New v2 evidence is preserved in its own copy;
+it is not silently merged into the earlier backup. Login/request audit and session
+writes are allowed only inside the currently exercised fixture directory.
+
+Child environments explicitly select mock/local and exclude inherited provider
+credentials/configuration. Dotenv loading and socket connection calls are disabled;
+a hostile temporary working-directory .env verifies that it is not loaded. HTTP
+requests use the actual ASGI app via TestClient, not a listening network server.
+
+Focused scenario: **1 passed**, 14.43s. Final related gate: **76 passed**, 71.97s,
+one existing Starlette/httpx deprecation warning:
+
+```bash
+pytest -q tests/test_procurement_transition_process.py \
+  tests/test_procurement_transition_lifecycle.py \
+  tests/test_procurement_transition_preflight.py tests/test_future_feature_gate.py \
+  --tb=short --show-capture=no
+```
+
+The parent invocation used the existing dotenv-disabled Python 3.12.12 bootstrap,
+temporary DATA_DIR and mock/local environment. The adjacent lifecycle file also
+exercised fake-S3; the new subprocess/restore scenario is local-filesystem only.
+Ruff E/F/W excluding E501, in-memory syntax compile and git diff --check passed.
+Implementation and self-review stayed in this task; no separate Agent review or
+whole-suite/CI/browser/native Office validation was performed for this test-only
+slice. Existing plan/spec now distinguish this proof from the earlier same-process
+app recreation result.
+
+This proves graceful process exit/reopen and offline whole-fixture copying/restoring,
+not OS reboot, uvicorn/service-manager recovery, crash consistency, concurrent-writer
+backup, live S3 restore or operational backup acceptance. Actual user data was not
+read, copied or converted. Default-app activation, real-data scope/backup validation
+and native Office application validation remain open. No live AWS/G2B/provider,
+training, install/deploy, staging, commit or push occurred.
+
+## 2026-09-22 persisted transition and legacy review completion
+
+The transition rehearsal found a real mixed-schema defect: after one project's
+first v2 write, the legacy reader rejected the tenant document and stranded even
+another untouched project's pending v1 review. This reproduced on local and
+fake-S3 (two failing cases). The test harness initially lacked fake-S3 list support;
+that separate fixture issue was fixed by reusing the existing review-store fake.
+
+The opt-in completion path now resolves the exact verified v1 package ID within
+the requested tenant/project through the v1/v2 project store. It does not select
+the active opportunity or upgrade the packet. Existing reviewer identity checks
+and whole-packet SHA comparison remain required. A final record recheck rejects
+changes with 409 and unreadable/corrupt state with 503 before review persistence.
+The recheck and review-store CAS are not a multi-store atomic transaction.
+
+New fixture tests close the default app, reopen an opt-in app against the same
+persisted backend, perform the first explicit v2 write, then open another fresh
+app/backend instance. They check unchanged GET/startup bytes, preserved unrelated
+project rows and original decision records, original operation receipt replay,
+snapshot/packet/receipt/ZIP preservation, pending v1 completion while B is selected,
+assignment/API-key denial, v3 completion and changed-source rejection. This is
+same-process app reinitialization, not an OS restart or operational backup restore.
+
+Broad adjacent gate: **227 passed**, 222.73s:
+
+```bash
+pytest -q tests/test_procurement_transition_lifecycle.py \
+  tests/test_procurement_transition_preflight.py \
+  tests/test_procurement_scoped_lifecycle.py \
+  tests/test_procurement_applicability_lifecycle.py \
+  tests/test_procurement_opportunity_bindings.py \
+  tests/test_procurement_review_authorization.py \
+  tests/test_procurement_review_store.py tests/test_future_feature_gate.py \
+  --tb=short --show-capture=no
+```
+
+An independent read-only Agent review found no actionable implementation defect
+in this fix, and requested explicit missing/replaced-decision negative coverage.
+Those eight local/fake-S3 cases were added after broad-suite collection. Final
+affected gate: `pytest -q tests/test_procurement_transition_lifecycle.py --tb=short
+--show-capture=no`: **22 passed**, 66.99s. Missing/replaced records return 409 without
+review writes; initial missing source and final changed source remain distinct.
+Both runs used the dotenv-disabled Python 3.12.12 bootstrap, temporary DATA_DIR,
+mock provider, local/fake-S3 and no collector/provider calls. Both emitted the
+existing Starlette/httpx deprecation warning. Ruff E/F/W excluding E501, in-memory
+compile of three Python files, and diff whitespace checks passed. No entire-suite
+or CI claim is made. Procurement-eval/verify-gate were used; security guidance was
+consulted for object-level authorization and error disclosure. No UI changed.
+
+Default activation, actual user-data inspection/conversion, coherent backup/restore,
+OS process restart and native Office validation remain unperformed. No live
+AWS/G2B/provider/training, install/deploy, staging, commit or push occurred.
+
+## 2026-09-22 offline transition preflight, no runtime activation
+
+Added `scripts/procurement_transition_preflight.py` for an explicitly selected
+offline state file and tenant. It reuses the v1/v2 storage contract and reports
+exact input SHA-256, validated counts and content-free issue codes. It does not
+load dotenv, initialize the app/backend, read sources, or write/convert data.
+Optional expected SHA mismatch stops before parsing. Missing, malformed, foreign,
+duplicate, corrupt, oversized, special-file, leaf-symlink and observed-drift inputs
+fail closed. Success means captured state structure only, never activation or
+source proof. A v2 row makes legacy-reader compatibility false; flag-off is not a
+rollback. Actual dataset inspection, coherent backup/restore and activation remain
+unperformed. The spec records the CLI contract and remaining transition conditions.
+
+Tests first failed collection because the new command did not exist. After
+implementation, the focused gate passed **49 tests**, 0.72s. Final adjacent gate:
+**176 passed**, 3.23s, one existing Starlette/httpx deprecation warning:
+
+```bash
+pytest -q tests/test_procurement_transition_preflight.py \
+  tests/test_procurement_multi_opportunity.py tests/test_procurement_store.py \
+  tests/test_procurement_store_integrity.py tests/test_future_feature_gate.py \
+  --tb=short --show-capture=no
+```
+
+Used the existing dotenv-disabled Python 3.12.12 bootstrap, temporary DATA_DIR,
+mock/local and fake-S3. CLI subprocess also ran from a temporary directory with
+hostile provider/storage environment values to check that it does not initialize
+runtime state. Fixture tests exercised in-place edits and atomic replacement during
+file capture, exact hash mismatch, malformed v2 receipts and source ownership.
+Ruff E/F/W excluding E501, in-memory compile and diff whitespace checks passed.
+This was current-task implementation and self-review, not independent Agent review.
+No UI/runtime code changed, so browser/native Office gates were not repeated.
+Existing user data, default activation and dirty worktree were preserved; no live
+AWS/G2B/provider/training, install/deploy, staging, commit or push.
+
+## 2026-09-22 requirement UI and integrated review packet, isolated opt-in only
+
+Step 8 completes the approved local UI/export slice. The Python factory opt-in is
+still required; the default running app and existing user DATA_DIR were not changed.
+
+- Admins select exact source text and record append-only applicability decisions.
+  Assigned reviewers have read-only access. Unknown, stale and N/A counts are
+  separate from the ten parent categories, scores and recommendation.
+- Source reads require an admin session and exact revision. UTF-16 selections and
+  normalized textarea CRLF boundaries map back to original Unicode code points.
+  Missing/corrupt sources fail closed. A source change preserves history but makes
+  current applicability unknown and disables editing the old requirement.
+- New scoped exports use review packet v3 and package schema purpose v2. The
+  source-bound, actor-redacted applicability projection appears in JSON, checklist
+  Markdown, review HTML and a native editable requirement_applicability.docx.
+  Unsupported parent statuses no longer fall back to ready.
+- Verifiers reject missing DOCX/projection, downgrade, invalid history/binding and
+  rehashed rendered-content tampering. The review receipt covers the full packet.
+  Existing v1/v2 builders and pending-v2 completion remain compatible; completed
+  replay returns the original bytes even after later applicability changes.
+- Existing requirements cannot be acquired by an unassigned member self-preparing
+  a packet. Empty-requirement legacy self-prepare remains available. Actor IDs stay
+  in server history, not the portable supplement. Audit excludes quote/rationale.
+- Independent Sol/high review found and drove fixes for disabled self-prepare after
+  403/404, a context switch immediately after refresh before download, and a source
+  outage being mislabeled as a 409 conflict. Regression tests execute these paths.
+  503 remains unavailable; 409 remains changed. Neither auto-retries.
+- Capture and final recheck bind one entry, revision and source set. Source files,
+  aggregate state and review store are separate writes, not an atomic transaction.
+  Portable verification still reports source_bytes_verified=false and
+  operational_approval=false.
+
+Broad integrated gate: **436 passed**, 177.02s, with the existing Starlette/httpx
+deprecation warning. It includes the UI/context fixes and source-outage correction.
+The last title-border removal happened afterward; the final affected gate below
+is authoritative for that last renderer change.
+
+```bash
+pytest -q \
+  tests/test_procurement_requirement_applicability.py \
+  tests/test_procurement_requirement_applicability_api.py \
+  tests/test_procurement_applicability_lifecycle.py \
+  tests/test_procurement_scoped_lifecycle.py \
+  tests/test_procurement_review_authorization.py \
+  tests/test_procurement_opportunity_bindings.py \
+  tests/test_procurement_review_store.py \
+  tests/test_procurement_decision_package_builder.py \
+  tests/test_procurement_decision_package_review_packet.py \
+  tests/test_procurement_decision_package_review_receipt.py \
+  tests/test_procurement_decision_package_reviewed_package.py \
+  tests/test_procurement_decision_package_review_workspace.py \
+  tests/test_procurement_applicability_packet.py \
+  tests/test_procurement_requirement_applicability_ui.py \
+  tests/test_procurement_summary_ui.py \
+  tests/test_guided_decision_review_handoff_ui_static.py \
+  tests/test_audit.py \
+  tests/test_audit_store_integrity.py \
+  --tb=short --show-capture=no
+```
+
+Final affected gate: **85 passed**, 60.77s:
+
+```bash
+pytest -q tests/test_procurement_applicability_packet.py \
+  tests/test_procurement_applicability_lifecycle.py \
+  tests/test_export_procurement_decision_package.py \
+  tests/test_infrastructure.py::test_index_html_procurement_review_workspace_contract_is_connected \
+  tests/test_infrastructure.py::test_index_html_procurement_review_inbox_contract_is_connected \
+  --tb=short --show-capture=no
+```
+
+Browser gate: **6 passed, 8 deselected**, 76.46s:
+
+```bash
+pytest -q -p pytest_playwright.pytest_playwright \
+  tests/e2e/test_procurement_requirement_applicability.py \
+  tests/e2e/test_procurement_multi_opportunity.py \
+  -k 'requirement or real_local_opportunity' --browser chromium \
+  --tb=short --show-capture=no
+```
+
+All invocations used the documented dotenv-disabled Python 3.12.12 bootstrap,
+temporary DATA_DIR, mock provider and local/fake-S3 backend. Browser traffic was
+restricted to loopback and G2B was a fixture. Admin/member desktop and mobile
+lifecycle, exact CRLF/emoji quotes, delayed source responses, and the existing
+opportunity generation/review/download path passed. The browser gate preceded only
+the DOCX Title border removal; its affected packet/HTTP gate was rerun above.
+
+Playwright screenshots: output/playwright/procurement-step8-1440.png and
+procurement-step8-390.png. Standalone HTML was rendered with external requests
+blocked. The bundled DOCX renderer rendered two-page fixtures; every page was
+visually inspected, including the final Title-border-free fixture under
+output/playwright/procurement-step8-docx-final-check-render. This is not native
+Microsoft Word open/edit/save proof. Ruff E/F/W excluding E501, in-memory compile
+of 32 package/integration/test Python files and diff whitespace checks passed.
+No entire-project test/CI/production readiness claim is made.
+
+Astra/medium reviewed the integration contract read-only; Astra/high implemented
+the package/verifier slice; Sol/high implemented the UI and independently reviewed
+the parent access/capture integration. Parent inspected code, integrated the
+routes/store and ran the reported final checks. Playwright was used for real UI
+lifecycle and document skills for DOCX rendering, not provider activation.
+
+No live AWS/G2B/provider calls, training, deploy, install, existing-data migration,
+staging, commit or push occurred. The next product decision is default-app
+activation and an explicitly bounded existing-data transition, not another wrapper
+around this completed local slice.
+
+## 2026-09-22 requirement applicability history, isolated opt-in backend
+
+Step 7 adds requirement creation and append-only applicability annotations below
+the existing ten checklist categories. It does not change category scores,
+recommendation, operational approval or the legacy decision record.
+
+- Exact snapshot JSON bytes, SHA-256 and Unicode code-point quote bounds bind
+  each requirement. An annotation cannot change that original quotation.
+  Source-set fingerprints are separate from decision revision; an annotation
+  does not stale itself, but a changed source set makes the effective value unknown.
+- Session-bound admins write; admins and the stable assignee of a verified,
+  exact-decision bound review packet read the dedicated requirements endpoint.
+  Members do not receive actor IDs. API/Ops keys alone do not grant this access.
+  Existing API-key opportunity detail does not acquire raw requirement history.
+- Missing, duplicate, failed or unknown related hard filters, and blocked
+  checklist categories, reject N/A. An intentionally empty category mapping is
+  distinct from a missing expected filter. No scoring or approval override occurs.
+- Aggregate CAS and actor-bound operation receipts prevent stale writes and
+  duplicate history. Annotation events retain operation ID and expected revision.
+  Replay returns the original receipt even after later changes. Source checks are
+  repeated before aggregate persistence; separate source files and aggregate CAS
+  are not one atomic transaction. Reads recheck source bytes and fail closed on
+  unavailable sources. Previous history is preserved.
+- Requirement changes invalidate their own Council/source binding, not another
+  opportunity's. Evaluation, notes and reimport preserve stored requirements.
+  Audit records contain operation/revision identifiers, not quoted text/rationale.
+
+Broad 31-file regression on the pre-freeze snapshot: **1005 passed**, 425.36s.
+The final affected gate below supersedes it for the completed core refinements
+and the last two raw-source HTTP regression cases. Broad invocation:
+
+```bash
+pytest -q tests/test_procurement_requirement_applicability.py \
+  tests/test_procurement_requirement_applicability_api.py \
+  tests/test_procurement_multi_opportunity.py \
+  tests/test_procurement_multi_opportunity_api.py \
+  tests/test_procurement_scoped_lifecycle.py \
+  tests/test_procurement_store.py \
+  tests/test_procurement_store_integrity.py \
+  tests/test_procurement_decision_service.py \
+  tests/test_procurement_eval_regression.py \
+  tests/test_procurement_opportunity_bindings.py \
+  tests/test_procurement_generation_binding.py \
+  tests/test_procurement_document_binding.py \
+  tests/test_procurement_review_authorization.py \
+  tests/test_procurement_review_store.py \
+  tests/test_decision_council.py \
+  tests/test_decision_council_store_integrity.py \
+  tests/test_project_management.py \
+  tests/test_auth.py \
+  tests/test_auth_api_key.py \
+  tests/test_auth_session_retention.py \
+  tests/test_tenant.py \
+  tests/test_audit.py \
+  tests/test_audit_store_integrity.py \
+  tests/test_observability.py \
+  tests/test_procurement_decision_package_builder.py \
+  tests/test_procurement_decision_package_review_packet.py \
+  tests/test_procurement_decision_package_reviewed_package.py \
+  tests/test_export_procurement_decision_package.py \
+  tests/test_procurement_decision_package_service.py \
+  tests/test_decision_evidence_api.py \
+  tests/test_guided_decision_review_handoff.py \
+  --tb=short --show-capture=no
+```
+
+Final affected gate after integration fixes: **139 passed**, 71.33s, one existing
+Starlette/httpx deprecation warning:
+
+```bash
+pytest -q tests/test_procurement_requirement_applicability.py \
+  tests/test_procurement_requirement_applicability_api.py \
+  tests/test_procurement_multi_opportunity.py \
+  tests/test_procurement_review_authorization.py \
+  tests/test_procurement_eval_regression.py --tb=short --show-capture=no
+```
+
+The documented clean Python 3.12.12 environment disables dotenv before imports,
+uses temporary DATA_DIR/mock/local/fake-S3, disables credential-file access and
+does not activate providers. Ruff E/F/W excluding E501 and in-memory compilation
+of the 11 changed Python files passed. Independent Sol/high integration review
+found no actionable issues in route/factory/access/audit; core review and actual
+final test execution were performed by the parent. This is not a whole-branch review.
+
+Step 8 must preserve requirements/N/A in the new package verifier and
+HTML/Markdown/DOCX renderers before exposing editing in the UI. No Step 7 browser
+or native Office validation was claimed. Default app activation, existing-user
+data migration, live G2B/provider/AWS, training, install, deploy, stage, commit and
+push were not performed.
+
+## 2026-09-22 scoped lifecycle and opportunity selection, isolated opt-in only
+
+Step 6 connects the aggregate to `create_app(procurement_multi_opportunity_enabled=True)`.
+The default remains false. No environment-driven migration or change to the
+existing user's DATA_DIR or running application was performed.
+
+- Import checks selection before collection and source revision before parsing,
+  provider execution or snapshot persistence. Replay returns the original receipt
+  without recollection or attaching a newer record. Override uses exact decision CAS.
+- Council and review-packet APIs accept the decision ID/revision pair. Pending v2
+  completion resolves the packet's source, then checks it again after package
+  verification and before persistence. Completed replay preserves stored bytes.
+  A Council source race cannot be returned as current.
+- The selector updates selection only. Generation and evaluation pin their
+  decision/revision, and response guards include session, tenant, user, project,
+  decision, selection and request sequence. Post-refresh effects use the same
+  scope guard. Project reads no longer fall back to the service-worker cache.
+- Evidence and Guided handoff use selected-decision reviews, documents and their
+  linked approvals/report workflows. Rejected access records zero authorized
+  reviews after decision filtering. Leaving the project page invalidates pending UI work.
+  A member assigned only to A cannot read active B's evidence/handoff; B's
+  assignee and the admin retain access. The complete project document list keeps
+  original source labels. Role brief defaults reset when the decision changes.
+- Desktop 1440x1000 and mobile 390x844 exercised the loopback API for A/B import,
+  evaluation, Council, packet download/completion, generation, selection/reload
+  and source-bound DOCX ZIP export. Only collection was stubbed; generation used
+  the mock provider. Screenshots were inspected, including mobile source badges.
+
+Independent Sol/high review found three scoped issues: cross-decision member
+access, foreign-document evidence pollution and role carry-over. They were
+reproduced and fixed. Parent review also reproduced and fixed late completion
+status after a refresh changed selection. Follow-up findings about linked
+approval/workflow records, denied-access audit counts and ordinary page navigation
+were also reproduced and fixed. These reviews do not cover the whole
+dirty branch or constitute operational approval.
+The final independent Sol/high re-review found no further P1/P2 in those three
+fixes and independently ran six focused regression cases: 6 passed in 10.47s.
+
+Broad Python gate before the last three follow-up fixes: **1495 passed**, one existing Starlette/httpx deprecation
+warning, 303.33s. It used the clean Python 3.12.12, dotenv-disabled, temporary
+DATA_DIR/mock/local/fake-S3 environment documented below. Its exact file set is
+the 51-file Step 5 gate below plus these ten files:
+
+```text
+tests/test_pwa.py
+tests/test_guided_decision_review_handoff.py
+tests/test_guided_decision_review_ui_static.py
+tests/test_guided_decision_review_handoff_ui_static.py
+tests/test_decision_evidence_ui_static.py
+tests/test_generated_document_review_ui_static.py
+tests/test_guided_decision_review_disposition_registry.py
+tests/storage/test_guided_decision_review_disposition_issuance_registry.py
+tests/storage/test_guided_decision_review_disposition_registry.py
+tests/test_procurement_scoped_lifecycle.py
+```
+
+Invocation: `pytest -q <the above 61 paths> --tb=short --show-capture=no`.
+The scoped lifecycle file also passed separately before those follow-ups: 25 tests in 16.45s.
+After the final fixes, the affected 13-file Python gate passed **153 tests** in
+39.56s with the same warning. Its arguments were:
+
+```bash
+pytest -q tests/test_procurement_scoped_lifecycle.py \
+  tests/test_procurement_document_binding.py tests/test_decision_evidence_api.py \
+  tests/test_decision_evidence_service.py tests/test_guided_decision_review_handoff.py \
+  tests/test_guided_decision_review_disposition_registry.py \
+  tests/storage/test_guided_decision_review_disposition_registry.py \
+  tests/storage/test_guided_decision_review_disposition_issuance_registry.py \
+  tests/test_guided_decision_review_ui_static.py \
+  tests/test_guided_decision_review_handoff_ui_static.py \
+  tests/test_decision_evidence_ui_static.py tests/test_generated_document_review_ui_static.py \
+  tests/test_observability.py --tb=short --show-capture=no
+```
+
+Final browser gate: **26 passed**, 100 deselected, 50.51s:
+
+```bash
+pytest -q -p pytest_playwright.pytest_playwright \
+  tests/e2e/test_procurement_multi_opportunity.py tests/e2e/test_main_flow.py \
+  -k 'procurement or decision_council or project_detail' --browser chromium \
+  --tb=short --show-capture=no
+```
+
+The new file contributes ten cases, including two real desktop/mobile flows.
+Ruff E/F/W excluding existing E501, Python in-memory syntax, three inline
+JavaScript blocks, service-worker syntax and `git diff --check` passed.
+Full repository tests, native Office visual validation, live G2B/provider/AWS,
+training and deployment were not run. No install, stage, commit or push.
+Pre-save checks across distinct stores are not an atomic transaction; portable
+ZIP proof is not raw-source authenticity or proof for a standalone binary.
+The next planned work is per-requirement applicability/N/A and its export
+contract, not another closure wrapper or unapproved user-data activation.
+
+## 2026-09-21 decision-pinned generation and document provenance, opt-in only
+
+Step 5 carries one exact procurement source binding through generation,
+ProjectDocument, edited copies, durable export sources, ZIP manifests, shared
+document rendering and evidence-map coverage. The default factory remains
+unwired: this is isolated local/fake-S3 implementation, not multi-opportunity
+activation for existing user data.
+
+- GenerateRequest accepts paired decision ID/revision with a project. Missing
+  selection in a multi-opportunity project, wrong scope and stale revision
+  stop before provider execution. A later selection of B does not move A's
+  output; changes to A's record or raw bytes stop result persistence.
+- Context, Council, completed review and cache identity use the captured
+  binding. Another decision's NO_GO exception or unbound review is not adopted.
+  SSE uses a specific error event after its response starts, and bound project
+  linking failures cannot emit complete. Usage/history/export records already
+  written before a later failure are not silently deleted.
+- Edited copies inherit source binding, not review approval. Binding-free
+  source hashes and v1 ZIP bytes are preserved. Bound export and generated
+  review packets use v2 manifests; null/mismatched bindings fail validation.
+  Portable verification checks declared hashes and internal packet structure,
+  not raw-source authenticity, current availability or operational approval.
+- Raw binary downloads carry narrow provenance headers. Their durable source
+  can produce a verified ZIP, but a binary alone is not portable binding proof.
+  Public shares render the saved document snapshot, including edited copies,
+  without publishing tenant/source hash metadata.
+- Exact source status is separate from legacy Council/review status. Unbound
+  or unavailable exact provenance is unknown; old review labels are not
+  rewritten into a claim of exact source verification. Bound project/share
+  reads and evidence coverage do not reassign A to selected B.
+
+Verification uses Python 3.12.12, a clean environment, dotenv disabled before
+app import, temporary DATA_DIR, mock provider, local/memory fake-S3, AWS
+credential/config paths set to /dev/null and metadata lookup disabled.
+The equivalent pytest arguments for the final relevant gate are:
+
+```bash
+pytest -q tests/test_procurement_opportunity_bindings.py \
+  tests/test_decision_council.py \
+  tests/test_decision_council_store_integrity.py \
+  tests/test_procurement_review_store.py \
+  tests/test_procurement_review_authorization.py \
+  tests/test_procurement_decision_package_builder.py \
+  tests/test_procurement_decision_package_review_packet.py \
+  tests/test_procurement_decision_package_review_receipt.py \
+  tests/test_procurement_decision_package_reviewed_package.py \
+  tests/test_procurement_reviewer_attestation.py \
+  tests/test_procurement_decision_package_review_workspace.py \
+  tests/test_procurement_decision_package_service.py \
+  tests/test_export_procurement_decision_package.py \
+  tests/test_procurement_multi_opportunity.py \
+  tests/test_procurement_multi_opportunity_api.py \
+  tests/test_procurement_store.py \
+  tests/test_procurement_store_integrity.py \
+  tests/test_project_management.py \
+  tests/test_procurement_decision_service.py \
+  tests/test_procurement_bundle_handoff.py \
+  tests/test_procurement_eval_regression.py \
+  tests/test_future_feature_gate.py \
+  tests/test_tenant.py \
+  tests/test_auth_api_key.py \
+  tests/test_auth.py \
+  tests/test_audit.py \
+  tests/test_observability.py \
+  tests/test_procurement_generation_binding.py \
+  tests/test_procurement_document_binding.py \
+  tests/test_edited_project_copies.py \
+  tests/test_edited_project_copy_api.py \
+  tests/test_generate.py \
+  tests/test_generation_export_packet.py \
+  tests/storage/test_generation_export_source_store.py \
+  tests/test_decision_evidence_service.py \
+  tests/test_decision_evidence_api.py \
+  tests/test_generated_document_reviews.py \
+  tests/storage/test_generated_document_review_store.py \
+  tests/test_verify_generated_document_reviewed_package.py \
+  tests/test_project_approval_store_integrity.py \
+  tests/test_history_favorites.py \
+  tests/test_history_store_integrity.py \
+  tests/test_share_store_integrity.py \
+  tests/test_export_edited.py \
+  tests/test_docx_endpoint.py \
+  tests/test_export_outline.py \
+  tests/test_generation_style_selection.py \
+  tests/test_knowledge_generation_lifecycle.py \
+  tests/test_generate_from_documents.py \
+  tests/test_stream_endpoint.py \
+  tests/test_cache_clear.py --tb=short --show-capture=no
+```
+
+The first integrated run exposed seven legacy-status regressions; they were
+corrected without weakening their assertions. Subsequent targeted generation,
+downstream and project regression: 178 passed. Independent review found a P1
+where an already-stale source changing again could retain its approval
+fingerprint. Parent local/fake-S3 tests reproduced two failures, then passed
+after current exact binding was included only in bound fingerprints. The
+follow-up independent scoped review found no remaining blocker and ran
+54 passing source-binding cases, with one existing Starlette/httpx warning.
+
+Astra/medium supported the detailed architecture plan; Sol/high implemented
+the disjoint downstream slice and a separate Sol/high Agent reviewed the
+integrated changes. The parent task implemented generation, reproduced the
+review finding and verified integration. This does not represent a model
+switch of the parent task or independent review of the entire dirty branch.
+Procurement-eval, security-best-practices and verify-gate were used for
+tenant/approval/public-share boundaries and scoped regression. No browser
+tooling was required for this backend slice.
+
+Final relevant gate: **1353 passed**, 1 existing Starlette/httpx deprecation
+warning, **271.20s**, across the 51 files above. Targeted Ruff E/F/W (E501
+excluded), in-memory syntax compilation of 26 changed Python files and
+`git diff --check` passed. No unrelated assertions were relaxed for this gate.
+The entire repository suite, browser/UAT and native Office visual validation
+are not covered by this gate. Cross-store check/write atomicity is not claimed;
+persisted historical bindings remain immutable and later reads assess their
+freshness. Step 6 still owns default activation, scoped Council/review API
+completion and UI lifecycle. Steps 7-8 own requirement applicability/N/A.
+No real DATA_DIR conversion, live provider/G2B/AWS/training, install, deploy,
+stage, commit or push was performed.
+
+## 2026-09-21 opportunity-bound Council and review evidence, opt-in only
+
+Step 4 now has an internal source-binding contract, independent A/B Council
+keys and packet v2. Capture reads exact local/fake-S3 snapshot bytes and binds
+their SHA-256/size to tenant/project/decision/revision and the canonical record
+hash. Bound Council freshness compares the full captured binding, so unchanged
+timestamps do not hide revision or source-content changes. Existing legacy
+sessions remain unchanged and fallback requires matching session/handoff IDs.
+
+Packet v2 cross-checks its binding against package/scenario/source identity and
+timestamp. Receipt and reviewed-package validation uses the actual embedded
+packet version, with and without reviewer attestation. Optional store callbacks
+cannot bypass v2 scope/receipt checks before writes or on artifact reads.
+Completed ZIPs and receipts stay immutable after later source changes.
+Portable verification returns `source_bytes_verified=false`: it verifies the
+declared binding, not raw-source availability, authenticity or freshness.
+
+The existing project review-list route accepts an optional UUID `decision_id`
+query after session, assignment and project access checks. A reviewer filtering
+an unassigned decision receives an empty authorized result; users with no
+project review access remain denied. Legacy packets are not adopted into a
+v2 decision filter. Unassigned packet bytes are not read for filtering.
+
+Verification used Python 3.12.12, dotenv disabled before app import, a clean
+environment, temporary DATA_DIR, mock/local and memory fake-S3; AWS credential
+and config paths were `/dev/null`, with metadata lookup disabled.
+
+- A foreign-project prepare was reproduced accepting the packet before the
+  mandatory guard; the corrected local/fake-S3 cases reject it before writes.
+- Final adjacent gate after the review correction: **863 passed**,
+  1 existing Starlette/httpx warning, 152.92s.
+  Invoked through `pytest.main` with these arguments:
+
+```bash
+pytest -q tests/test_procurement_opportunity_bindings.py tests/test_decision_council.py \
+  tests/test_decision_council_store_integrity.py tests/test_procurement_review_store.py \
+  tests/test_procurement_review_authorization.py tests/test_procurement_decision_package_builder.py \
+  tests/test_procurement_decision_package_review_packet.py tests/test_procurement_decision_package_review_receipt.py \
+  tests/test_procurement_decision_package_reviewed_package.py tests/test_procurement_reviewer_attestation.py \
+  tests/test_procurement_decision_package_review_workspace.py tests/test_procurement_decision_package_service.py \
+  tests/test_export_procurement_decision_package.py tests/test_procurement_multi_opportunity.py \
+  tests/test_procurement_multi_opportunity_api.py tests/test_procurement_store.py \
+  tests/test_procurement_store_integrity.py tests/test_project_management.py \
+  tests/test_procurement_decision_service.py tests/test_procurement_bundle_handoff.py \
+  tests/test_procurement_eval_regression.py tests/test_future_feature_gate.py tests/test_tenant.py \
+  tests/test_auth_api_key.py tests/test_auth.py tests/test_audit.py tests/test_observability.py \
+  --tb=short --show-capture=no
+```
+
+- Follow-up evidence checks and the pending-v2 API activation guard, after review correction:
+  `pytest -q tests/test_procurement_opportunity_bindings.py tests/test_procurement_review_authorization.py
+  --tb=short --show-capture=no`: **53 passed**, same warning, 28.27s.
+  This includes invalid completion/no-write, persisted-receipt downgrade and
+  empty-snapshot rejection. These cases are included in the final 863-test gate.
+
+An Astra/medium helper performed a read-only contract review. A separate
+Sol/high Agent reviewed the scoped implementation and found one P2: an empty
+snapshot list could become a source binding without reading source bytes.
+Four local/fake-S3 capture/verifier cases reproduced that acceptance (RED).
+The binding schema now requires at least one fingerprint; the focused gate
+above verifies the correction. Zero-snapshot records stay legacy/unbound.
+This was scoped Agent review plus a parent-verified correction, not a full
+branch review or a claim that the Agent re-reviewed the final patch.
+Changed Python syntax (13 files), targeted Ruff E/F/W excluding E501 and
+`git diff --check` passed. Procurement-eval/security/verify-gate guided the
+source and assignee boundaries; browser tooling was unnecessary for this slice.
+
+Default v2 mutation/Council/packet creation is still not activated. The current
+project-only completion route rejects pending v2 packets against its v1 hash;
+activation must resolve the stored decision ID/revision/raw hashes instead of
+the currently selected project decision. Document/export/share binding, UI
+integration and requirement applicability remain open in steps 5-8. No live
+provider/G2B/AWS/training, real-data conversion, install, deploy, commit or push
+was performed. The entire repository suite and browser/UAT were not run.
+
+## 2026-09-21 scoped opportunity API and evaluation, isolated only
+
+Implementation-plan step 3 is verified in isolated test applications. The new
+router supports paginated opportunity summaries, scoped detail, selection,
+evaluation and recommendation. `evaluate_record`/`recommend_record` compute
+without writing procurement state; the v2 store commits one captured decision
+revision with CAS. Replays bind the command, not newly calculated output, and
+return the original receipt even after later source changes. Recommendation
+does not persist an intermediate evaluation revision.
+
+Single-opportunity legacy GET/evaluate/recommend compatibility is tested with
+the explicitly injected service. Multiple-opportunity project-only evaluation
+and recommendation return 409. Invalid UUID/revision inputs return 422;
+missing or foreign-project decisions return 404; unreadable state returns 503.
+Selection/source races return 409 without automatic retry or reassignment.
+
+Audit rules now recognize all five scoped routes. Successful mutations record
+decision/revision/selection/operation/request-hash identity; conflicts record
+the requested operation and expected revision, without a successful receipt.
+Raw source text and operator notes are excluded from these new audit fields.
+Existing session, viewer write denial and tenant checks remain in force.
+Review assignment access rules are unchanged, not replaced by opportunity IDs.
+
+Verification: Python 3.12.12, clean environment, dotenv disabled before app
+import, temporary DATA_DIR, mock/local, memory fake-S3 procurement backend,
+AWS credentials/config paths `/dev/null`, metadata lookup disabled.
+
+- Initial missing-router RED, then **2 failing audit cases** and **2 failing
+  legacy GET cases** were reproduced and corrected.
+- New API file: **62 passed**, 1 existing Starlette/httpx warning, 8.33s.
+- Final adjacent gate: **754 passed**, same warning, 115.66s. Invoked through
+  `pytest.main` in the isolated environment with the following arguments:
+
+```bash
+pytest -q tests/test_procurement_multi_opportunity_api.py \
+  tests/test_procurement_multi_opportunity.py tests/test_procurement_store_integrity.py \
+  tests/test_procurement_store.py tests/test_project_management.py \
+  tests/test_procurement_decision_service.py tests/test_procurement_bundle_handoff.py \
+  tests/test_decision_council.py tests/test_procurement_review_authorization.py \
+  tests/test_procurement_review_store.py tests/test_procurement_decision_package_service.py \
+  tests/test_procurement_eval_regression.py tests/test_future_feature_gate.py \
+  tests/test_tenant.py tests/test_auth_api_key.py tests/test_auth.py \
+  tests/test_audit.py tests/test_observability.py --tb=short --show-capture=no
+```
+
+Targeted Ruff E/F/W excluding E501, syntax compilation of nine changed Python
+files without bytecode output, and `git diff --check` passed. This is an
+adjacent gate, not the entire repository suite or browser/UAT proof.
+Security-best-practices was used for the new API's session/tenant boundaries.
+
+The default factory does not register the new router or inject its service;
+an actual HTTP request against the default factory returns 404 for the new
+route. No server activation, real user-data conversion, live G2B/AWS/provider,
+training, deployment, install, commit or push was performed. Council/review/
+document bindings, remaining import/override/generation v2 compatibility,
+UI lifecycle and N/A remain open under steps 4-8. The next bounded task is
+Council/review-package decision identity and revision binding.
+
+## 2026-09-21 approved local plan and isolated v2 storage foundation
+
+This earlier storage checkpoint predates the scoped API work recorded above.
+
+The operator approved local/fake-S3 implementation after the design review.
+Both procurement admission records now pass `--require-approved`; neither
+grants operational authority or permission to migrate existing user data.
+The [eight-step implementation plan](../../superpowers/plans/2026-09-21-procurement-opportunity-and-applicability.md)
+records completed storage steps 1-2 and pending integration steps 3-8.
+
+The new explicitly injected `ProcurementProjectStore` retains A/B decisions,
+selection and decision revisions, source snapshot metadata and legacy mutation
+history. It uses one conditional write, rejects stale revisions without rebase,
+and returns the original receipt for an identical replay even after later
+commands. An uncertain write is reconciled by reading its persisted receipt;
+an unreadable outcome raises an error without a second write. Source refresh
+clears only its target's derived judgments. Evaluation of A cannot switch the
+active selection back from B. The old record validator is shared without
+changing the existing store's runtime role.
+
+Verification: Python 3.12.12, clean environment, dotenv disabled before app
+import, temporary DATA_DIR, mock/local and memory fake-S3. AWS credential/config
+paths point to `/dev/null` and metadata lookup is disabled in the broad gate.
+
+- RED: missing new store module, then **4 failed** input-rejection cases for
+  duplicate snapshot metadata and unsupported record schema. Both corrected.
+- Storage gate: **123 passed**, 1 existing Starlette/httpx deprecation warning,
+  2.56s. New local/fake-S3 tests account for 62 executed cases, including actual
+  concurrent commands, replay, lost create/replace responses, failed outcome
+  reads, corrupt state and cross-project/tenant boundaries.
+- Broad adjacent gate: **421 passed**, same warning, 71.58s:
+
+```bash
+pytest -q tests/test_procurement_multi_opportunity.py \
+  tests/test_procurement_store_integrity.py tests/test_procurement_store.py \
+  tests/test_project_management.py tests/test_procurement_decision_service.py \
+  tests/test_procurement_bundle_handoff.py tests/test_decision_council.py \
+  tests/test_procurement_review_authorization.py tests/test_procurement_review_store.py \
+  tests/test_procurement_decision_package_service.py tests/test_procurement_eval_regression.py \
+  tests/test_future_feature_gate.py --tb=short --show-capture=no
+```
+
+This gate was invoked through `pytest.main` in the isolated environment above.
+Targeted Ruff E/F/W excluding E501 and `git diff --check` passed.
+Snapshot ownership/metadata validation is not raw snapshot-byte hash proof.
+No app factory, route or UI uses the v2 store yet; API/Council/review/document
+binding, UI lifecycle and requirement applicability remain incomplete. This is
+not FR1 or whole-product completion. No real user-data conversion, external
+call, install, training, deployment, commit, push or independent Agent review
+was performed in this step.
+
+## 2026-09-21 earlier design checkpoint, before local approval
+
+The following is the earlier draft checkpoint. Its unapproved status is
+historical and was superseded by the local approval and implementation above.
+
+The [opportunity and applicability design](../../superpowers/specs/2026-09-21-procurement-opportunity-and-applicability-design.md)
+proposes independent decision identities inside a project, versioned CAS-backed
+selection/state, legacy compatibility, source-bound Council/review/document
+handoffs, and separately admitted requirement applicability evidence. This is a
+written design, not completed capability or an authorized user-data migration.
+
+Two new records remain `draft`, with no fabricated decision owner or timestamp:
+
+- `docs/future_feature_gates/procurement_multi_opportunity.json`
+- `docs/future_feature_gates/procurement_requirement_applicability.json`
+
+For each record, `python3 scripts/validate_future_feature_gate.py <record> --json`
+passed with `record_valid=true` and `admitted_for_implementation=false`.
+Adding `--require-approved` correctly returned exit 1 because approval is absent.
+This expected refusal is not an implementation failure and was not bypassed.
+`python3 -m pytest -q tests/test_future_feature_gate.py --tb=short --show-capture=no`
+passed **4 tests** in 0.33s in a clean process with dotenv disabled and a temporary
+data root. `git diff --check` passed; draft placeholder scan found no matches.
+
+The package builder currently maps unrecognized checklist status to `ready`;
+the proposed N/A contract therefore requires explicit versioned export and
+validator handling, not merely an enum addition. The ten broad categories are
+retained; N/A applies to evidence-bound child requirements and cannot suppress
+failed/unknown mandatory filters, raise scores or grant operational approval.
+
+Only design/admission/status documents were changed in this step. The proposed
+new test files have not been created or executed. No product/schema/storage
+implementation, existing-data write, external call, install, commit or push
+was performed. Implementation planning follows review of these contracts;
+prior local regression counts do not establish their completion.
+
+## 2026-09-21 checklist summary and requirement reconciliation
+
+The summary previously omitted `blocked` and `unknown` items from priority
+actions, while an empty checklist after import/reevaluation displayed no
+immediate actions. It now distinguishes pending evaluation, pending
+recommendation, missing checklist and evaluated readiness. Blocked entries
+precede unknown and routine action-needed entries. Text is escaped and long
+unbroken evidence labels wrap. The existing `action_needed` metric, stored
+values, scoring and approval gates are unchanged.
+
+The PRD now records the strict wire vocabulary (`ready`, `action_needed`,
+`blocked`, `unknown`) separately from its earlier vocabulary. No implicit alias
+or migration was added. `not_applicable` semantics remain unresolved.
+FR1 multiple-opportunity retention/selection remains incomplete: the current
+project stores one active opportunity plus historical source snapshots, not
+separate opportunity-bound decisions and reviews. Separate projects are a
+workaround, not completion of that requirement.
+
+Verification used isolated mock/local processes with dotenv disabled and
+temporary data roots, with no user accounts or existing UAT data reused:
+
+- RED: `tests/test_procurement_summary_ui.py` reproduced the false empty-state
+  message and omitted blockers at mobile/desktop sizes: **8 failed**.
+- GREEN: the same tests passed: **8 passed**. The final adjacent command
+  `pytest -q tests/test_procurement_summary_ui.py tests/test_procurement_decision_service.py tests/test_procurement_bundle_handoff.py --tb=short --show-capture=no`
+  passed **40 tests**, one existing Starlette/httpx deprecation warning, 48.25s.
+  The UI tests render extracted production functions and CSS with controlled
+  decision records; they are not API lifecycle or human UAT proof.
+- Actual served-shell integration:
+  `pytest -q -p pytest_playwright.pytest_playwright tests/e2e/test_main_flow.py -k 'project_detail_shows_procurement_panel_and_doc_actions or project_detail_shows_procurement_ai_role_board' --browser chromium --tb=short --show-capture=no`
+  passed **2 tests**, 114 deselected, 22.87s. The local server and login are real;
+  these existing tests supply controlled procurement records to the renderer.
+- Screenshots `output/playwright/procurement-summary-390.png` and
+  `output/playwright/procurement-summary-1440.png` were visually inspected.
+  The long-label test also verifies escaping and container/page overflow.
+- Targeted Ruff E/F/W excluding E501 and `git diff --check` passed.
+
+Playwright was used to verify the changed browser summary. No new backend
+capability, opportunity schema migration, live G2B/provider/AWS call, training,
+deployment, commit or push was performed. Full-suite, procurement browser
+source-to-document lifecycle and human UAT remain separate checks.
+
+## 2026-09-21 local judgment freshness correction
+
+The milestone label above is historical, not a new whole-product completion
+claim. Current planned-feature reconciliation found two stale-state defects:
+source import retained the previous source's evaluation and recommendation;
+reevaluation retained the previous recommendation and checklist.
+
+- Import now starts with default derived fields, even when the notice ID is
+  unchanged. Decision identity, creation time, existing source snapshots and
+  notes are retained. This does not add a multi-opportunity model.
+- Evaluation replaces deterministic results and clears recommendation/checklist.
+  Recommendation rebuilds both from those current results. A fixed-clock test
+  verifies GO before the deadline, no recommendation after reevaluation, then
+  NO_GO and a blocked checklist after rebuilding past the deadline.
+- Existing Council/review-packet gates reject imported-but-not-recommended
+  state. Completed review evidence and package bytes remain unchanged; downstream
+  RFP analysis, proposal and performance-plan drafts exclude stale review evidence
+  and invalidated recommendation text from their generation inputs.
+
+Verification (Python 3.12.12, mock/local, no live integration calls):
+
+- RED: the same-ID refresh, replacement import and reevaluation regressions
+  failed on retained recommendations: **3 failed, 136 deselected**.
+- GREEN: the same focused selection passed: **3 passed, 136 deselected**.
+- Final adjacent gate: **355 passed**, one existing Starlette/httpx deprecation
+  warning, 83.80 seconds. Invoked `pytest.main` with the arguments below in an
+  `env -i` process; dotenv loading was disabled before app import, `DATA_DIR`
+  pointed to a temporary directory, provider/storage were mock/local and AWS
+  credential/config files pointed to `/dev/null` with metadata lookup disabled.
+
+```bash
+python3 -m pytest -q \
+  tests/test_project_management.py tests/test_procurement_decision_service.py \
+  tests/test_procurement_bundle_handoff.py tests/test_procurement_store.py \
+  tests/test_procurement_store_integrity.py tests/test_decision_council.py \
+  tests/test_procurement_review_authorization.py tests/test_procurement_review_store.py \
+  tests/test_procurement_decision_package_service.py tests/test_procurement_eval_regression.py \
+  --tb=short --show-capture=no
+```
+
+Targeted `ruff check --select=E,F,W --ignore=E501`, in-memory Python syntax
+compilation for the five changed Python files, and `git diff --check` passed.
+This is backend/local handoff evidence, not new browser UAT, full-suite, real
+model quality or external readiness proof. No live G2B/AWS/provider calls,
+training, deployment, user-data migration, commit or push was performed.
+Remaining PRD reconciliation includes multiple-opportunity semantics and the
+checklist vocabulary; neither was silently implemented in this correction.
+
 ## 2026-08-11 current-main live G2B fallback and log redaction
 
 - Latest-main `deploy-smoke [dev]` run `31452991725` used `provider=mock`

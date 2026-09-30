@@ -4,6 +4,8 @@ Extracted from app/main.py to keep the main module lean.
 """
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 
@@ -14,6 +16,10 @@ from app.routers.projects._provenance import (
     lookup_project_document,
     project_document_freshness_values,
     project_document_source_fingerprint,
+)
+from app.services.procurement_document_binding import (
+    describe_procurement_document_binding,
+    resolver_from_app_state,
 )
 from app.schemas import CreateShareRequest, UpdateHistoryVisualAssetsRequest
 
@@ -256,6 +262,17 @@ def _refresh_shared_project_document(
     )
     if binding_status == "current":
         current.update(project_document_freshness_values(document))
+        source_status = describe_procurement_document_binding(
+            document.get("source_procurement_binding") if document else None,
+            resolver=resolver_from_app_state(request.app.state),
+        )
+        current["source_procurement_binding"] = (
+            document.get("source_procurement_binding") if document else None
+        )
+        current["source_procurement_binding_status"] = source_status["status"]
+        current["source_procurement_binding_reason_code"] = source_status[
+            "reason_code"
+        ]
 
     current_fingerprint = project_document_source_fingerprint(
         request,
@@ -318,15 +335,31 @@ def create_share_link(payload: CreateShareRequest, request: Request):
         data_dir=request.app.state.data_dir,
         backend=request.app.state.state_backend,
     )
+    source_binding = (
+        project_document.get("source_procurement_binding")
+        if project_document is not None
+        else None
+    )
+    source_binding_status = describe_procurement_document_binding(
+        source_binding,
+        resolver=resolver_from_app_state(request.app.state),
+    )
     link = store.create(
         request_id=payload.request_id,
-        title=payload.title,
+        title=(
+            str(project_document.get("title") or payload.title)
+            if project_document is not None
+            else payload.title
+        ),
         created_by=user_id,
         bundle_id=payload.bundle_id,
         project_id=payload.project_id,
         project_document_id=payload.project_document_id,
         source_fingerprint=source_fingerprint,
         expires_days=payload.expires_days,
+        source_procurement_binding=source_binding,
+        source_procurement_binding_status=source_binding_status["status"],
+        source_procurement_binding_reason_code=source_binding_status["reason_code"],
         **freshness,
     )
     response_link = {
@@ -341,6 +374,10 @@ def create_share_link(payload: CreateShareRequest, request: Request):
         "expires_at": link.expires_at,
         "project_document_binding_status": binding_status,
         "source_fingerprint": source_fingerprint,
+        "source_procurement_binding_status": source_binding_status["status"],
+        "source_procurement_binding_reason_code": source_binding_status[
+            "reason_code"
+        ],
         **freshness,
     }
 
@@ -367,9 +404,35 @@ def view_shared_document(share_id: str, request: Request):
             _record_share_provenance_audit(request, current_link)
             store.increment_access(share_id)
             title = current_link.get("title", "공유 문서")
-            request_id = current_link.get("request_id", "")
             doc_html = ""
-            if request_id:
+            project_id = str(current_link.get("project_id") or "")
+            project_document_id = str(
+                current_link.get("project_document_id") or ""
+            )
+            if project_id and project_document_id:
+                binding_status, project_document = lookup_project_document(
+                    request,
+                    tenant_id=tenant.tenant_id,
+                    project_id=project_id,
+                    project_document_id=project_document_id,
+                    request_id=str(current_link.get("request_id") or ""),
+                    bundle_id=str(current_link.get("bundle_id") or ""),
+                )
+                if binding_status == "current" and project_document is not None:
+                    try:
+                        snapshot = json.loads(project_document["doc_snapshot"])
+                    except (KeyError, TypeError, json.JSONDecodeError):
+                        snapshot = []
+                    parts = [
+                        f'<section class="doc-section">{_md_to_html(item["markdown"])}</section>'
+                        for item in snapshot
+                        if isinstance(item, dict)
+                        and isinstance(item.get("markdown"), str)
+                        and item["markdown"].strip()
+                    ]
+                    doc_html = "\n".join(parts)
+            else:
+                request_id = current_link.get("request_id", "")
                 try:
                     storage = request.app.state.storage
                     bundle = storage.load_bundle(request_id)
@@ -395,6 +458,9 @@ def view_shared_document(share_id: str, request: Request):
                     ),
                     procurement_review_warning=_render_shared_procurement_review_warning(
                         current_link
+                    ),
+                    procurement_binding_warning=(
+                        _render_shared_procurement_binding_warning(current_link)
                     ),
                 )
             )
@@ -495,6 +561,43 @@ def _render_shared_procurement_review_warning(link: dict) -> str:
     )
 
 
+def _render_shared_procurement_binding_warning(link: dict) -> str:
+    import html as _html
+
+    status = str(link.get("source_procurement_binding_status") or "unknown")
+    if status == "current":
+        return ""
+    source_binding = link.get("source_procurement_binding")
+    if source_binding is None:
+        if str(link.get("bundle_id") or "") not in {
+            "bid_decision_kr",
+            "performance_plan_kr",
+            "proposal_kr",
+            "rfp_analysis_kr",
+        }:
+            return ""
+        label = "공고 출처 기록 없음"
+        message = (
+            "이 조달 문서에는 생성 당시의 공고 출처 binding이 기록되지 않아 "
+            "현재성을 확인할 수 없습니다."
+        )
+    else:
+        label = (
+            "공고 출처 변경 확인 필요"
+            if status == "stale"
+            else "공고 출처 현재성 미확인"
+        )
+        message = (
+            "이 공유 문서는 저장 당시의 공고 출처에 결속되어 있으며, 현재 상태를 "
+            "확인할 수 없거나 이후 변경되었습니다."
+        )
+    return (
+        f'<div class="share-warning {"danger" if status == "stale" else "warning"}">'
+        f"<strong>{_html.escape(label)}</strong>"
+        f"<span>{_html.escape(message)}</span></div>"
+    )
+
+
 def _render_shared_page(
     title: str,
     doc_html: str,
@@ -502,6 +605,7 @@ def _render_shared_page(
     source_warning: str = "",
     decision_council_warning: str = "",
     procurement_review_warning: str = "",
+    procurement_binding_warning: str = "",
 ) -> str:
     import html as _html
     safe_title = _html.escape(title)
@@ -545,6 +649,7 @@ def _render_shared_page(
 {source_warning}
 {decision_council_warning}
 {procurement_review_warning}
+{procurement_binding_warning}
 {doc_html}
 </body>
 </html>"""

@@ -4,6 +4,7 @@ from __future__ import annotations
 import zipfile
 from io import BytesIO
 
+import pytest
 from fastapi.testclient import TestClient
 
 _DOCX_MAGIC = b"PK\x03\x04"  # OOXML/ZIP magic bytes — all .docx files start with this
@@ -22,6 +23,30 @@ def _create_client(tmp_path, monkeypatch):
 
 
 # ── Unit tests for build_docx() ──────────────────────────────────────────────
+
+def test_core_document_names_appear_in_export_cover():
+    from docx import Document
+    from app.services.docx_service import build_docx
+
+    docs = [{"doc_type": key, "markdown": "# Title\n\nBody"}
+            for key in ("adr", "onepager", "eval_plan", "ops_checklist")]
+    doc = Document(BytesIO(build_docx(docs, title="Core document package")))
+    text = "\n".join(paragraph.text for paragraph in doc.paragraphs)
+    for label in ("기술 의사결정 기록 (ADR)", "한 페이지 요약", "평가 계획", "운영 체크리스트"):
+        assert label in text
+    badges = [p for p in doc.paragraphs if p.text.startswith("문서 0")]
+    assert len(badges) == 4
+    assert all(p.paragraph_format.page_break_before for p in badges)
+    assert not doc.element.xpath('.//w:br[@w:type="page"]')
+    from docx.oxml.ns import qn
+
+    cover_table = next(table for table in doc.tables if table.cell(0, 0).text == "문서")
+    assert len(cover_table.rows) == 5
+    assert cover_table.rows[0]._tr.trPr.find(qn("w:tblHeader")) is not None
+    for row in cover_table.rows:
+        assert row._tr.trPr.find(qn("w:cantSplit")) is not None
+        for cell in row.cells:
+            assert all(p.paragraph_format.space_after == 0 for p in cell.paragraphs)
 
 def test_build_docx_returns_valid_ooxml_bytes():
     """build_docx() must return bytes that start with the ZIP/OOXML magic."""
@@ -80,6 +105,32 @@ def test_build_docx_renders_markdown_tables():
         if table.cell(0, 0).text == "단계" and table.cell(0, 1).text == "기간"
     )
     assert target.cell(1, 0).text == "착수"
+    from docx.oxml.ns import qn
+
+    assert target.rows[0]._tr.trPr.find(qn("w:tblHeader")) is not None
+    assert all(row._tr.trPr.find(qn("w:cantSplit")) is not None for row in target.rows)
+    assert target.rows[1]._tr.trPr.find(qn("w:tblHeader")) is None
+
+
+@pytest.mark.parametrize("rebuild", [False, True])
+def test_docx_table_preserves_paths_and_literal_pipes_after_save(rebuild):
+    from docx import Document
+    from app.services.docx_service import build_docx
+    from app.services.markdown_utils import build_markdown_table
+
+    row = r"| File | C:\reports\draft.docx | A \| B |"
+    headers = ["Kind", "Path", "Options"]
+    markdown = (
+        build_markdown_table([row], headers) if rebuild
+        else "| Kind | Path | Options |\n| --- | --- | --- |\n" + row
+    )
+    doc = Document(BytesIO(build_docx([{"doc_type": "adr", "markdown": markdown}], title="Cell fidelity")))
+    saved = BytesIO()
+    doc.save(saved)
+    reopened = Document(BytesIO(saved.getvalue()))
+    table = next(table for table in reopened.tables if table.cell(0, 0).text == "Kind")
+    assert len(table.columns) == 3
+    assert [cell.text for cell in table.rows[1].cells] == ["File", r"C:\reports\draft.docx", "A | B"]
 
 
 def test_build_docx_adds_export_cover_and_section_intro():

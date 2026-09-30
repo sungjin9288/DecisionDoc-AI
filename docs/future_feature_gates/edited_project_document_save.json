@@ -1,0 +1,46 @@
+{
+  "schema_version": "decisiondoc.future_feature_gate.v1",
+  "gate_id": "edited-project-document-save",
+  "title": "Durable edited project document copies",
+  "target_user": "A session-bound tenant editor who needs to reopen an edited project document",
+  "observed_problem": "Browser edits are not persisted by the generation-time project snapshot or original server history, so page reload cannot restore a saved edited version through the current edit action.",
+  "evidence": [
+    {"kind": "repository", "reference": "app/static/index.html: captureCurrentDocumentEdits and openServerHistoryEntry", "observation": "Editing changes the in-memory document; reopening server history loads the stored generation result."},
+    {"kind": "repository", "reference": "app/routers/generate/export.py: generate_stream", "observation": "Project auto-link persists generation-time result docs, not later browser edits."},
+    {"kind": "repository", "reference": "docs/future_feature_gates/generated_document_review_completion.json", "observation": "The existing approved review scope excludes editing project documents."}
+  ],
+  "current_workaround": "Download the edited result immediately; this does not provide a durable project copy that can be reopened in the application.",
+  "desired_outcome": "Save a separately identified edited copy, reopen it after reload, and download its persisted content without overwriting original documents or reviews.",
+  "acceptance_criteria": [
+    "A strict parent-bound save creates one new immutable document and preserves the original document and review bytes.",
+    "An active session and permitted existing tenant role are required; foreign tenant, viewer and sessionless writes fail without mutation.",
+    "Exact operation replay returns the same copy after restart; changed replay, stale parent and corrupt state fail closed.",
+    "Conditional mutation preserves unrelated concurrent project changes on local and fake-S3 backends.",
+    "Saved copies retain parent and actor lineage but do not inherit approval, completed review or original-issued verification authority.",
+    "Real local browser save, reload, open and DOCX download preserve edited content and leave the original unchanged.",
+    "Failed saves retain unsaved text; duplicate clicks and stale auth/project responses cannot create misleading success state."
+  ],
+  "affected_boundaries": [
+    "Project routes, schemas, service and ProjectStore conditional mutation",
+    "Session-bound authorization and redacted audit metadata",
+    "Browser editor, project document list and existing export integration",
+    "Local/fake-S3 API/store tests, browser E2E and product status documentation"
+  ],
+  "authority_scope": {
+    "review_only": true,
+    "allowed_effects": ["Create an immutable edited project copy in local/fake-S3 verification", "Record parent linkage, operation identity and redacted local audit evidence"],
+    "excluded_effects": ["Overwrite original generation history or review evidence", "Inherit or grant operational, legal or contractual approval", "Commit, push, publish, install or change credentials"],
+    "separate_approval_required_for": ["Live AWS, provider or G2B calls", "Dataset upload, model training, promotion or deployment"]
+  },
+  "local_verification": [
+    {"command": "python3 -m pytest -q tests/test_edited_project_copies.py tests/test_edited_project_copy_api.py tests/test_project_management.py tests/test_project_approval_store_integrity.py --tb=short", "proves": "Edited-copy storage, API access, exact replay and existing project/approval contracts on isolated local/fake-S3 data."},
+    {"command": "python3 -m pytest -q tests/e2e/test_edited_project_copy.py --browser chromium --tb=short", "proves": "Real local generation, edited-copy save, reload, open, DOCX download and successor-copy lineage on desktop/mobile."},
+    {"command": "git diff --check", "proves": "Patch whitespace integrity, not runtime correctness"}
+  ],
+  "decision": {
+    "status": "approved",
+    "rationale": "The repository operator explicitly approved this proposed edited-copy persistence scope in the current conversation. External effects remain excluded.",
+    "decided_by": "repository-operator",
+    "decided_at": "2026-09-14T09:56:49Z"
+  }
+}

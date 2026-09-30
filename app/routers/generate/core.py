@@ -79,6 +79,13 @@ def generate_with_attachments(
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"Invalid payload JSON: {exc}") from exc
 
+    if req.style_profile_id is not None:
+        tenant_id = getattr(request.state, "tenant_id", "system") or "system"
+        request.app.state.service.resolve_style_snapshot(
+            req,
+            tenant_id=tenant_id,
+        )
+
     if attachments:
         _raise_if_legacy_binary_hwp_uploads(attachments)
         file_data: list[tuple[str, bytes]] = []

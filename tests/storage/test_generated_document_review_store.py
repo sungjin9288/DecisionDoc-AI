@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import hashlib
+import io
 import json
+import zipfile
+from dataclasses import replace
 
 import pytest
 
@@ -9,12 +13,19 @@ from app.services.generation_export_packet import (
     build_generated_document_review_packet,
     verify_generation_export_packet,
 )
+from app.storage.generated_document_review_models import (
+    GeneratedDocumentReviewedPackageError,
+    REVIEWED_PACKAGE_MANIFEST_PATH,
+    REVIEWED_PACKAGE_RECEIPT_PATH,
+    verify_generated_document_reviewed_package,
+)
 from app.storage.generated_document_review_store import (
     GeneratedDocumentReviewStore,
     GeneratedDocumentReviewStoreError,
 )
 from app.storage.state_backend import StateBackendError
 from tests.async_helper import run_async
+from tests.conditional_state_support import s3_backend
 
 
 DOCS = [{"doc_type": "adr", "markdown": "# 검토 대상\n\n본문"}]
@@ -274,3 +285,176 @@ def test_store_lists_only_canonical_owned_records_newest_first(tmp_path):
     assert store.list_by_project(
         tenant_id="tenant-b", project_id="project-a"
     ) == []
+
+
+@pytest.mark.parametrize("backend_kind", ("local", "s3"))
+def test_store_completes_once_and_exact_replay_returns_verified_package(
+    tmp_path, backend_kind
+):
+    backend = None if backend_kind == "local" else s3_backend()[0]
+    store = GeneratedDocumentReviewStore(base_dir=str(tmp_path), backend=backend)
+    packet, _verification, pending, _created = _prepare(store)
+
+    completed, reviewed_package, created = store.complete(
+        pending,
+        tenant_id="tenant-a",
+        completion_assignment=REVIEWER,
+        operation_id="11111111-1111-4111-8111-111111111111",
+        decision="accepted",
+        rationale="The packet evidence is complete and internally consistent.",
+        reviewed_at="2026-09-04T07:30:00+00:00",
+    )
+
+    assert created is True
+    assert (
+        completed.schema_version == "decisiondoc.generated_document_review_handoff.v2"
+    )
+    assert completed.review_status == "completed"
+    assert completed.review_decision == "accepted"
+    assert completed.human_review_completed is True
+    assert completed.operational_approval is False
+    assert completed.authority == AUTHORITY_FALSE
+    verified = verify_generated_document_reviewed_package(
+        reviewed_package,
+        expected_record=completed,
+        expected_packet_content=packet["content"],
+    )
+    assert verified["receipt"]["review_rationale"] == (
+        "The packet evidence is complete and internally consistent."
+    )
+
+    replay, replay_package, replay_created = store.complete(
+        completed,
+        tenant_id="tenant-a",
+        completion_assignment=REVIEWER,
+        operation_id="11111111-1111-4111-8111-111111111111",
+        decision="accepted",
+        rationale="The packet evidence is complete and internally consistent.",
+        reviewed_at="2026-09-04T07:31:00+00:00",
+    )
+    assert replay_created is False
+    assert replay == completed
+    assert replay_package == reviewed_package
+
+    with pytest.raises(ValueError, match="completion conflict"):
+        store.complete(
+            completed,
+            tenant_id="tenant-a",
+            completion_assignment=REVIEWER,
+            operation_id="11111111-1111-4111-8111-111111111111",
+            decision="accepted",
+            rationale="Changed retry payload.",
+            reviewed_at="2026-09-04T07:32:00+00:00",
+        )
+    assert (
+        store.read_reviewed_package(completed, tenant_id="tenant-a") == reviewed_package
+    )
+
+
+def test_store_preserves_corrupt_reviewed_package_and_rejects_read(tmp_path):
+    store = GeneratedDocumentReviewStore(base_dir=str(tmp_path))
+    _packet_value, _verification, pending, _created = _prepare(store)
+    completed, _reviewed_package, _created = store.complete(
+        pending,
+        tenant_id="tenant-a",
+        completion_assignment=REVIEWER,
+        operation_id="22222222-2222-4222-8222-222222222222",
+        decision="changes_requested",
+        rationale="The evidence needs one bounded correction.",
+        reviewed_at="2026-09-04T07:35:00+00:00",
+    )
+    path = store.reviewed_package_path(
+        tenant_id="tenant-a",
+        reviewed_package_sha256=completed.reviewed_package_sha256,
+    )
+    store._backend.write_bytes(path, b"corrupt-reviewed-package")
+
+    with pytest.raises(GeneratedDocumentReviewStoreError):
+        store.read_reviewed_package(completed, tenant_id="tenant-a")
+
+    assert store._backend.read_bytes(path) == b"corrupt-reviewed-package"
+
+
+@pytest.fixture
+def completed_review(tmp_path):
+    store = GeneratedDocumentReviewStore(base_dir=str(tmp_path))
+    _packet_value, _verification, pending, _created = _prepare(store)
+    completed, package, _created = store.complete(
+        pending,
+        tenant_id="tenant-a",
+        completion_assignment=REVIEWER,
+        operation_id="33333333-3333-4333-8333-333333333333",
+        decision="accepted",
+        rationale="The source and review evidence agree.",
+        reviewed_at="2026-09-05T00:00:00+00:00",
+    )
+    return completed, package
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "receipt_authority",
+        "receipt_artifact_count",
+        "manifest_authority",
+        "manifest_human_review_completed",
+        "manifest_operational_approval",
+        "receipt_decision_list",
+        "receipt_decision_object",
+    ),
+)
+def test_reviewed_package_rejects_invalid_json_value_types(
+    completed_review, mutation
+):
+    _completed, package = completed_review
+    with zipfile.ZipFile(io.BytesIO(package)) as archive:
+        entries = archive.infolist()
+        contents = {entry.filename: archive.read(entry) for entry in entries}
+    receipt = json.loads(contents[REVIEWED_PACKAGE_RECEIPT_PATH])
+    manifest = json.loads(contents[REVIEWED_PACKAGE_MANIFEST_PATH])
+    if mutation == "receipt_authority":
+        receipt["authority"][next(iter(AUTHORITY_FALSE))] = 0
+    elif mutation == "receipt_artifact_count":
+        assert receipt["packet"]["artifact_count"] == 1
+        receipt["packet"]["artifact_count"] = True
+    elif mutation == "manifest_authority":
+        manifest["authority"][next(iter(AUTHORITY_FALSE))] = 0
+    elif mutation == "manifest_human_review_completed":
+        manifest["human_review_completed"] = 1
+    elif mutation == "receipt_decision_list":
+        receipt["review_decision"] = ["accepted"]
+    elif mutation == "receipt_decision_object":
+        receipt["review_decision"] = {"value": "accepted"}
+    else:
+        manifest["operational_approval"] = 0
+
+    receipt_content = (
+        json.dumps(receipt, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        + "\n"
+    ).encode("utf-8")
+    contents[REVIEWED_PACKAGE_RECEIPT_PATH] = receipt_content
+    manifest["entries"][1]["sha256"] = hashlib.sha256(receipt_content).hexdigest()
+    manifest["entries"][1]["size_bytes"] = len(receipt_content)
+    contents[REVIEWED_PACKAGE_MANIFEST_PATH] = (
+        json.dumps(manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        + "\n"
+    ).encode("utf-8")
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w") as archive:
+        for entry in entries:
+            archive.writestr(entry, contents[entry.filename])
+
+    with pytest.raises(GeneratedDocumentReviewedPackageError):
+        verify_generated_document_reviewed_package(output.getvalue())
+
+
+def test_reviewed_package_binds_expected_record_packet_size(completed_review):
+    completed, package = completed_review
+    mismatched_record = replace(
+        completed, packet_size_bytes=completed.packet_size_bytes + 1
+    )
+
+    with pytest.raises(GeneratedDocumentReviewedPackageError, match="record binding"):
+        verify_generated_document_reviewed_package(
+            package, expected_record=mismatched_record
+        )

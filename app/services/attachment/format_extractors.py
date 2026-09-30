@@ -70,12 +70,12 @@ def _extract_hwpx(raw: bytes, filename: str) -> str:
                 )
             texts: list[str] = []
             for sf in section_files:
-                xml = zf.read(sf).decode("utf-8", errors="ignore")
-                # <hh:t> or <t> tags carry the visible text
-                matches = re.findall(
-                    r"<(?:hh:)?t[^>]*>([^<]+)</(?:hh:)?t>", xml
-                )
-                texts.extend(m.strip() for m in matches if m.strip())
+                section = SafeET.fromstring(zf.read(sf))
+                for element in section.iter():
+                    if _local_name(element.tag) == "t":
+                        text = "".join(element.itertext()).strip()
+                        if text:
+                            texts.append(text)
 
     except zipfile.BadZipFile as exc:
         raise AttachmentError(

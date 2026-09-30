@@ -1,5 +1,115 @@
 # DecisionDoc AI 시스템 아키텍처
 
+## Local-First Product Design
+
+설계 기준: 2026-09-05. 제품의 중심은 **자료를 근거가 있는 문서로 만들고,
+담당자가 검토한 결과를 변경되지 않는 패키지로 전달하는 흐름**이다.
+Public procurement는 첫 업무 사례이며, 모든 문서를 procurement schema로
+합치거나 DecisionDoc를 범용 agent runtime으로 바꾸지 않는다.
+
+아래 설계는 기존 구현을 연결하는 기준이다. 새 기능의 구현 승인은
+[실행 계획](./product_execution_plan.md#0-current-local-completion-goal)과
+[Future Feature Gate](./future_feature_gate.md)를 따른다. 현재 검증 결과와
+미검증 사항은 [canonical snapshot](./development-plan.md#0-current-completionreadiness-snapshot)에만 기록한다.
+
+### 사용자 흐름과 제품 경계
+
+| 사용자 과업 | 기존 책임 | 완료의 의미 |
+|---|---|---|
+| 작성자가 프로젝트와 자료를 정리한다 | Project, Knowledge, attachment intake | 자료를 보관하거나 참조한 상태이지 사실 확인 완료가 아님 |
+| 문서를 생성하고 결과를 저장한다 | GenerationService, Provider, templates, export | 구조와 산출물 무결성을 검사한 초안이지 내용 정확성 보증이 아님 |
+| 근거와 빈틈을 확인한다 | Decision Evidence, domain-specific procurement/Council views | 관측된 근거, 부족한 자료, source 변경을 드러냄 |
+| 담당자에게 문서를 전달한다 | GeneratedDocumentReviewService/Store | source와 stable assignee에 묶인 pending handoff |
+| 검토 결과를 기록하고 전달한다 | Completion receipt, reviewed package | 해당 packet에 대한 검토 이력이지 사업 또는 운영 승인 아님 |
+
+공통 검토 흐름은 project workspace에서 시작하고 inbox와 history로 이어진다.
+별도의 marketing page나 중복 review dashboard를 만들지 않는다. 화면의 우선
+정보는 문서명, 담당자, source 상태, 검토 결과와 가능한 다음 행동이다.
+전체 rationale과 stable identity는 목록에 추가하지 않는다. 접근성 검수에서는
+키보드 초점, 대화상자 복귀, 작은 화면의 겹침, 실패 후 입력 보존을 확인한다.
+
+### 구성과 의존 방향
+
+```mermaid
+flowchart TD
+    UI[Project workspace / Review inbox] --> API[FastAPI routes and session gates]
+    API --> GEN[GenerationService]
+    API --> REVIEW[GeneratedDocumentReviewService]
+    GEN --> PROVIDER[Provider ABC: mock or explicit local runtime]
+    GEN --> SOURCE[Export source / Project document]
+    SOURCE --> PACKET[Deterministic review packet]
+    REVIEW --> STORE[GeneratedDocumentReviewStore]
+    PACKET --> STORE
+    STORE --> BACKEND[StateBackend: local or separately verified S3]
+    STORE --> VERIFY[Pure packet and reviewed-package verifiers]
+    VERIFY --> ZIP[Unchanged packet + receipt + manifest]
+```
+
+| 경계 | 구현 위치 | 유지할 규칙 |
+|---|---|---|
+| 생성 | `app/services/generation_service.py`, `app/providers/` | Provider 호출은 생성 경로에만 두고 review/download에서는 호출하지 않음 |
+| 변환과 packet | `app/services/generation_export_packet.py` | fixed paths, deterministic bytes, bounded archive, 독립 검증 |
+| Review API | `app/routers/projects/generated_document_reviews.py` | request의 인증 context에서 tenant/actor를 결정; body로 권한을 받지 않음 |
+| Review 업무 로직 | `app/services/generated_document_review_service.py` | 접근 권한, stable assignment, current source를 저장 전에 확인 |
+| Review 저장 | `app/storage/generated_document_review_store.py` | immutable package 먼저 기록/재확인, mutable record만 exact CAS |
+| Review 계약 | `app/storage/generated_document_review_models.py` | pending v1 호환, completed v2, bytes/type/identity 전부 재검증 |
+| Audit | `app/middleware/generated_document_review_audit.py` | redacted action evidence; rationale/session/network 정보 복제 금지 |
+
+기존 modular monolith와 factory/app.state 주입을 유지한다. 별도 queue,
+microservice, database migration, 인증 재설계, schema 통합, 새 dependency는
+이 목표에 필요하지 않다. Procurement, Council, approval, DocumentOps는 각각의
+계약을 유지하며 generated-document completion이 다른 domain의 상태를 갱신하지 않는다.
+
+### 상태와 무결성
+
+Review record 상태는 `pending`과 `completed`이고, completed의 decision은
+`accepted`, `changes_requested`, `rejected`다. Source의 `current`, `changed`,
+`missing`은 별도의 관측 값이다. `accepted`를 최신 source, 법적 승인 또는
+운영 실행 가능으로 해석하지 않는다.
+
+1. 저장된 project document로부터 source fingerprint와 packet을 만든다.
+2. 원본 packet을 immutable 저장하고 pending v1 record에 assignee를 결속한다.
+3. 현재 session의 stable assignee와 source currentness를 다시 확인한다.
+4. 원본 packet, private receipt, manifest를 deterministic reviewed ZIP으로 만들고 검증한다.
+5. Package를 conditional create하고 exact read-back한 뒤 pending record를 completed v2로 CAS한다.
+6. List/read/download에서도 권한과 저장된 evidence를 재검증한다.
+
+| 상황 | 기대 동작 |
+|---|---|
+| 동일 operation/assignee/decision/rationale 재전송 | 같은 검증된 package 반환, 두 번째 상태 전환 없음 |
+| 같은 operation의 다른 입력 또는 경쟁 완료 | conflict, 기존 record/package 보존 |
+| 변경되거나 없는 source | 완료 중단, 기존 pending evidence 보존; 새로운 handoff 필요 |
+| 응답 소실 또는 backend 실패 | 불명확한 결과를 성공으로 표시하지 않음; 같은 입력의 사용자 재시도만 기존 replay 규칙 적용 |
+| 변조 ZIP/JSON/hash/size/type/assignment | fail closed, 자동 repair나 삭제 없음 |
+| 화면의 auth/project/document/operation 변경 | 늦은 응답 폐기, 이전 object URL 해제 |
+
+원본 pending packet은 완료 이후에도 그대로이며, human-review-completed를
+표시하는 것은 별도의 완료 receipt/package다. JSON `false`와 숫자 `0`, 정수
+count와 boolean은 호환 값이 아니다. Package의 byte/hash/metadata가 서로
+일치하더라도 이 타입 규칙을 어기면 거부한다.
+
+Source 조회와 review CAS는 여러 객체를 묶는 transaction이 아니다.
+Race의 패자가 남긴 unreferenced immutable package는 보존하며 자동 GC를
+추가하지 않는다. SHA-256 검증은 내부 무결성이지 서명, 발급자 진위 또는
+실제 사람의 판단 적절성 증명이 아니다. 다운로드한 package에는 private
+review evidence가 들어 있으므로 공개 portfolio나 로그에 넣지 않는다.
+
+### 실행 환경과 확장 순서
+
+기본 검증 환경은 `scripts/run_free_local.py --provider mock`의 loopback
+FastAPI와 local StateBackend다. Runner의 free-mode 차단을 유지하고 새로운
+model download, API key 조회, `.env.prod` 변경, Docker/AWS 실행은 하지 않는다.
+이미 설치된 local model로 내용 품질을 평가하는 작업도 mock regression과
+별도의 실행 증거로 기록한다. Local 저장 위치를 유지하면 재시작 후 다시 읽을
+수 있지만 백업 복원, 장시간 운영, 실제 S3 일관성과 다중 사용자 부하를 검증했다는
+뜻은 아니다.
+
+확장 순서는 local 기술 검증, synthetic-data human UAT, 관측된 문제의 bounded
+개선, 별도 승인된 외부 실증이다. Cloud를 쓰게 되어도 Provider/StateBackend
+구현을 기존 factory로 교체하며 review 권한과 packet 계약은 유지한다.
+M1 provider proof, M2 durable G2B stage proof, M6 deploy/runtime proof는 각각
+독립적인 증거와 승인으로만 닫는다.
+
 ## 전체 구성도
 
 ```

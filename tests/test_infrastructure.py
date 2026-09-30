@@ -1157,7 +1157,7 @@ def test_index_html_document_ops_agent_renders_only_allowlisted_provenance():
         assert forbidden not in renderer
 
 
-def test_index_html_exports_current_generated_docs_before_regenerating():
+def test_index_html_exports_current_generated_docs_without_regenerating():
     content = open("app/static/index.html", encoding="utf-8").read()
     export_blob_fn = re.search(
         r"async function _buildExportedBlob\(format\) \{(?P<body>[\s\S]*?)\n  \}",
@@ -1170,10 +1170,15 @@ def test_index_html_exports_current_generated_docs_before_regenerating():
     assert export_blob_fn is not None
     assert export_document_fn is not None
     assert "generatedDocs.length === 0" in export_blob_fn.group("body")
-    assert "preferEdited: hasEdits" in export_blob_fn.group("body")
+    assert "buildEditedExportDocsPayload(generatedDocs)" in export_blob_fn.group("body")
     assert "fetch('/generate/export-edited'" in export_blob_fn.group("body")
-    assert "No rendered docs yet" in export_document_fn.group("body")
-    assert "const endpoint = { docx: '/generate/docx'" in export_document_fn.group("body")
+    assert "generate_missing_visuals: false" in export_blob_fn.group("body")
+    batch_start = content.index("  async function downloadBatchResult(")
+    batch_export = content[batch_start:content.index("  $id('batch-mode-toggle')", batch_start)]
+    assert "generate_missing_visuals: false" in batch_export
+    assert "generatedDocs.length === 0" in export_document_fn.group("body")
+    assert "fetch(" not in export_document_fn.group("body")
+    assert "await _buildExportedBlob(format)" in export_document_fn.group("body")
 
 
 def test_index_html_keeps_blob_url_and_shows_download_fallback():
@@ -2470,7 +2475,8 @@ def test_index_html_style_profile_action_wiring_exists():
         "autoSaveTone(profileId)",
         "analyzeStyleDocuments(profileId)",
         "function wireCreateStyleModalActions(modal)",
-        "modal.querySelector('[data-style-create-submit]')?.addEventListener('click', submitCreateStyleProfile)",
+        # The submit handler receives its own modal for the duplicate-submit guard.
+        "modal.querySelector('[data-style-create-submit]')?.addEventListener('click', () => submitCreateStyleProfile(modal))",
         "function wireBundleOverrideModalActions(modal, profileId)",
         "modal.querySelector('[data-style-bundle-save]')?.addEventListener('click', () => saveBundleOverride(profileId))",
     ):
@@ -3224,7 +3230,15 @@ def test_ci_playwright_install_has_bounded_timeout_and_python_module_entrypoint(
         r"- name: Install Playwright browsers\n\s+timeout-minutes:\s*10\n[\s\S]*?run: python -m playwright install chromium --with-deps",
         workflow,
     )
-    assert re.search(r"- name: Run full test suite\n\s+timeout-minutes:\s*25", workflow)
+    assert re.search(
+        r"- name: Run test suite excluding browser E2E\n\s+timeout-minutes:\s*25\n[\s\S]*?run: \|\n\s+pytest tests/ -q --tb=short --ignore=tests/e2e\n",
+        workflow,
+    )
+    assert re.search(
+        r"- name: Run browser E2E tests\n\s+if: \$\{\{ !cancelled\(\) \}\}\n\s+timeout-minutes:\s*10\n[\s\S]*?run: \|\n\s+pytest tests/e2e -q --tb=short\n",
+        workflow,
+    )
+    assert "Run full test suite" not in workflow
     assert "run: playwright install chromium --with-deps" not in workflow
 
 
@@ -4016,8 +4030,9 @@ def test_production_procurement_review_artifact_calls_bind_resource_scope():
                 relative_path = path.relative_to(root).as_posix()
                 incomplete_calls.append(f"{relative_path}:{node.lineno}:{method_name}")
 
+    # read_reviewed_package also re-reads the bound original packet (8th call).
     assert discovered == {
-        "read_packet": 7,
+        "read_packet": 8,
         "complete": 1,
         "read_reviewed_package": 4,
     }
@@ -4524,6 +4539,11 @@ def test_generated_document_review_handoff_keeps_separate_immutable_boundary():
     assert '"/generated-document-reviews"' in router
     assert '"/projects/{project_id}/generated-document-reviews"' in router
     assert '"/projects/{project_id}/generated-document-reviews/{packet_sha256}/packet"' in router
+    assert '"/projects/{project_id}/generated-document-reviews/{packet_sha256}/complete"' in router
+    assert '"/projects/{project_id}/generated-document-reviews/{packet_sha256}/reviewed-package"' in router
+    assert 'COMPLETED_RECORD_SCHEMA = "decisiondoc.generated_document_review_handoff.v2"' in (
+        root / "app/storage/generated_document_review_models.py"
+    ).read_text(encoding="utf-8")
     assert "app.state.generated_document_review_store" in main
     assert "app.state.generated_document_review_service" in main
     for source in (store, service, router):
@@ -4559,6 +4579,8 @@ def test_generated_document_review_observability_is_explicit_and_redacted():
         "generated_document_review.inbox_view",
         "generated_document_review.project_history_view",
         "generated_document_review.packet_download",
+        "generated_document_review.complete",
+        "generated_document_review.reviewed_package_download",
     ):
         assert action in projection
     assert "generated_document_review_audit.RULES" in audit

@@ -3,6 +3,10 @@ from __future__ import annotations
 
 
 _DOC_TYPE_LABELS = {
+    "adr": "기술 의사결정 기록 (ADR)",
+    "onepager": "한 페이지 요약",
+    "eval_plan": "평가 계획",
+    "ops_checklist": "운영 체크리스트",
     "business_understanding": "사업 이해",
     "tech_proposal": "기술 제안",
     "execution_plan": "수행 계획",

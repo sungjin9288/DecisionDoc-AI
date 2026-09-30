@@ -4,7 +4,6 @@ from __future__ import annotations
 import hashlib
 import logging
 from dataclasses import dataclass
-from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
 from app.dependencies import (
@@ -14,6 +13,13 @@ from app.dependencies import (
 from app.routers.projects.procurement import (
     _apply_procurement_observability,
     _ensure_procurement_copilot_enabled,
+)
+from app.routers.projects._guided_review_registry import (
+    _guided_review_disposition_registry,
+    _guided_review_registry_owner,
+    _guided_review_registry_record_response,
+    _read_guided_review_registry_record,
+    _set_guided_review_registry_audit,
 )
 from app.routers.projects._shared import _serialize_project_documents
 from app.schemas.decision_evidence import (
@@ -29,13 +35,13 @@ from app.services.procurement_review_access import (
     get_procurement_review_access,
     review_summary,
 )
+from app.services.procurement_document_binding import resolver_from_app_state
 from app.storage.knowledge_store import KnowledgeStore
 from app.storage.guided_decision_review_disposition_registry import (
     GuidedDecisionReviewDispositionRegistryConflictError,
     GuidedDecisionReviewDispositionRegistryError,
     GuidedDecisionReviewDispositionRegistryValidationError,
     canonical_guided_review_registry_json_bytes,
-    get_guided_decision_review_disposition_registry,
 )
 from app.storage.guided_decision_review_disposition_issuance_registry import (
     GuidedDecisionReviewDispositionIssuanceRegistryError,
@@ -54,6 +60,51 @@ class _DecisionEvidenceContext:
     review_summaries: tuple[dict, ...]
     council_session: object | None
     project: object
+    project_documents: tuple[dict, ...]
+
+
+def _load_current_procurement_source(
+    request: Request,
+    *,
+    tenant_id: str,
+    project_id: str,
+) -> tuple[object | None, object | None]:
+    resolver = resolver_from_app_state(request.app.state)
+    if resolver is None:
+        return (
+            request.app.state.procurement_store.get(
+                project_id,
+                tenant_id=tenant_id,
+            ),
+            None,
+        )
+
+    store = getattr(resolver, "store", None)
+    capture = getattr(resolver, "capture", None)
+    if store is None or not callable(getattr(store, "get", None)) or not callable(capture):
+        raise RuntimeError("Procurement generation resolver is incomplete")
+    procurement_project = store.get(project_id, tenant_id=tenant_id)
+    if procurement_project is None or procurement_project.active_decision_id is None:
+        return None, None
+    entry = next(
+        (
+            item
+            for item in procurement_project.entries
+            if item.record.decision_id == procurement_project.active_decision_id
+        ),
+        None,
+    )
+    if entry is None:
+        raise RuntimeError("Active procurement decision is missing")
+    captured = capture(
+        project_id,
+        tenant_id=tenant_id,
+        decision_id=entry.record.decision_id,
+        expected_revision=entry.decision_revision,
+    )
+    if captured is None:
+        raise RuntimeError("Active procurement decision is unavailable")
+    return captured.record, captured.binding
 
 
 def _load_decision_evidence_context(
@@ -65,22 +116,45 @@ def _load_decision_evidence_context(
     _ensure_procurement_copilot_enabled(request)
 
     tenant_id = get_tenant_id(request)
-    project, review_summaries = _load_authorized_decision_evidence_project(
+    project, authorized_reviews = _load_authorized_decision_evidence_project(
         project_id,
         request,
     )
-    procurement_record = request.app.state.procurement_store.get(
-        project_id,
+    procurement_record, source_binding = _load_current_procurement_source(
+        request,
         tenant_id=tenant_id,
+        project_id=project_id,
     )
+    if resolver_from_app_state(request.app.state) is not None:
+        authorized_reviews = (
+            request.app.state.procurement_review_store.filter_by_decision(
+                list(authorized_reviews), tenant_id=tenant_id, project_id=project_id,
+                decision_id=procurement_record.decision_id,
+            ) if procurement_record is not None else []
+        )
+    access = get_procurement_review_access(request)
+    request.state.procurement_review_total = len(authorized_reviews)
+    request.state.procurement_review_authorized_count = len(authorized_reviews)
+    if not access.is_admin and not authorized_reviews:
+        raise HTTPException(
+            status_code=404,
+            detail="Decision evidence is not available for this opportunity.",
+        )
+    review_summaries = tuple(review_summary(record, access) for record in authorized_reviews)
     council_session = request.app.state.decision_council_service.get_latest_procurement_council(
         tenant_id=tenant_id,
         project_id=project_id,
+        decision_id=(
+            getattr(procurement_record, "decision_id", None)
+            if source_binding is not None
+            else None
+        ),
     )
     if council_session is not None:
         council_session = request.app.state.decision_council_service.attach_procurement_binding(
             session=council_session,
             procurement_record=procurement_record,
+            source_binding=source_binding,
         )
 
     approvals = [
@@ -97,6 +171,21 @@ def _load_decision_evidence_context(
         tenant_id=tenant_id,
         backend=request.app.state.state_backend,
     ).list_documents()
+    project_documents = _serialize_project_documents(
+        request,
+        tenant_id=tenant_id,
+        project=project,
+    )
+    if resolver_from_app_state(request.app.state) is not None:
+        decision_id = getattr(procurement_record, "decision_id", None)
+        project_documents = [
+            document for document in project_documents
+            if decision_id is not None
+            and (document.get("source_procurement_binding") or {}).get("decision_id") == decision_id
+        ]
+        document_ids = {document["doc_id"] for document in project_documents}
+        approvals = [record for record in approvals if record.project_document_id in document_ids]
+        report_workflows = [record for record in report_workflows if record.project_document_id in document_ids]
 
     projection = request.app.state.decision_evidence_service.build(
         project_id=project_id,
@@ -104,7 +193,7 @@ def _load_decision_evidence_context(
         procurement_record=procurement_record,
         review_summaries=review_summaries,
         council_session=council_session,
-        project_documents=project.documents,
+        project_documents=project_documents,
         approval_records=approvals,
         report_workflows=report_workflows,
         knowledge_metadata=knowledge_metadata,
@@ -115,13 +204,14 @@ def _load_decision_evidence_context(
         review_summaries=review_summaries,
         council_session=council_session,
         project=project,
+        project_documents=tuple(project_documents),
     )
 
 
 def _load_authorized_decision_evidence_project(
     project_id: str,
     request: Request,
-) -> tuple[object, tuple[dict, ...]]:
+) -> tuple[object, tuple[object, ...]]:
     tenant_id = get_tenant_id(request)
     access = get_procurement_review_access(request)
     request.state.procurement_review_access_scope = access.scope
@@ -152,11 +242,7 @@ def _load_authorized_decision_evidence_project(
     request.state.procurement_review_authorized_count = len(authorized_reviews)
     request.state.procurement_review_operational_approval = False
 
-    review_summaries = tuple(
-        review_summary(record, access)
-        for record in authorized_reviews
-    )
-    return project, review_summaries
+    return project, tuple(authorized_reviews)
 
 
 @router.get(
@@ -438,124 +524,6 @@ def download_guided_decision_review_disposition(
     )
 
 
-def _guided_review_disposition_registry(
-    request: Request,
-    *,
-    project_id: str,
-    bundle_type: DecisionEvidenceBundleType,
-):
-    return get_guided_decision_review_disposition_registry(
-        tenant_id=get_tenant_id(request),
-        project_id=project_id,
-        bundle_type=bundle_type,
-        backend=request.app.state.state_backend,
-    )
-
-
-def _require_guided_review_registry_operation_id(operation_id: str) -> str:
-    try:
-        parsed = UUID(operation_id)
-    except (TypeError, ValueError, AttributeError) as exc:
-        raise HTTPException(
-            status_code=422,
-            detail="operation ID 형식이 올바르지 않습니다.",
-        ) from exc
-    if parsed.version != 4 or str(parsed) != operation_id:
-        raise HTTPException(
-            status_code=422,
-            detail="operation ID 형식이 올바르지 않습니다.",
-        )
-    return operation_id
-
-
-def _guided_review_registry_owner(request: Request) -> str | None:
-    access = get_procurement_review_access(request)
-    return None if access.is_admin else access.user_id
-
-
-def _guided_review_registry_record_response(
-    record: dict,
-    *,
-    status_code: int,
-    attachment: bool = False,
-) -> Response:
-    body = canonical_guided_review_registry_json_bytes(record)
-    headers = {
-        "Cache-Control": "no-store",
-        "X-Content-Type-Options": "nosniff",
-        "X-DecisionDoc-Guided-Review-Disposition-Record-SHA256": (
-            hashlib.sha256(body).hexdigest()
-        ),
-        "X-DecisionDoc-Operational-Approval": "false",
-    }
-    if record["contract_version"] == "guided-decision-review-disposition-record.v1":
-        headers["X-DecisionDoc-Guided-Review-Disposition-Issuance-Provenance"] = (
-            "legacy-unrecorded"
-        )
-    else:
-        headers["X-DecisionDoc-Guided-Review-Disposition-Issuance-Provenance"] = (
-            "server-issued"
-        )
-        headers[
-            "X-DecisionDoc-Guided-Review-Disposition-Issuance-Record-SHA256"
-        ] = record["source_issuance_metadata_sha256"]
-    if attachment:
-        headers["Content-Disposition"] = (
-            'attachment; filename="guided-decision-review-disposition-record-'
-            f'{record["operation_id"]}.json"'
-        )
-    return Response(
-        content=body,
-        status_code=status_code,
-        media_type="application/json; charset=utf-8",
-        headers=headers,
-    )
-
-
-def _set_guided_review_registry_audit(
-    request: Request,
-    record: dict,
-    *,
-    replay: bool,
-) -> None:
-    detail = {
-        "operation_id": record["operation_id"],
-        "record_sha256": hashlib.sha256(
-            canonical_guided_review_registry_json_bytes(record)
-        ).hexdigest(),
-        "source_disposition_receipt_sha256": record[
-            "source_disposition_receipt_sha256"
-        ],
-        "source_recheck_receipt_sha256": record[
-            "source_recheck_receipt_sha256"
-        ],
-        "current_handoff_sha256": record["current_handoff_sha256"],
-        "current_review_state_fingerprint_sha256": record[
-            "current_review_state_fingerprint_sha256"
-        ],
-        "review_state_status": record["review_state_status"],
-        "review_disposition": record["review_disposition"],
-        "disposition_binding_sha256": record["disposition_binding_sha256"],
-        "replay": replay,
-        "review_state_only": True,
-        "review_only": True,
-        "read_only": True,
-        "reviewer_identity_bound": True,
-        "registry_record_persisted": True,
-        "snapshot_atomic": False,
-        "requires_recheck_before_reliance": True,
-        **record["authority"],
-    }
-    if record["contract_version"] == "guided-decision-review-disposition-record.v1":
-        detail["issuance_provenance"] = "legacy_issuance_unrecorded"
-    else:
-        detail["issuance_provenance"] = "server_issued"
-        detail["source_issuance_metadata_sha256"] = record[
-            "source_issuance_metadata_sha256"
-        ]
-    request.state.guided_review_registry_detail = detail
-
-
 def _load_guided_review_registry_scope(
     request: Request,
     *,
@@ -674,36 +642,6 @@ def list_guided_decision_review_disposition_records(
     )
 
 
-def _read_guided_review_registry_record(
-    request: Request,
-    *,
-    project_id: str,
-    bundle_type: DecisionEvidenceBundleType,
-    operation_id: str,
-) -> tuple[dict, bytes]:
-    operation_id = _require_guided_review_registry_operation_id(operation_id)
-    try:
-        return _guided_review_disposition_registry(
-            request,
-            project_id=project_id,
-            bundle_type=bundle_type,
-        ).read_canonical(
-            operation_id,
-            reviewer_user_id=_guided_review_registry_owner(request),
-        )
-    except KeyError as exc:
-        raise HTTPException(
-            status_code=404,
-            detail="Guided Decision Review 처리 이력이 없습니다.",
-        ) from exc
-    except GuidedDecisionReviewDispositionRegistryError as exc:
-        logger.error("Guided review registry read failed closed.", exc_info=exc)
-        raise HTTPException(
-            status_code=503,
-            detail="Guided Decision Review 처리 이력을 조회할 수 없습니다.",
-        ) from exc
-
-
 @router.get(
     "/projects/{project_id}/guided-decision-review-dispositions/{operation_id}",
     dependencies=[Depends(require_session_bound_procurement_reviewer)],
@@ -767,15 +705,10 @@ def _build_current_guided_review_handoff(
     request: Request,
     context: _DecisionEvidenceContext,
 ) -> GuidedDecisionReviewHandoffResponse:
-    project_documents = _serialize_project_documents(
-        request,
-        tenant_id=get_tenant_id(request),
-        project=context.project,
-    )
     return request.app.state.guided_decision_review_service.build(
         projection=context.projection,
         procurement_record=context.procurement_record,
         review_summaries=context.review_summaries,
         council_session=context.council_session,
-        project_documents=project_documents,
+        project_documents=context.project_documents,
     )

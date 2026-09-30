@@ -10,6 +10,10 @@ from app.routers.projects._shared import _serialize_project_detail
 from app.services.procurement_review_handoff import (
     load_validated_procurement_review_evidence,
 )
+from app.services.procurement_document_binding import (
+    resolve_procurement_document_binding,
+    resolver_from_app_state,
+)
 
 
 PROJECT_DOCUMENT_FRESHNESS_FIELDS = (
@@ -80,18 +84,35 @@ def project_document_source_fingerprint(
     if not project_id or document is None:
         return ""
 
+    source_binding = document.get("source_procurement_binding")
+    resolver = resolver_from_app_state(request.app.state)
+    source = resolve_procurement_document_binding(
+        source_binding,
+        resolver=resolver,
+    )
     procurement_record = None
-    procurement_store = getattr(request.app.state, "procurement_store", None)
-    if procurement_store is not None:
-        procurement_record = procurement_store.get(project_id, tenant_id=tenant_id)
-
     latest_council = None
     council_service = getattr(request.app.state, "decision_council_service", None)
-    if council_service is not None:
-        latest_council = council_service.get_latest_procurement_council(
-            tenant_id=tenant_id,
-            project_id=project_id,
-        )
+    if source.binding is not None:
+        procurement_record = source.record
+        if council_service is not None:
+            latest_council = council_service.get_latest_procurement_council(
+                tenant_id=tenant_id,
+                project_id=project_id,
+                decision_id=source.binding["decision_id"],
+            )
+    elif resolver is None:
+        procurement_store = getattr(request.app.state, "procurement_store", None)
+        if procurement_store is not None:
+            procurement_record = procurement_store.get(
+                project_id,
+                tenant_id=tenant_id,
+            )
+        if council_service is not None:
+            latest_council = council_service.get_latest_procurement_council(
+                tenant_id=tenant_id,
+                project_id=project_id,
+            )
 
     review_record = None
     packet_sha256 = str(
@@ -109,29 +130,39 @@ def project_document_source_fingerprint(
         except ValueError:
             review_record = None
 
+    document_state = {
+        "doc_id": document.get("doc_id"),
+        "request_id": document.get("request_id"),
+        "bundle_id": document.get("bundle_id"),
+        "source_decision_council_session_id": document.get(
+            "source_decision_council_session_id"
+        ),
+        "source_decision_council_session_revision": document.get(
+            "source_decision_council_session_revision"
+        ),
+        "source_procurement_review_packet_sha256": packet_sha256,
+        "source_procurement_review_source_updated_at": document.get(
+            "source_procurement_review_source_updated_at"
+        ),
+        "decision_council_document_status": document.get(
+            "decision_council_document_status"
+        ),
+        "procurement_review_document_status": document.get(
+            "procurement_review_document_status"
+        ),
+    }
+    if source.binding is not None:
+        document_state.update(
+            {
+                "source_procurement_binding": source.binding,
+                "source_procurement_binding_status": source.status,
+                "source_procurement_binding_reason_code": source.reason_code,
+            }
+        )
+
     source_state = {
         "binding_status": binding_status,
-        "document": {
-            "doc_id": document.get("doc_id"),
-            "request_id": document.get("request_id"),
-            "bundle_id": document.get("bundle_id"),
-            "source_decision_council_session_id": document.get(
-                "source_decision_council_session_id"
-            ),
-            "source_decision_council_session_revision": document.get(
-                "source_decision_council_session_revision"
-            ),
-            "source_procurement_review_packet_sha256": packet_sha256,
-            "source_procurement_review_source_updated_at": document.get(
-                "source_procurement_review_source_updated_at"
-            ),
-            "decision_council_document_status": document.get(
-                "decision_council_document_status"
-            ),
-            "procurement_review_document_status": document.get(
-                "procurement_review_document_status"
-            ),
-        },
+        "document": document_state,
         "current_procurement_updated_at": getattr(procurement_record, "updated_at", ""),
         "latest_council_session_id": getattr(latest_council, "session_id", ""),
         "latest_council_session_revision": getattr(latest_council, "session_revision", None),
@@ -139,6 +170,8 @@ def project_document_source_fingerprint(
         "review_decision": getattr(review_record, "decision", ""),
         "review_operational_approval": getattr(review_record, "operational_approval", None),
     }
+    if source.binding is not None:
+        source_state["current_procurement_binding"] = source.current_binding
     canonical = json.dumps(
         source_state,
         ensure_ascii=False,

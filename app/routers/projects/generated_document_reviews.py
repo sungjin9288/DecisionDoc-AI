@@ -7,7 +7,10 @@ from app.dependencies import (
     get_tenant_id,
     require_session_bound_generated_document_reviewer,
 )
-from app.schemas import CreateGeneratedDocumentReviewRequest
+from app.schemas import (
+    CompleteGeneratedDocumentReviewRequest,
+    CreateGeneratedDocumentReviewRequest,
+)
 from app.services.generated_document_review_service import (
     GeneratedDocumentReviewConflictError,
     GeneratedDocumentReviewForbiddenError,
@@ -61,7 +64,7 @@ def _packet_headers(
         "X-DecisionDoc-Packet-SHA256": record.packet_sha256,
         "X-DecisionDoc-Manifest-SHA256": record.manifest_sha256,
         "X-DecisionDoc-Artifact-Count": str(record.artifact_count),
-        "X-DecisionDoc-Review-Status": record.review_status,
+        "X-DecisionDoc-Review-Status": "pending",
         "X-DecisionDoc-Reviewer-Identity-Bound": "true",
         "X-DecisionDoc-Replay": str(replay).lower(),
         "X-DecisionDoc-Review-Only": "true",
@@ -73,6 +76,37 @@ def _packet_headers(
         headers[f"X-DecisionDoc-Authority-{key.replace('_', '-')}"] = "false"
     if source_status is not None:
         headers["X-DecisionDoc-Source-Status"] = source_status
+    return headers
+
+
+def _reviewed_package_headers(
+    record,
+    *,
+    replay: bool,
+    source_status: str,
+) -> dict[str, str]:
+    headers = {
+        "Cache-Control": "no-store",
+        "Content-Disposition": (
+            'attachment; filename="generated-document-reviewed-'
+            f'{record.reviewed_package_sha256}.zip"'
+        ),
+        "X-Content-Type-Options": "nosniff",
+        "X-DecisionDoc-Packet-SHA256": record.packet_sha256,
+        "X-DecisionDoc-Reviewed-Package-SHA256": record.reviewed_package_sha256,
+        "X-DecisionDoc-Completion-Receipt-SHA256": record.completion_receipt_sha256,
+        "X-DecisionDoc-Review-Status": "completed",
+        "X-DecisionDoc-Review-Decision": record.review_decision,
+        "X-DecisionDoc-Reviewer-Identity-Bound": "true",
+        "X-DecisionDoc-Replay": str(replay).lower(),
+        "X-DecisionDoc-Review-Only": "true",
+        "X-DecisionDoc-Packet-Persisted": "true",
+        "X-DecisionDoc-Human-Review-Completed": "true",
+        "X-DecisionDoc-Operational-Approval": "false",
+        "X-DecisionDoc-Source-Status": source_status,
+    }
+    for key in AUTHORITY_FALSE:
+        headers[f"X-DecisionDoc-Authority-{key.replace('_', '-')}"] = "false"
     return headers
 
 
@@ -103,13 +137,15 @@ def _raise_service_error(exc: Exception) -> None:
     raise exc
 
 
-def _parse_pagination(*, review_status: str, limit: str, offset: str) -> tuple[int, int]:
-    if review_status != "pending":
+def _parse_pagination(
+    *, review_status: str, limit: str, offset: str
+) -> tuple[int, int]:
+    if review_status not in {"pending", "completed"}:
         raise HTTPException(
             status_code=400,
             detail={
                 "code": "generated_document_review_query_invalid",
-                "message": "pending 검토 상태만 조회할 수 있습니다.",
+                "message": "pending 또는 completed 검토 상태만 조회할 수 있습니다.",
             },
         )
     try:
@@ -215,6 +251,7 @@ def list_generated_document_reviews(
         access = _access(request, tenant_id=tenant_id)
         records = _service(request).list_inbox(
             tenant_id=tenant_id,
+            review_status=review_status,
             access=access,
         )
         summaries = [
@@ -228,7 +265,7 @@ def list_generated_document_reviews(
         _raise_service_error(exc)
     request.state.generated_document_review_action = "listed"
     request.state.generated_document_review_access_scope = access.scope
-    request.state.generated_document_review_status = "pending"
+    request.state.generated_document_review_status = review_status
     request.state.generated_document_review_operational_approval = False
     return {
         "reviews": summaries,
@@ -268,7 +305,7 @@ def list_project_generated_document_reviews(
     request.state.generated_document_review_action = "project_listed"
     request.state.generated_document_review_project_id = project_id
     request.state.generated_document_review_access_scope = access.scope
-    request.state.generated_document_review_status = "pending"
+    request.state.generated_document_review_status = "all"
     request.state.generated_document_review_operational_approval = False
     return {
         "reviews": summaries,
@@ -276,6 +313,99 @@ def list_project_generated_document_reviews(
         "access_scope": access.scope,
         "operational_approval": False,
     }
+
+
+@router.post(
+    "/projects/{project_id}/generated-document-reviews/{packet_sha256}/complete",
+    dependencies=[Depends(require_session_bound_generated_document_reviewer)],
+)
+def complete_generated_document_review(
+    project_id: str,
+    packet_sha256: str,
+    payload: CompleteGeneratedDocumentReviewRequest,
+    request: Request,
+) -> Response:
+    tenant_id = get_tenant_id(request)
+    try:
+        access = _access(request, tenant_id=tenant_id)
+        record, content, created = _service(request).complete(
+            tenant_id=tenant_id,
+            project_id=project_id,
+            packet_sha256=packet_sha256,
+            operation_id=payload.operation_id,
+            decision=payload.decision,
+            rationale=payload.rationale,
+            access=access,
+        )
+    except (
+        GeneratedDocumentReviewNotFoundError,
+        GeneratedDocumentReviewConflictError,
+        GeneratedDocumentReviewUnavailableError,
+    ) as exc:
+        _raise_service_error(exc)
+    request.state.generated_document_review_action = "completed"
+    request.state.generated_document_review_project_id = project_id
+    request.state.generated_document_review_document_id = record.project_document_id
+    request.state.generated_document_review_packet_sha256 = record.packet_sha256
+    request.state.generated_document_review_status = record.review_status
+    request.state.generated_document_review_decision = record.review_decision
+    request.state.generated_document_review_access_scope = access.scope
+    request.state.generated_document_review_replay = not created
+    request.state.generated_document_review_source_status = "current"
+    request.state.generated_document_review_operational_approval = False
+    return Response(
+        content=content,
+        media_type="application/zip",
+        headers=_reviewed_package_headers(
+            record,
+            replay=not created,
+            source_status="current",
+        ),
+    )
+
+
+@router.get(
+    "/projects/{project_id}/generated-document-reviews/{packet_sha256}/reviewed-package",
+    dependencies=[Depends(require_session_bound_generated_document_reviewer)],
+)
+def download_generated_document_reviewed_package(
+    project_id: str,
+    packet_sha256: str,
+    request: Request,
+) -> Response:
+    tenant_id = get_tenant_id(request)
+    try:
+        access = _access(request, tenant_id=tenant_id)
+        record, content, source_status = _service(request).download_reviewed_package(
+            tenant_id=tenant_id,
+            project_id=project_id,
+            packet_sha256=packet_sha256,
+            access=access,
+        )
+    except (
+        GeneratedDocumentReviewNotFoundError,
+        GeneratedDocumentReviewUnavailableError,
+    ) as exc:
+        _raise_service_error(exc)
+    request.state.generated_document_review_action = "reviewed_package_downloaded"
+    request.state.generated_document_review_project_id = project_id
+    request.state.generated_document_review_document_id = record.project_document_id
+    request.state.generated_document_review_packet_sha256 = record.packet_sha256
+    request.state.generated_document_review_status = record.review_status
+    request.state.generated_document_review_decision = record.review_decision
+    request.state.generated_document_review_access_scope = access.scope
+    request.state.generated_document_review_replay = True
+    request.state.generated_document_review_source_status = source_status
+    request.state.generated_document_review_operational_approval = False
+    return Response(
+        content=content,
+        media_type="application/zip",
+        headers=_reviewed_package_headers(
+            record,
+            replay=True,
+            source_status=source_status,
+        ),
+    )
 
 
 @router.get(

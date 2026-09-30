@@ -383,6 +383,7 @@ from app.services.procurement_decision_package.review_packet import (
     PACKET_MANIFEST_FIELD_ORDER,
     PACKET_MANIFEST_NAME,
     PACKET_SCHEMA_VERSION,
+    PACKET_SCHEMA_VERSION_V3,
     PACKET_STATUS,
     ProjectProcurementReviewPacket,
     ZIP_ENTRY_TIMESTAMP,

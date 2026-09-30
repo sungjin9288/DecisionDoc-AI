@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import re
+from string import punctuation
 from typing import Any
 
 _BOLD_RE = re.compile(r"\*\*([^*]+)\*\*")
@@ -19,13 +20,13 @@ def split_table_row(line: str) -> list[str]:
     text = line.strip()
     if text.startswith("|"):
         text = text[1:]
-    if text.endswith("|"):
-        text = text[:-1]
     cells: list[str] = []
     current: list[str] = []
     escaped = False
-    for char in text:
+    for index, char in enumerate(text):
         if escaped:
+            if char not in punctuation:
+                current.append("\\")
             current.append(char)
             escaped = False
             continue
@@ -34,9 +35,13 @@ def split_table_row(line: str) -> list[str]:
             continue
         if char == "|":
             cells.append("".join(current).strip())
+            if index == len(text) - 1:
+                return cells
             current = []
             continue
         current.append(char)
+    if escaped:
+        current.append("\\")
     cells.append("".join(current).strip())
     return cells
 
@@ -110,13 +115,13 @@ def build_markdown_table(rows: list[Any], headers: list[str]) -> str:
         if isinstance(row, str):
             cells = split_table_row(row) if "|" in row else [row.strip()]
         elif isinstance(row, (list, tuple)):
-            cells = [_escape_markdown_cell(cell) for cell in row]
+            cells = list(row)
         else:
-            cells = [_escape_markdown_cell(row)]
+            cells = [row]
 
         if len(cells) < width:
             cells.extend([""] * (width - len(cells)))
-        normalized_rows.append(cells[:width])
+        normalized_rows.append([_escape_markdown_cell(cell) for cell in cells[:width]])
 
     if not normalized_rows:
         return ""

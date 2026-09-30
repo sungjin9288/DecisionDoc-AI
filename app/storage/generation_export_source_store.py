@@ -13,6 +13,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from app.services.procurement_document_binding import source_binding_from_documents
 from app.storage.state_backend import StateBackend, StateBackendError
 from app.tenant import require_tenant_id
 
@@ -347,6 +348,7 @@ class GenerationExportSourceStore:
             raise ValueError("title must be a non-empty string")
         if not isinstance(docs, list) or not docs or any(not isinstance(doc, dict) for doc in docs):
             raise ValueError("docs must be a non-empty list of objects")
+        source_binding_from_documents(docs, tenant_id=tenant_id)
         raw = _canonical_json(
             {
                 "docs": docs,
@@ -390,6 +392,12 @@ class GenerationExportSourceStore:
             raise GenerationExportSourceUnavailableError("export source object is invalid")
         if _canonical_json(value).encode("utf-8") != raw:
             raise GenerationExportSourceUnavailableError("export source object is not canonical")
+        try:
+            source_binding_from_documents(value["docs"], tenant_id=tenant_id)
+        except ValueError as exc:
+            raise GenerationExportSourceUnavailableError(
+                "export source procurement binding is invalid"
+            ) from exc
         return value
 
     def _decode_index(self, value: Any, *, tenant_id: str) -> list[_SourceReference]:

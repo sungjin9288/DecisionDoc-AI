@@ -23,6 +23,7 @@ from app.services.procurement_review_handoff import (
     PROCUREMENT_REVIEW_HANDOFF_BUNDLE_IDS,
 )
 from app.tenant import require_tenant_id
+from app.services.generation.procurement_source import CapturedProcurementSource
 from app.services.procurement_decision_package.review_packet import (
     PACKET_MANIFEST_NAME,
     verify_procurement_review_packet,
@@ -67,6 +68,7 @@ class GenerationContextInjectionMixin:
         bundle_type: str,
         tenant_id: str,
         request_id: str,
+        procurement_source: CapturedProcurementSource | None = None,
     ) -> None:
         project_id = payload.get("project_id")
         if not project_id:
@@ -115,20 +117,22 @@ class GenerationContextInjectionMixin:
         if (
             not self._procurement_copilot_enabled
             or bundle_type not in self._PROCUREMENT_HANDOFF_BUNDLE_IDS
-            or self._procurement_store is None
+            or (self._procurement_store is None and procurement_source is None)
         ):
             procurement_ctx = ""
         else:
-            procurement_ctx = self._build_procurement_context(project_id=project_id, tenant_id=tenant_id)
+            procurement_ctx = self._build_procurement_context(
+                project_id=project_id, tenant_id=tenant_id, source=procurement_source,
+            )
             if procurement_ctx:
                 payload["_procurement_context"] = procurement_ctx
                 from app.services.decision_evidence_service import (
                     procurement_requirement_node_ids,
                 )
 
-                procurement_record = self._procurement_store.get(
-                    project_id,
-                    tenant_id=tenant_id,
+                procurement_record = (
+                    procurement_source.record if procurement_source is not None
+                    else self._procurement_store.get(project_id, tenant_id=tenant_id)
                 )
                 payload["_decision_evidence_refs"] = procurement_requirement_node_ids(
                     procurement_record
@@ -144,12 +148,13 @@ class GenerationContextInjectionMixin:
         if (
             self._procurement_copilot_enabled
             and bundle_type in PROCUREMENT_REVIEW_HANDOFF_BUNDLE_IDS
-            and self._procurement_store is not None
+            and (self._procurement_store is not None or procurement_source is not None)
             and self._procurement_review_store is not None
         ):
             review_context, review_metadata, skipped_reason = self._resolve_procurement_review_handoff(
                 project_id=project_id,
                 tenant_id=tenant_id,
+                source=procurement_source,
             )
             if review_context:
                 payload["_procurement_review_context"] = review_context
@@ -183,6 +188,7 @@ class GenerationContextInjectionMixin:
             project_id=project_id,
             use_case="public_procurement",
             target_bundle_type="bid_decision_kr",
+            **({"decision_id": procurement_source.binding.decision_id} if procurement_source is not None else {}),
         )
         if council_session is None:
             return
@@ -190,6 +196,7 @@ class GenerationContextInjectionMixin:
             project_id=project_id,
             tenant_id=tenant_id,
             council_session=council_session,
+            source=procurement_source,
         ):
             payload["_decision_council_handoff_skipped_reason"] = "stale_procurement_context"
             _log.info(
@@ -229,8 +236,12 @@ class GenerationContextInjectionMixin:
         *,
         project_id: str,
         tenant_id: str,
+        source: CapturedProcurementSource | None = None,
     ) -> tuple[str, dict[str, Any], str | None]:
-        procurement_record = self._procurement_store.get(project_id, tenant_id=tenant_id)
+        procurement_record = (
+            source.record if source is not None
+            else self._procurement_store.get(project_id, tenant_id=tenant_id)
+        )
         if procurement_record is None:
             return "", {}, "procurement_context_missing"
 
@@ -273,7 +284,9 @@ class GenerationContextInjectionMixin:
                     project_id=project_id,
                     packet_sha256=review.packet_sha256,
                 )
-                verify_procurement_review_packet(packet_content)
+                verification = verify_procurement_review_packet(
+                    packet_content, expected_tenant_id=tenant_id, expected_project_id=project_id,
+                )
                 with zipfile.ZipFile(io.BytesIO(packet_content)) as archive:
                     packet_manifest = json.loads(archive.read(PACKET_MANIFEST_NAME))
                 source_updated_at = str(packet_manifest.get("source_updated_at") or "").strip()
@@ -281,6 +294,8 @@ class GenerationContextInjectionMixin:
                 continue
 
             valid_review_found = True
+            if source is not None and verification.get("source_binding") != source.binding.model_dump(mode="json"):
+                continue
             if source_updated_at != procurement_record.updated_at:
                 continue
 
@@ -308,8 +323,13 @@ class GenerationContextInjectionMixin:
         reason = "stale_procurement_review" if valid_review_found else "invalid_review_evidence"
         return "", {}, reason
 
-    def _build_procurement_context(self, *, project_id: str, tenant_id: str) -> str:
-        record = self._procurement_store.get(project_id, tenant_id=tenant_id)
+    def _build_procurement_context(
+        self, *, project_id: str, tenant_id: str, source: CapturedProcurementSource | None = None,
+    ) -> str:
+        record = (
+            source.record if source is not None
+            else self._procurement_store.get(project_id, tenant_id=tenant_id)
+        )
         if record is None:
             return ""
 
@@ -391,10 +411,13 @@ class GenerationContextInjectionMixin:
 
         latest_snapshot = record.source_snapshots[-1] if record.source_snapshots else None
         if latest_snapshot is not None:
-            payload = self._procurement_store.load_source_snapshot(
-                tenant_id=tenant_id,
-                project_id=project_id,
-                snapshot_id=latest_snapshot.snapshot_id,
+            payload = (
+                source.latest_snapshot if source is not None
+                else self._procurement_store.load_source_snapshot(
+                    tenant_id=tenant_id,
+                    project_id=project_id,
+                    snapshot_id=latest_snapshot.snapshot_id,
+                )
             )
             if isinstance(payload, dict):
                 extracted_fields = payload.get("extracted_fields") or {}
@@ -416,13 +439,17 @@ class GenerationContextInjectionMixin:
         project_id: str,
         tenant_id: str,
         council_session: Any,
+        source: CapturedProcurementSource | None = None,
     ) -> bool:
-        record = None
-        if self._procurement_store is not None:
+        record = source.record if source is not None else None
+        if source is not None and council_session.source_binding is None:
+            return False
+        if source is None and self._procurement_store is not None:
             record = self._procurement_store.get(project_id, tenant_id=tenant_id)
         binding = describe_procurement_council_binding(
             session=council_session,
             procurement_record=record,
+            source_binding=source.binding if source is not None else None,
         )
         return binding["status"] == "current"
 

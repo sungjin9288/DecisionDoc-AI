@@ -91,7 +91,20 @@ def _apply_csp_nonce(html: str, nonce: str) -> str:
 
 
 
-def create_app() -> FastAPI:
+def create_app(
+    *,
+    procurement_multi_opportunity_enabled: bool = False,
+    procurement_multi_opportunity_backend=None,
+) -> FastAPI:
+    if type(procurement_multi_opportunity_enabled) is not bool:
+        raise TypeError("procurement_multi_opportunity_enabled must be a bool")
+    if (
+        procurement_multi_opportunity_backend is not None
+        and not procurement_multi_opportunity_enabled
+    ):
+        raise ValueError(
+            "procurement_multi_opportunity_backend requires explicit opt-in"
+        )
     explicit_data_dir = os.environ.get("DATA_DIR", "")
     load_dotenv()
     setup_logging()
@@ -190,6 +203,52 @@ def create_app() -> FastAPI:
     )
     decision_council_store = DecisionCouncilStore(base_dir=str(data_dir), backend=state_backend)
     procurement_copilot_enabled = is_procurement_copilot_enabled()
+    procurement_opportunity_store = None
+    procurement_opportunity_service = None
+    procurement_opportunity_snapshot_store = None
+    procurement_generation_resolver = None
+    procurement_applicability_service = None
+    if procurement_multi_opportunity_enabled:
+        from app.services.procurement_applicability_service import ProcurementApplicabilityService
+        from app.services.generation.procurement_source import (
+            ProcurementGenerationResolver,
+        )
+        from app.services.procurement_decision_service import (
+            ProcurementDecisionService,
+        )
+        from app.services.procurement_opportunity_service import (
+            ProcurementOpportunityService,
+        )
+        from app.storage.procurement_project_store import ProcurementProjectStore
+        from app.storage.state_backend import StateBackend
+
+        opportunity_backend = procurement_multi_opportunity_backend or state_backend
+        if not isinstance(opportunity_backend, StateBackend):
+            raise TypeError(
+                "procurement_multi_opportunity_backend must be a StateBackend"
+            )
+        procurement_opportunity_snapshot_store = ProcurementDecisionStore(
+            base_dir=str(data_dir),
+            backend=opportunity_backend,
+        )
+        procurement_opportunity_store = ProcurementProjectStore(
+            backend=opportunity_backend,
+        )
+        procurement_opportunity_service = ProcurementOpportunityService(
+            store=procurement_opportunity_store,
+            evaluator=ProcurementDecisionService(
+                procurement_store=procurement_opportunity_snapshot_store,
+                data_dir=str(data_dir),
+                state_backend=opportunity_backend,
+            ),
+        )
+        procurement_generation_resolver = ProcurementGenerationResolver(
+            store=procurement_opportunity_store,
+            backend=opportunity_backend,
+        )
+        procurement_applicability_service = ProcurementApplicabilityService(
+            store=procurement_opportunity_store, backend=opportunity_backend,
+        )
 
     def _generation_provider_factory():
         if os.getenv("DECISIONDOC_PROVIDER_GENERATION", "").strip():
@@ -210,6 +269,7 @@ def create_app() -> FastAPI:
         search_service=_search_service,
         finetune_store=_finetune_store,
         state_backend=state_backend,
+        procurement_generation_resolver=procurement_generation_resolver,
     )
     decision_council_service = DecisionCouncilService(
         decision_council_store=decision_council_store,
@@ -348,6 +408,14 @@ def create_app() -> FastAPI:
     app.state.state_backend = state_backend
     app.state.generation_export_source_store = generation_export_source_store
     app.state.environment = environment
+    if procurement_multi_opportunity_enabled:
+        app.state.procurement_opportunity_store = procurement_opportunity_store
+        app.state.procurement_opportunity_service = procurement_opportunity_service
+        app.state.procurement_opportunity_snapshot_store = (
+            procurement_opportunity_snapshot_store
+        )
+        app.state.procurement_generation_resolver = procurement_generation_resolver
+        app.state.procurement_applicability_service = procurement_applicability_service
     from app.services.event_bus import get_event_bus
     app.state.event_bus = get_event_bus()
 
@@ -374,6 +442,15 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(approvals_router)
     app.include_router(projects_router)
+    if procurement_multi_opportunity_enabled:
+        from app.routers.projects.procurement_opportunities import (
+            router as procurement_opportunities_router,
+        )
+
+        app.include_router(procurement_opportunities_router)
+        from app.routers.projects.procurement_applicability import router as procurement_applicability_router
+
+        app.include_router(procurement_applicability_router)
     app.include_router(billing_router)
     app.include_router(sso_router)
     app.include_router(notifications_router)

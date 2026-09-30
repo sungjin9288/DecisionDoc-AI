@@ -57,6 +57,8 @@ self.addEventListener('fetch', event => {
   if (url.origin !== location.origin) return;
   if (url.pathname.includes('/generate/stream')) return;
   if (url.pathname.includes('/generate/sketch')) return;
+  // Project identity, selection and review state must never use a cached response.
+  if (url.pathname === '/projects' || url.pathname.startsWith('/projects/')) return;
 
   // API calls: network-first, fall back to cache
   if (url.pathname.startsWith('/') &&

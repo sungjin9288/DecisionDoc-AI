@@ -25,7 +25,7 @@ LLM이 만든 결과를 단발성 텍스트가 아니라 **업무 산출물**로
 | Bundle / Template / Validation | BundleSpec·DocumentSpec + Jinja2 + lint 단계로 문서 유형별 품질 편차 축소 |
 | 멀티 LLM Provider | `mock` / `openai` / `gemini` / `claude` / `local` — factory + fallback chain |
 | 검토·승인 워크플로 | `/approvals` 계열 — submit / review / approve / reject / download |
-| 생성 문서 검토 전달 | 저장된 project document를 활성 tenant admin/member reviewer에게 최대 5종 deterministic ZIP으로 전달하고 immutable `pending` 이력, reviewer inbox, exact packet re-download를 제공. Browser는 content length·packet/manifest SHA-256·review-only/persisted/all-false authority를 검증하며 이 기록은 사람 검토 완료나 운영 승인이 아님 |
+| 생성 문서 검토·완료 | 저장된 project document를 활성 tenant admin/member reviewer에게 최대 5종 deterministic ZIP으로 전달하고, exact stable assignee가 current source에 `accepted`·`changes_requested`·`rejected`를 1회 기록. Pending v1을 completed v2로 exact CAS 전환하고 packet+receipt reviewed package, pending/completed inbox, project history, exact replay/download를 제공. 모든 authority는 false이며 운영 승인과 분리 |
 | 프로젝트·결재 상태 무결성 | 프로젝트와 결재 record를 tenant별 local/S3 state에 결속하고 blank·malformed·invalid UTF-8·duplicate key/identity와 owned schema drift를 원본 보존 상태로 차단. 두 store의 mutation은 conditional create/CAS와 충돌 재시도로 worker 간 overwrite를 방지 |
 | 보고서 워크플로우 상태 무결성 | 기획·장표·시각자료·최종 승인·승격 state를 tenant별 local/S3 object에 결속하고 blank·malformed·invalid UTF-8·duplicate workflow/nested identity와 backend failure를 원본 보존 상태로 차단. Conditional create/CAS와 충돌 재시도로 worker 간 update 유실과 상충하는 최종 결정을 방지 |
 | 감사·프라이버시 | tenant별 append-only JSONL을 local/S3 공통 backend로 보존하고 손상·foreign·중복 identity를 fail closed 처리. Conditional create/CAS와 `log_id` commit reconciliation으로 worker 간 append 유실을 방지. `/admin/audit-logs`, `/auth/export-my-data`, `/auth/withdraw` 제공 |
@@ -93,7 +93,7 @@ FastAPI (app/main.py — create_app(), 모듈 레벨 side-effect 없음)
   │     / rate_limit / audit / auth / tenant / billing / metrics
   │     / document_ops_audit / auth_session_retention_audit
   │     billing은 tenant/auth context가 확정된 뒤 metered request를 검사
-  ├─ Routers (23 top-level files, 라우트 300): generate / approvals / projects / knowledge
+  ├─ Routers (23 top-level files, 라우트 315): generate / approvals / projects / knowledge
   │     / report_workflows / auth / sso / admin / audit / billing / dashboard
   │     / history / eval / finetune / local_llm / g2b / templates / health ...
   ▼
@@ -118,11 +118,11 @@ Providers (5)    Storage (55 modules)   Ops
 위 architecture 파일·라우트 수는 다음 명령으로 다시 계산할 수 있습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field middleware_files  # → 13
+python3 scripts/count_readme_metrics.py --field middleware_files  # → 14
 python3 scripts/count_readme_metrics.py --field router_files      # → 23
-python3 scripts/count_readme_metrics.py --field service_files     # → 51
-python3 scripts/count_readme_metrics.py --field storage_files     # → 55
-python3 scripts/count_readme_metrics.py --field route_decorators  # → 300
+python3 scripts/count_readme_metrics.py --field service_files     # → 59
+python3 scripts/count_readme_metrics.py --field storage_files     # → 59
+python3 scripts/count_readme_metrics.py --field route_decorators  # → 315
 ```
 
 **설계 불변식**: Provider·Storage는 ABC + factory(환경변수로만 교체) · 모든 파일 쓰기는 atomic write(tmp + fsync + os.replace) · 라우트 핸들러는 `request.app.state.*`로 의존성 접근 · Request 모델은 `strict=True, extra="forbid"` · mock provider는 결정론적(CI 기준 경로).
@@ -211,10 +211,10 @@ python3 scripts/count_readme_metrics.py --field env_keys  # → 95
 
 ## API / Usage
 
-FastAPI 라우트는 **300개**입니다.
+FastAPI 라우트는 **315개**입니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field route_decorators  # → 300
+python3 scripts/count_readme_metrics.py --field route_decorators  # → 315
 ```
 
 대표 도메인:
@@ -273,6 +273,27 @@ python3 scripts/check_procurement_decision_package_cli_contract_manifest_result.
 
 ## Testing
 
+완료된 generated-document review ZIP은 앱 서버 없이 검증할 수 있습니다.
+Repository root에서 기존 Python dependencies가 설치된 환경으로 실행합니다.
+
+```bash
+python3 scripts/verify_generated_document_reviewed_package.py \
+  "/path/to/generated-document-reviewed-package.zip"
+```
+
+이 명령은 macOS/Linux의 일반 파일 하나를 읽고, 원본 packet·receipt·manifest의
+내부 결속을 검사한 뒤 최소 JSON 요약을 stdout에 출력합니다. ZIP 추출, 파일 저장,
+앱/StateBackend 시작, provider 호출은 하지 않습니다. 성공은 exit `0`, 잘못되거나
+읽을 수 없는 입력은 내용·경로를 노출하지 않는 `verification failed`와 exit `1`,
+잘못된 CLI 사용법은 exit `2`입니다. Symlink, FIFO, 디렉터리, 초과 크기와 읽기 중
+크기 변경은 거부합니다. Rationale과 reviewer identity는 요약에 포함하지 않습니다.
+`verified`는 내부 무결성만 뜻하며 발급자 진위, 현재 source 상태, 내용의 적절성이나
+운영 승인을 증명하지 않습니다.
+
+```bash
+python3 -m pytest -q tests/test_verify_generated_document_reviewed_package.py --tb=short
+```
+
 대표 bundle sample과 구조 품질 evidence를 local mock provider로 재생성합니다.
 
 ```bash
@@ -318,11 +339,11 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **3,893개**, **282개 파일**입니다 (Python AST `test_` definition 기준 카운트이며 pass 수가 아닙니다). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **4,250개**, **321개 파일**입니다 (Python AST `test_` definition 기준 카운트이며 pass 수가 아닙니다). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 3893
-python3 scripts/count_readme_metrics.py --field test_files      # → 282
+python3 scripts/count_readme_metrics.py --field test_functions  # → 4250
+python3 scripts/count_readme_metrics.py --field test_files      # → 321
 ```
 
 > 위 수치는 Python AST로 확인한 `test_` 함수 정의 개수입니다. 각 테스트의 현재 pass 여부는 환경 구성 후 `pytest`로 재확인하세요. 검증되지 않은 커버리지·통과율 수치는 표기하지 않습니다.
@@ -350,6 +371,12 @@ bandit -r app/ -x app/providers/mock_provider.py -ll
 ---
 
 ## Development Plan — 완성까지 남은 것
+
+[Local-first 설계](./docs/architecture.md#local-first-product-design)와
+[현재 Goal 실행 계획](./docs/product_execution_plan.md#0-current-local-completion-goal)은
+승인된 생성 문서 검토 완료, 다운로드 후 독립 검증 CLI, 실제 검토자 UAT,
+외부 실증을 구분합니다. Local 구현과 자동 테스트 통과를 human UAT나 운영
+완료로 표시하지 않습니다. CLI는 별도 승인된 로컬 구현이고 human UAT는 남아 있습니다.
 
 현재 mock/local final-tree backend·E2E 결과와 M1/M2/M6 readiness의 유일한
 snapshot은 [Development Plan의 Current Completion/Readiness Snapshot](./docs/development-plan.md#0-current-completionreadiness-snapshot)에 둡니다. README는 volatile
@@ -438,7 +465,7 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 - 공개 공유 state는 tenant별 `shares.json`에 conditional create/CAS를 적용합니다. 충돌마다 최신 ownership·schema와 lifecycle 위에 create/access/revoke를 재적용하고 최근 mutation receipt를 64개로 제한해 commit 응답 유실 뒤 successor CAS도 조정합니다. 이미 취소된 링크는 최초 취소자와 시각을 보존합니다. 이 보장은 단일 share state object 범위이고 실제 AWS runtime, 다른 state object와의 distributed transaction, 운영 URL의 외부 접근성은 검증 범위가 아닙니다.
 - Procurement review record·원본 packet·reviewed-package는 local/S3 공통 backend의 tenant/project/packet SHA-256 경로에 함께 결속합니다. Blank·malformed·invalid UTF-8·duplicate key/identity, artifact 누락·변조와 backend failure는 빈 검토함, 새 packet 또는 사용자 입력 충돌로 축소하지 않고 `500 INTERNAL_ERROR`로 중단하며 원본 bytes를 보존합니다. Pending receipt와 완료 package의 embedded receipt/manifest까지 semantic하게 다시 대조합니다. Packet은 exact orphan bytes만 재사용하고 reviewed-package는 content-addressed 경로에 immutable하게 쓴 뒤 record를 CAS로 전환합니다. S3는 `If-None-Match`/`If-Match`, local은 conditional file lock과 atomic write를 사용하며 commit 결과가 불확실하면 read-back으로 조정합니다. 여러 artifact를 한 번에 commit하는 distributed transaction과 실제 AWS S3 runtime 검증은 범위 밖입니다.
 - 프로젝트 procurement review는 원본 packet SHA256과 tenant/project 경계에 묶인 검토 증빙입니다. Packet preparation은 활성 tenant admin/member username을 stable user ID에 결속하고, completion은 그 assignee의 current session-bound JWT만 허용합니다. Packet 생성, 검토함, 프로젝트 이력과 reviewed package 다운로드도 session-bound admin/member만 사용할 수 있습니다. Admin은 tenant 전체를 보고 활성 admin/member에게 지정할 수 있으며, member는 자신에게 지정된 v2 record만 보고 자신에게만 지정할 수 있습니다. API key, Ops key, sessionless JWT, viewer와 client-supplied reviewer text는 이 경로의 authority가 아닙니다. v1 package는 admin만 다운로드합니다. HTTP summary는 receipt, rationale, stable user ID, attestation과 session/network metadata를 숨기고 assigned reviewer, current-user assignment, completion username, access scope와 검토 상태만 제공합니다. v2 reviewed package verifier는 tenant/project/stable reviewer scope를 외부에서 받아 attestation을 재검증하고, 동일 assignee의 동일 decision/rationale 재전송만 persisted package exact replay로 복구합니다. Audit은 actor identity와 packet/decision/package hash, access scope와 authorized count를 남기되 target stable ID, rationale, attestation body, session ID, token, IP, User-Agent를 저장하지 않습니다. 현재 source와 일치하는 완료 review는 downstream 생성 문맥과 project document provenance에 이어집니다. 이후 procurement decision이 바뀌면 해당 문서는 stale review로 다시 분류되고, 프로젝트 문서 목록·결재 요청·공유 링크에 경고와 재검토 동선이 표시됩니다. 완료 receipt와 reviewed-package를 포함해 운영 승인, provider 호출, 입찰 제출을 실행하거나 허가하지 않습니다.
-- 일반 생성 문서의 검토 전달은 procurement review와 분리된 `pending` 전용 evidence path입니다. Server는 project document의 current snapshot과 source SHA-256으로 5종 packet을 만들고 selected local/S3 backend에 immutable packet/record를 저장합니다. Admin은 활성 tenant admin/member에게 지정하고 member는 자신에게만 지정할 수 있으며, reviewer inbox와 project history는 current session-bound scope만 보여줍니다. `changed` 또는 `missing` source는 immutable 전달 증거를 고치지 않고 browser confirmation 뒤 exact packet만 다시 제공합니다. Browser는 ZIP media type, exact length, packet/manifest SHA-256, artifact count, reviewer binding, pending/review-only/persisted state와 모든 false authority header를 확인하기 전 Blob을 만들지 않습니다. v1은 review completion, reassignment, reminder, notification, expiry, deletion, approval, provider call, AWS/G2B/training/deploy action을 제공하지 않습니다.
+- 일반 생성 문서 검토는 procurement review와 분리된 evidence path입니다. Server는 current project snapshot과 source SHA-256으로 최대 5종 immutable packet/pending v1 record를 만들고, exact current stable assignee만 source가 `current`일 때 terminal decision과 rationale를 기록할 수 있습니다. Completion은 packet과 canonical receipt를 deterministic reviewed package로 먼저 저장한 뒤 `record.json`만 completed v2로 exact CAS 전환합니다. 동일 operation/decision/rationale replay는 같은 검증 package를 반환하고 경쟁 입력, 손상, duplicate key, hash drift는 원본 보존 상태로 fail closed 처리합니다. Inbox와 project history는 safe pending/completed summary만 보여주며 rationale, operation ID, stable user ID, session/network metadata는 숨깁니다. Browser는 ZIP media type, exact length와 SHA-256, reviewer binding, review state와 모든 false-authority header를 검증한 뒤에만 Blob을 만듭니다. Reassignment, reminder, notification, expiry, deletion, project approval, provider call, live AWS/G2B/training/deploy는 제공하거나 승인하지 않습니다.
 - Decision Evidence Map은 여러 tenant-scoped record를 순차 관측해 합성하는 `read_only=true`, `snapshot_atomic=false` projection입니다. Evidence Neighborhood Explorer와 H125–H128은 tenant/user/auth revision/project/bundle/fingerprint와 exact canonical SHA-256을 검증하지만 sequential reads를 atomic snapshot으로 만들지 않습니다. H128 success는 selected local/S3 backend에서 tenant/project/bundle/exact receipt SHA-256 content-addressed issuance metadata를 conditional-create 후 exact read-back한 결과이며 receipt body·reviewer·session/network/token/rationale/secret을 저장하지 않습니다. H129 v2는 그 authoritative issuance metadata와 hash를 record binding에 포함하고, v1 record는 migration/rewrite 없이 `legacy issuance unrecorded`로 취급합니다. Exact replay는 username·role 변경 뒤에도 최초 canonical bytes와 historical identity/time을 반환하고, stable reviewer 또는 source hash 변경은 `409`입니다. Member list는 자신의 stable identity record만 반환하고 summary는 nested receipt, stable ID, request/full-record binding을 숨깁니다. H129 wrapper만 `reviewer_identity_bound=true`, `registry_record_persisted=true`이며 nested H128은 계속 identity-unbound/non-persisted입니다. Corrupt·noncanonical·foreign-scope·unavailable registry는 source bytes를 고치지 않고 fail closed 처리합니다. Same-backend issuance proof는 signature, actor attestation, currentness, atomic snapshot, approval 또는 external authenticity가 아니며 이 기록은 reviewer attribution evidence일 뿐 승인, mutation, export execution, provider call, bid submission, legal approval 또는 contractual commitment가 아닙니다. M1/M2/M6, human UAT, deployment와 external approval gap도 닫지 않습니다.
 - Final review packet은 모든 bundle의 사람 검토가 완료된 receipt에서만 생성됩니다. 현재 tracked sample은 `pending`이라 packet을 제공하지 않습니다.
 
@@ -453,4 +480,4 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 300 · 테스트 3,893 · env 키 95 등)는 소스 코드에서 직접 카운트했으며, 테스트 수는 Python AST `test_` 정의 기준이고 pass 수가 아닙니다. 재현은 `python3 scripts/count_readme_metrics.py --field test_functions`를 사용합니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 315 · 테스트 4,250 · env 키 95 등)는 소스 코드에서 직접 카운트했으며, 테스트 수는 Python AST `test_` 정의 기준이고 pass 수가 아닙니다. 재현은 `python3 scripts/count_readme_metrics.py --field test_functions`를 사용합니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

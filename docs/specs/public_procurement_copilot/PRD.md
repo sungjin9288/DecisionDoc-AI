@@ -243,6 +243,26 @@ Each checklist item should support:
 - optional owner
 - optional due date
 
+### Current serialized contract (reconciled 2026-09-21)
+
+The implemented `ProcurementChecklistStatus` values are `ready`,
+`action_needed`, `blocked`, and `unknown`. These are the strict API/storage
+values; the earlier `missing`, `warning`, and `not_applicable` vocabulary above
+is not accepted as aliases. Missing evidence or moderate/low scores currently
+produce `action_needed`; failed relevant hard filters produce `blocked`.
+`unknown` is accepted by the schema but is not currently emitted by the
+deterministic checklist builder. `ready` means no immediate action under the
+structured evaluation, not actual business approval or verified qualifications.
+`not_applicable` has no implemented state or lossless automatic mapping. Its
+domain meaning remains an unresolved requirement, not an inferred `ready`.
+
+The project summary must show blocked and unknown checklist entries rather than
+only routine `action_needed` entries, prioritize blockers before routine work,
+and distinguish evaluation pending, recommendation pending and missing checklist
+from an evaluated checklist with no immediate actions. Existing action-needed
+metrics continue to count only `action_needed`; this display correction does
+not change scoring, recommendation or authorization semantics.
+
 Required checklist categories:
 - eligibility and compliance
 - certifications and licenses
@@ -301,6 +321,18 @@ The handoff should reuse structured context rather than forcing users to re-ente
 - Reuse the existing G2B search capability.
 - Support attaching or importing a selected opportunity into a project.
 - Allow a project to hold one or more opportunity records, even if v1 operates on a primary opportunity.
+
+Current implementation boundary (2026-09-21): a project has one current
+`ProcurementDecisionRecord.opportunity`. Another import replaces that active
+opportunity, retains source snapshots and invalidates derived judgment fields.
+Retained snapshots are audit inputs, not independently selectable opportunities
+with separate evaluations, Council sessions and reviews. The multiple-opportunity
+part of FR1 remains incomplete. Use separate projects when separate current
+decisions are needed; this workaround does not fulfill the multiple-opportunity
+requirement. A future implementation needs stable opportunity identity and
+scoped decision/review/document bindings, with compatibility for existing
+project routes and tenant isolation. No such schema migration or feature
+admission is implied by this reconciliation.
 
 ### FR2. Source normalization
 - Normalize imported opportunity data into a stable internal structure.

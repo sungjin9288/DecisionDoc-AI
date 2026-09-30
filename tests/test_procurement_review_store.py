@@ -656,6 +656,37 @@ def test_packet_tamper_blocks_read_and_completion_without_record_change(
     assert not (_review_dir(tmp_path) / "reviewed_package.zip").exists()
 
 
+
+def test_packet_tamper_after_completion_blocks_reviewed_package_read(
+    tmp_path: Path,
+) -> None:
+    store = ProcurementReviewStore(base_dir=str(tmp_path))
+    pending = _prepare(store)
+    completed = store.complete(
+        tenant_id=TENANT_ID,
+        project_id=PROJECT_ID,
+        packet_sha256=PACKET_SHA256,
+        current=pending,
+        completed_receipt=_completed_receipt(pending),
+        reviewed_package_content=b"verified reviewed package",
+    )
+    record_path = _review_dir(tmp_path) / "record.json"
+    record_bytes = record_path.read_bytes()
+    (_review_dir(tmp_path) / "packet.zip").write_bytes(b"tampered packet")
+
+    with pytest.raises(
+        ProcurementReviewStoreError,
+        match="packet evidence is inconsistent",
+    ):
+        store.read_reviewed_package(
+            completed,
+            tenant_id=TENANT_ID,
+            project_id=PROJECT_ID,
+            packet_sha256=PACKET_SHA256,
+        )
+
+    assert record_path.read_bytes() == record_bytes
+
 def test_missing_packet_blocks_read_and_completion_without_record_change(
     tmp_path: Path,
 ) -> None:

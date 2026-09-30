@@ -74,6 +74,27 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def validate_procurement_record(data: dict[str, Any]) -> ProcurementDecisionRecord:
+    """Validate a stored decision and snapshot ownership without storage access."""
+    public = dict(data)
+    ProcurementDecisionStore._mutation_ids(public)
+    public.pop(_MUTATION_IDS_FIELD, None)
+    record = ProcurementDecisionRecord.model_validate(public)
+    require_tenant_id(record.tenant_id)
+    _require_path_segment(record.project_id, field="project_id")
+    snapshot_ids: set[str] = set()
+    for snapshot in record.source_snapshots:
+        _require_path_segment(snapshot.snapshot_id, field="snapshot_id")
+        if snapshot.snapshot_id in snapshot_ids:
+            raise ProcurementDecisionStoreError("Duplicate procurement source snapshot metadata")
+        snapshot_ids.add(snapshot.snapshot_id)
+        expected = str(Path("tenants") / record.tenant_id / "procurement_snapshots"
+                       / record.project_id / f"{snapshot.snapshot_id}.json")
+        if snapshot.storage_path != expected:
+            raise ProcurementDecisionStoreError("Procurement source snapshot ownership mismatch")
+    return record
+
+
 class ProcurementDecisionStore:
     """Thread-safe, tenant-scoped JSON-backed procurement state store."""
 
@@ -231,29 +252,7 @@ class ProcurementDecisionStore:
         )
 
     def _from_dict(self, data: dict[str, Any]) -> ProcurementDecisionRecord:
-        public = dict(data)
-        self._mutation_ids(public)
-        public.pop(_MUTATION_IDS_FIELD, None)
-        record = ProcurementDecisionRecord.model_validate(public)
-        require_tenant_id(record.tenant_id)
-        _require_path_segment(record.project_id, field="project_id")
-        snapshot_ids: set[str] = set()
-        for snapshot in record.source_snapshots:
-            if snapshot.snapshot_id in snapshot_ids:
-                raise ProcurementDecisionStoreError(
-                    "Duplicate procurement source snapshot metadata"
-                )
-            snapshot_ids.add(snapshot.snapshot_id)
-            expected_path = self._snapshot_relpath(
-                record.tenant_id,
-                record.project_id,
-                snapshot.snapshot_id,
-            )
-            if snapshot.storage_path != expected_path:
-                raise ProcurementDecisionStoreError(
-                    "Procurement source snapshot ownership mismatch"
-                )
-        return record
+        return validate_procurement_record(data)
 
     @staticmethod
     def _to_dict(record: ProcurementDecisionRecord) -> dict[str, Any]:

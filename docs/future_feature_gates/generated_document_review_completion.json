@@ -1,0 +1,109 @@
+{
+  "schema_version": "decisiondoc.future_feature_gate.v1",
+  "gate_id": "generated-document-review-completion",
+  "title": "Generated document review completion",
+  "target_user": "An assigned reviewer completing a persisted generated-document review handoff",
+  "observed_problem": "A reviewer can discover and re-download a pending generated-document packet, but cannot record a terminal review outcome that remains bound to that packet.",
+  "evidence": [
+    {
+      "kind": "repository",
+      "reference": "docs/product_direction.md:197-204",
+      "observation": "The current product loop includes pending sign-off, completed-review validation, and final package export as consecutive steps."
+    },
+    {
+      "kind": "repository",
+      "reference": "docs/roadmap.md:18",
+      "observation": "The persisted generated-document reviewer handoff is explicitly limited to pending records and excludes review completion."
+    },
+    {
+      "kind": "repository",
+      "reference": "docs/superpowers/specs/2026-09-03-generated-document-review-handoff-design.md:415-435",
+      "observation": "The existing slice treats completion decisions as a non-goal and ends after verified packet discovery and re-download."
+    },
+    {
+      "kind": "repository",
+      "reference": "app/routers/projects/generated_document_reviews.py:145-310",
+      "observation": "The public surface exposes prepare, inbox, project history, and packet download routes but no completion route."
+    },
+    {
+      "kind": "repository",
+      "reference": "app/schemas/generated_document_reviews.py:7-11",
+      "observation": "The generated-document review request schema currently defines creation input only."
+    }
+  ],
+  "current_workaround": "The reviewer downloads the packet and communicates a decision outside DecisionDoc, while the persisted handoff remains pending and cannot provide packet-bound completion evidence.",
+  "desired_outcome": "The assigned reviewer records one inspectable accepted, changes-requested, or rejected outcome and receives deterministic reviewed evidence without granting operational approval.",
+  "acceptance_criteria": [
+    "Only the current session-bound stable assignee can complete a pending review; API keys, Ops keys, sessionless JWTs, viewers, and foreign users are rejected before mutation.",
+    "Completion requires the persisted packet and source document to remain current; changed or missing source state preserves the pending record and requires a new handoff.",
+    "One operation identity can move a record from pending to completed exactly once; an exact retry returns the same verified result and changed input is rejected.",
+    "The reviewed-evidence package deterministically binds the unchanged source packet, source SHA-256, tenant, project, document, stable reviewer identity, decision, rationale, review time, and receipt SHA-256.",
+    "Stored and returned records are independently revalidated; malformed, duplicate, foreign, missing, or hash-drifted state fails closed without rewriting source bytes.",
+    "Inbox and project history expose safe completed-review summaries and verified reviewed-package download while keeping rationale, stable identity, session, token, IP, and User-Agent out of list responses and audit details.",
+    "The browser completion action is single-flight and discards stale auth, tenant, user, project, document, request, packet, and operation responses before changing UI state or creating a download.",
+    "Every completion record, response, header, and reviewed package keeps approval, operational approval, provider, G2B, training, deployment, publication, bid, legal, and contractual authority false."
+  ],
+  "affected_boundaries": [
+    "app/schemas/generated_document_reviews.py",
+    "app/services/generated_document_review_service.py",
+    "app/storage/generated_document_review_models.py",
+    "app/storage/generated_document_review_store.py",
+    "app/routers/projects/generated_document_reviews.py",
+    "app/middleware/generated_document_review_audit.py",
+    "app/static/index.html and app/static/app.js",
+    "generated-document review tests and product documentation"
+  ],
+  "authority_scope": {
+    "review_only": true,
+    "allowed_effects": [
+      "persist one terminal review-evidence transition for an existing generated-document review record",
+      "write one immutable reviewed-evidence package bound to the existing packet",
+      "append one redacted generated-document review audit event"
+    ],
+    "excluded_effects": [
+      "edit or regenerate project documents",
+      "grant approval, legal, contractual, bid, or operational authority",
+      "call providers, G2B, OCR, transcription, training, or model APIs",
+      "deploy, publish, or mutate production infrastructure",
+      "reassign, notify, expire, delete, or garbage-collect review records"
+    ],
+    "separate_approval_required_for": [
+      "live AWS or S3 runtime verification",
+      "provider-backed or paid evaluation",
+      "deployment, publication, or service resume",
+      "bid submission, legal approval, or contractual commitment"
+    ]
+  },
+  "local_verification": [
+    {
+      "command": "python3 scripts/validate_future_feature_gate.py docs/future_feature_gates/generated_document_review_completion.json --require-approved --json",
+      "proves": "The exact candidate record is structurally valid and explicitly approved before implementation starts."
+    },
+    {
+      "command": "python3 -m pytest -q tests/storage/test_generated_document_review_store.py tests/test_generated_document_reviews.py --tb=short",
+      "proves": "Local and fake-S3 record transitions, packet binding, authorization, replay, corruption, and API behavior are covered."
+    },
+    {
+      "command": "python3 -m pytest -q tests/test_generated_document_review_ui_static.py tests/test_infrastructure.py -k generated_document_review --tb=short",
+      "proves": "Browser contracts, app wiring, module boundaries, and false-authority surfaces remain explicit."
+    },
+    {
+      "command": "python3 -m pytest -q tests/e2e/test_main_flow.py -k generated_document_review --browser chromium --tb=short",
+      "proves": "The real local browser flow handles completion, stale contexts, verified download, responsive layout, and client errors."
+    },
+    {
+      "command": "python3 -m pytest -q tests/ -m 'not live' --tb=short",
+      "proves": "The completed feature preserves the repository-wide no-cost regression baseline."
+    },
+    {
+      "command": "python3 scripts/manage_portfolio_pack.py check",
+      "proves": "Tracked product documentation and the portfolio mirror remain byte-consistent."
+    }
+  ],
+  "decision": {
+    "status": "approved",
+    "rationale": "The repository evidence demonstrates a bounded core review-loop gap, and the operator approved this exact local and fake-S3 implementation scope while retaining every external and operational exclusion.",
+    "decided_by": "repository-operator",
+    "decided_at": "2026-09-04T07:10:31Z"
+  }
+}

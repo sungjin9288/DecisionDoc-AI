@@ -6,13 +6,20 @@ Appends structured audit entries to the per-tenant JSONL audit log.
 from __future__ import annotations
 
 import logging
-import re
 import time
 import uuid
 from datetime import datetime, timezone
 
 from fastapi import Request
 
+from app.middleware.audit_records import (  # noqa: F401 — re-exported for existing importers
+    _extract_resource_id,
+    _get_client_ip,
+    _infer_resource_type,
+    _path_matches,
+    _resolve_resource_identity,
+    _resolve_result,
+)
 from app.middleware.auth_session_retention_audit import auth_session_retention_audit_detail, auth_session_retention_audit_network, auth_session_retention_audit_principal
 from app.middleware.document_ops_audit import (
     document_ops_audit_detail,
@@ -55,6 +62,15 @@ AUDIT_RULES: dict[tuple[str, str], str] = {
     ("POST", "/projects/{id}/imports/g2b-opportunity"): "procurement.import",
     ("POST", "/projects/{id}/procurement/evaluate"): "procurement.evaluate",
     ("POST", "/projects/{id}/procurement/recommend"): "procurement.recommend",
+    ("GET", "/projects/{id}/procurement/opportunities"): "procurement.opportunities_view",
+    ("GET", "/projects/{id}/procurement/opportunities/{id}"): "procurement.opportunity_view",
+    ("POST", "/projects/{id}/procurement/selection"): "procurement.select",
+    ("POST", "/projects/{id}/procurement/opportunities/{id}/evaluate"): "procurement.evaluate",
+    ("POST", "/projects/{id}/procurement/opportunities/{id}/recommend"): "procurement.recommend",
+    ("GET", "/projects/{id}/procurement/opportunities/{id}/requirements"): "procurement.requirement_list",
+    ("GET", "/projects/{id}/procurement/opportunities/{id}/requirements/sources"): "procurement.requirement_sources",
+    ("POST", "/projects/{id}/procurement/opportunities/{id}/requirements"): "procurement.requirement_create",
+    ("POST", "/projects/{id}/procurement/opportunities/{id}/requirements/{id}/applicability"): "procurement.requirement_annotate",
     ("POST", "/projects/{id}/procurement/review-packet"): "procurement.review_packet_export",
     ("GET", "/procurement/reviews"): "procurement.review_inbox_view",
     ("GET", "/projects/{id}/decision-evidence-map"): "procurement.review_evidence_map_view",
@@ -199,11 +215,6 @@ async def audit_middleware(request: Request, call_next):
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
-
-def _get_client_ip(request: Request) -> str:
-    from app.middleware.rate_limit import _get_client_ip as _rl_get_ip
-    return _rl_get_ip(request)
-
 
 def _resolve_action(
     method: str,
@@ -508,6 +519,14 @@ def _append_audit_entries(
             detail["error_code"] = procurement_error_code
         if procurement_project_id:
             detail["project_id"] = procurement_project_id
+        for field in (
+            "procurement_decision_id", "procurement_decision_revision", "procurement_selection_revision",
+            "procurement_operation_id", "procurement_request_sha256",
+            "procurement_expected_decision_revision", "procurement_expected_selection_revision",
+        ):
+            value = getattr(request.state, field, None)
+            if value is not None:
+                detail[field] = value
         if bundle_type:
             detail["bundle_type"] = bundle_type
         if procurement_operation:
@@ -658,30 +677,6 @@ def _append_audit_entries(
         _log.error("[Audit] Failed to log request %s %s: %s", request.method, path, exc)
 
 
-def _resolve_resource_identity(
-    action: str,
-    path: str,
-    *,
-    procurement_project_id: str,
-    decision_council_project_id: str,
-    decision_council_session_id: str,
-) -> tuple[str, str]:
-    resource_id = (
-        decision_council_session_id
-        if action.startswith("decision_council.") and decision_council_session_id
-        else _extract_resource_id(path) or decision_council_project_id or procurement_project_id
-    )
-    resource_type = (
-        "decision_council"
-        if action.startswith("decision_council.")
-        else
-        "procurement"
-        if action.startswith("procurement.") and procurement_project_id
-        else _infer_resource_type(path)
-    )
-    return resource_type, resource_id
-
-
 def _build_audit_log(
     *,
     tenant_id: str,
@@ -744,53 +739,6 @@ def _build_audit_log(
         session_id=session_id,
     )
 
-def _resolve_result(status_code: int) -> str:
-    if status_code < 400:
-        return "success"
-    if status_code in (401, 403):
-        return "blocked"
-    return "failure"
-
-
-def _path_matches(actual: str, pattern: str) -> bool:
-    """Check whether *actual* path matches a pattern with {id} placeholders."""
-    # Escape everything except {id} placeholders, then replace placeholders
-    parts = re.split(r"(\{[^}]+\})", pattern)
-    regex = "".join(
-        "[^/]+" if p.startswith("{") else re.escape(p) for p in parts
-    )
-    return bool(re.fullmatch(regex, actual))
-
-
-def _infer_resource_type(path: str) -> str:
-    if "/decision-council" in path:
-        return "decision_council"
-    if "/approvals" in path:
-        return "approval"
-    if "/procurement" in path:
-        return "procurement"
-    if "/share" in path:
-        return "share"
-    if "/projects" in path:
-        return "project"
-    if "/admin/users" in path:
-        return "user"
-    if "/generate" in path:
-        return "document"
-    if "/auth" in path:
-        return "user"
-    if "/styles" in path:
-        return "style"
-    return "system"
-
-
-def _extract_resource_id(path: str) -> str:
-    """Extract the last UUID-like segment from the path."""
-    parts = path.strip("/").split("/")
-    for part in reversed(parts):
-        if re.match(r"[0-9a-f\-]{8,}", part):
-            return part
-    return ""
 
 
 def install_audit_middleware(app) -> None:

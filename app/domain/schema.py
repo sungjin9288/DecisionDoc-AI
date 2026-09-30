@@ -116,7 +116,7 @@ def _clean_requirements_for_prompt(requirements: dict[str, Any]) -> dict[str, An
     - Fields only relevant to tech_decision (bundle_type, doc_types, priority)
     - Empty strings and empty lists (no informational value, waste tokens)
     """
-    SKIP_KEYS = {"bundle_type", "doc_types", "priority", "doc_tone", "_search_context",
+    SKIP_KEYS = {"bundle_type", "doc_types", "priority", "doc_tone", "style_profile_id", "_style_snapshot", "_search_context",
                  "_knowledge_context", "_style_context", "_procurement_context", "_procurement_review_context",
                  "_procurement_review_handoff_skipped_reason", "_procurement_review_packet_sha256",
                  "_procurement_review_decision", "_procurement_reviewed_at", "_procurement_review_source_updated_at",
@@ -293,28 +293,27 @@ def build_bundle_prompt(
         if feedback_parts:
             prompt += feedback_parts[0]
 
-    # User style profile injection — default tenant profile overrides global style
-    try:
-        from app.storage.state_backend import StateBackendError
-        from app.storage.style_store import StyleStoreError, get_style_store
-        from app.services.style_analyzer import build_style_prompt as _build_style_prompt
+    # The service resolves this before provider/cache selection. Direct callers
+    # resolve it from the same generation context, then consume the snapshot only.
+    from app.services.generation.style_context import (
+        STYLE_SNAPSHOT_KEY,
+        resolve_style_snapshot,
+        style_prompt_from_snapshot,
+    )
 
-        _tid = _current_generation_tenant_id()
-        if _tid:
-            _sp = get_style_store(_tid).get_default()
-            if _sp:
-                _style_block = _build_style_prompt(
-                    _sp, bundle_id=bundle_spec.id if bundle_spec is not None else None
-                )
-                if _style_block:
-                    prompt += f"\n\n{_style_block}"
-    except (StyleStoreError, StateBackendError):
-        raise
-    except Exception as _style_exc:
-        import logging as _logging
-        _logging.getLogger("decisiondoc.schema").warning(
-            "[Schema] Style injection failed: %s", _style_exc
+    style_snapshot = requirements.get(STYLE_SNAPSHOT_KEY)
+    if style_snapshot is None:
+        style_context = _quality_store_context()
+        style_snapshot = resolve_style_snapshot(
+            style_profile_id=requirements.get("style_profile_id"),
+            bundle_id=bundle_spec.id if bundle_spec is not None else None,
+            tenant_id=_current_generation_tenant_id(),
+            data_dir=style_context.get("data_dir"),
+            state_backend=style_context.get("backend"),
         )
+    style_block = style_prompt_from_snapshot(style_snapshot)
+    if style_block:
+        prompt += f"\n\n{style_block}"
 
     # Tenant custom prompt hint injection
     if bundle_spec is not None:

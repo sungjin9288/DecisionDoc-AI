@@ -58,9 +58,13 @@ def test_cache_corruption_is_cache_miss(tmp_path, monkeypatch):
         data_dir=Path(tmp_path),
     )
     payload = GenerateRequest(title="cache", goal="corruption handling")
-    payload_dict = payload.model_dump(mode="json")
-    cache_path = service._cache_path("mock", "v1", payload_dict, tenant_id="system")
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    # Corrupt the entry generation itself wrote: its key uses the resolved style
+    # snapshot and procurement binding instead of the request selector fields.
+    first = service.generate_documents(payload, request_id="cache-seed", tenant_id="system")
+    assert first["metadata"]["cache_hit"] is False
+    cache_files = list(service.cache_dir.glob("*.json"))
+    assert len(cache_files) == 1
+    cache_path = cache_files[0]
     cache_path.write_text("{not-json", encoding="utf-8")
 
     result = service.generate_documents(payload, request_id="cache-req", tenant_id="system")

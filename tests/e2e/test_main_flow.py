@@ -76,13 +76,56 @@ def _generated_document_review_headers(
     return headers
 
 
+def _generated_document_reviewed_headers(
+    content: bytes,
+    *,
+    packet_sha256: str,
+    source_status: str = "current",
+    replay: bool = False,
+    overrides: dict[str, str] | None = None,
+) -> dict[str, str]:
+    package_sha256 = hashlib.sha256(content).hexdigest()
+    headers = {
+        "Content-Type": "application/zip",
+        "Content-Length": str(len(content)),
+        "Content-Disposition": (
+            f'attachment; filename="generated-document-reviewed-{package_sha256}.zip"'
+        ),
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+        "X-DecisionDoc-Packet-SHA256": packet_sha256,
+        "X-DecisionDoc-Reviewed-Package-SHA256": package_sha256,
+        "X-DecisionDoc-Completion-Receipt-SHA256": "c" * 64,
+        "X-DecisionDoc-Review-Status": "completed",
+        "X-DecisionDoc-Review-Decision": "accepted",
+        "X-DecisionDoc-Reviewer-Identity-Bound": "true",
+        "X-DecisionDoc-Replay": str(replay).lower(),
+        "X-DecisionDoc-Review-Only": "true",
+        "X-DecisionDoc-Packet-Persisted": "true",
+        "X-DecisionDoc-Human-Review-Completed": "true",
+        "X-DecisionDoc-Operational-Approval": "false",
+        "X-DecisionDoc-Source-Status": source_status,
+        "X-DecisionDoc-Authority-Approval-Authorized": "false",
+        "X-DecisionDoc-Authority-Aws-Execution-Authorized": "false",
+        "X-DecisionDoc-Authority-Dataset-Upload-Authorized": "false",
+        "X-DecisionDoc-Authority-Deployment-Authorized": "false",
+        "X-DecisionDoc-Authority-G2b-Submission-Authorized": "false",
+        "X-DecisionDoc-Authority-Provider-Execution-Authorized": "false",
+        "X-DecisionDoc-Authority-Training-Execution-Authorized": "false",
+    }
+    headers.update(overrides or {})
+    return headers
+
+
 def _generated_document_review_record(
     packet_sha256: str,
     *,
     source_status: str = "current",
     document_id: str = "generated-review-document",
+    assigned_to_current_user: bool = False,
+    review_status: str = "pending",
 ) -> dict:
-    return {
+    record = {
         "project_id": "generated-review-project",
         "project_document_id": document_id,
         "request_id": "generated-review-request",
@@ -96,13 +139,23 @@ def _generated_document_review_record(
         "prepared_at": "2026-09-03T10:00:00Z",
         "creator": {"username": "creator", "role": "admin"},
         "reviewer": {"username": "reviewer", "role": "member"},
-        "review_status": "pending",
+        "review_status": review_status,
         "review_only": True,
         "packet_persisted": True,
-        "human_review_completed": False,
+        "human_review_completed": review_status == "completed",
         "operational_approval": False,
         "source_status": source_status,
+        "assigned_to_current_user": assigned_to_current_user,
     }
+    if review_status == "completed":
+        record.update(
+            review_decision="accepted",
+            reviewed_at="2026-09-04T07:30:00Z",
+            completion_receipt_sha256="c" * 64,
+            reviewed_package_sha256="d" * 64,
+            reviewed_package_size_bytes=1024,
+        )
+    return record
 
 
 def _render_generated_document_review_project(
@@ -272,7 +325,10 @@ def test_generated_document_review_creation_is_single_flight(page):
 
 def test_generated_document_review_inbox_history_and_mobile_layout(page):
     packet_sha256 = "b" * 64
-    record = _generated_document_review_record(packet_sha256)
+    record = _generated_document_review_record(
+        packet_sha256,
+        assigned_to_current_user=True,
+    )
     _render_generated_document_review_project(page, reviews=[record])
     page.evaluate(
         """review => {
@@ -451,6 +507,163 @@ def test_generated_document_review_project_drift_discards_late_packet_and_revoke
         }"""
     )
     assert page.evaluate("() => window.__generatedReviewRevocations") >= 1
+
+
+def test_generated_document_review_completion_downloads_verified_package(page):
+    content = b"generated-document-reviewed-package"
+    packet_sha256 = "e" * 64
+    record = _generated_document_review_record(
+        packet_sha256,
+        assigned_to_current_user=True,
+    )
+    observed_payload: dict[str, str] = {}
+
+    def fulfill_completion(route):
+        observed_payload.update(route.request.post_data_json)
+        route.fulfill(
+            status=200,
+            body=content,
+            headers=_generated_document_reviewed_headers(
+                content,
+                packet_sha256=packet_sha256,
+            ),
+        )
+
+    page.route(
+        "**/projects/generated-review-project/generated-document-reviews/"
+        f"{packet_sha256}/complete",
+        fulfill_completion,
+    )
+    _render_generated_document_review_project(page, reviews=[record])
+    page.evaluate(
+        """() => {
+          loadProjectDetail = async () => {};
+          loadGeneratedDocumentReviewInbox = async () => {};
+        }"""
+    )
+
+    page.locator(
+        '[data-project-detail-action="generated-document-review-complete"]'
+    ).click()
+    dialog = page.locator(".generated-document-review-dialog")
+    dialog.wait_for(state="visible")
+    dialog.locator("[data-generated-document-review-rationale]").fill(
+        "The packet and current source are consistent."
+    )
+    with page.expect_download() as download_info:
+        dialog.locator("[data-generated-document-review-submit]").click()
+
+    assert observed_payload["decision"] == "accepted"
+    assert observed_payload["rationale"] == (
+        "The packet and current source are consistent."
+    )
+    assert uuid.UUID(observed_payload["operation_id"]).version == 4
+    assert download_info.value.suggested_filename == (
+        "generated-document-reviewed-"
+        f"{hashlib.sha256(content).hexdigest()}.zip"
+    )
+
+    _render_generated_document_review_project(
+        page,
+        reviews=[
+            _generated_document_review_record(
+                packet_sha256,
+                assigned_to_current_user=True,
+                review_status="completed",
+            )
+        ],
+    )
+    page.evaluate(
+        """({ content, headers }) => {
+          const originalFetch = window.fetch;
+          window.fetch = (url, options) => {
+            if (String(url).endsWith('/reviewed-package')) {
+              return Promise.resolve(new Response(new Uint8Array(content), {
+                status: 200,
+                headers,
+              }));
+            }
+            return originalFetch(url, options);
+          };
+        }""",
+        {
+            "content": list(content),
+            "headers": _generated_document_reviewed_headers(
+                content,
+                packet_sha256=packet_sha256,
+                replay=True,
+            ),
+        },
+    )
+    with page.expect_download() as replay_download:
+        page.locator(
+            '[data-project-detail-action="generated-document-reviewed-download"]'
+        ).click()
+    assert replay_download.value.suggested_filename == (
+        "generated-document-reviewed-"
+        f"{hashlib.sha256(content).hexdigest()}.zip"
+    )
+
+
+def test_generated_document_review_completion_is_single_flight_and_discards_stale_response(page):
+    content = b"generated-document-reviewed-stale"
+    packet_sha256 = "f" * 64
+    record = _generated_document_review_record(
+        packet_sha256,
+        assigned_to_current_user=True,
+    )
+    headers = _generated_document_reviewed_headers(
+        content,
+        packet_sha256=packet_sha256,
+    )
+    _render_generated_document_review_project(page, reviews=[record])
+    page.locator(
+        '[data-project-detail-action="generated-document-review-complete"]'
+    ).click()
+    page.locator("[data-generated-document-review-rationale]").fill(
+        "Completion remains bound to this context."
+    )
+    page.evaluate(
+        """() => {
+          window.__generatedReviewCompletionCalls = 0;
+          window.__generatedReviewCompletionDownloads = 0;
+          window.fetch = url => {
+            if (String(url).endsWith('/complete')) {
+              window.__generatedReviewCompletionCalls += 1;
+              return new Promise(resolve => {
+                window.__resolveGeneratedReviewCompletion = resolve;
+              });
+            }
+            throw new Error('unexpected request');
+          };
+          _triggerBrowserDownload = () => {
+            window.__generatedReviewCompletionDownloads += 1;
+            return 'blob:generated-review-completion';
+          };
+          const context = _generatedDocumentReviewState.dialogContext;
+          const button = document.querySelector('[data-generated-document-review-submit]');
+          window.__generatedReviewCompletionPromise = submitGeneratedDocumentReviewCompletion(
+            context,
+            button,
+          );
+          submitGeneratedDocumentReviewCompletion(context, button);
+        }"""
+    )
+    assert page.evaluate("() => window.__generatedReviewCompletionCalls") == 1
+
+    page.evaluate("() => invalidateGeneratedDocumentReviewProjectContext()")
+    page.evaluate(
+        """({ content, headers }) => {
+          window.__resolveGeneratedReviewCompletion(new Response(new Uint8Array(content), {
+            status: 200,
+            headers,
+          }));
+        }""",
+        {"content": list(content), "headers": headers},
+    )
+    page.evaluate("() => window.__generatedReviewCompletionPromise")
+    assert page.evaluate("() => window.__generatedReviewCompletionCalls") == 1
+    assert page.evaluate("() => window.__generatedReviewCompletionDownloads") == 0
 
 
 
@@ -8492,11 +8705,162 @@ def test_generate_flow_produces_results(page):
     assert page.locator("#tab-bar .tab-btn").count() > 0
 
 
-def test_export_flow(page):
-    """After generation, clicking export-btn must show success text."""
-    _generate_to_results(page, "내보내기 테스트", "내보내기 목표")
-    page.click("#export-btn")
-    _wait_until_text_contains(page, "#export-btn", "완료", timeout_ms=5000)
+@pytest.mark.parametrize("viewport", [
+    {"width": 1280, "height": 900},
+    {"width": 390, "height": 844},
+    {"width": 390, "height": 420},
+], ids=["desktop", "mobile", "short-mobile"])
+def test_manual_style_generation_and_edited_docx_download(page, tmp_path, live_server, viewport):
+    from playwright.sync_api import expect
+    from xml.etree import ElementTree
+    from zipfile import ZipFile
+
+    page.set_viewport_size(viewport)
+    page.route(
+        "**/*",
+        lambda route: route.continue_()
+        if route.request.url.startswith(live_server["base_url"] + "/")
+        else route.abort(),
+    )
+    page.locator(".bundle-card").first.click()
+    page.click("#style-manage-btn")
+    page.click("#style-create-btn")
+    page.fill("#new-style-name", "Local lifecycle style")
+    box = page.locator(".style-create-modal .modal-box").bounding_box()
+    assert box is not None
+    assert box["x"] >= 0 and box["y"] >= 0
+    assert box["x"] + box["width"] <= viewport["width"] + 1
+    assert box["y"] + box["height"] <= viewport["height"] + 1
+    page.screenshot(path=str(tmp_path / "style-create.png"))
+    with page.expect_response(
+        lambda response: response.url.endswith("/styles")
+        and response.request.method == "POST"
+    ) as created:
+        page.click("[data-style-create-submit]")
+    assert created.value.status == 200
+    profile_id = created.value.json()["profile_id"]
+    expect(page.locator("[data-style-create-submit]")).to_have_count(0)
+    expect(page.locator("#from-documents-modal")).to_have_count(1)
+    expect(page.locator("#from-pdf-modal")).to_have_count(1)
+    page.fill("#style-example-name", "Lifecycle example")
+    page.fill("#style-example-sentences", "확인된 근거와 미확인 사항을 구분합니다.")
+    page.click("#style-example-save")
+    expect(page.locator(".style-example-item")).to_contain_text("Lifecycle example")
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    page.screenshot(path=str(tmp_path / "style-saved.png"), full_page=True)
+    page.reload()
+    page.locator(".bundle-card").first.click()
+    page.click("#style-manage-btn")
+    with page.expect_response(
+        lambda response: response.url.endswith(f"/styles/{profile_id}")
+        and response.request.method == "GET"
+    ) as restored:
+        page.locator(f'[data-style-profile-id="{profile_id}"]').click()
+    assert restored.value.status == 200
+    assert restored.value.json()["profile_id"] == profile_id
+    expect(page.locator(".style-example-item")).to_have_count(1)
+    expect(page.locator(".style-example-item")).to_contain_text("Lifecycle example")
+    page.locator(".style-example-item summary").click()
+    expect(page.locator(".sample-sentence")).to_contain_text(
+        "확인된 근거와 미확인 사항을 구분합니다."
+    )
+    page.click("#style-return-btn")
+    expect(page.locator(f'#inline-style-select option[value="{profile_id}"]')).to_have_count(1)
+    page.select_option("#inline-style-select", profile_id)
+    failed_payloads = []
+
+    def reject_sketch(route):
+        failed_payloads.append(route.request.post_data_json)
+        route.fulfill(status=422, content_type="application/json",
+                      body=json.dumps({"detail": "Synthetic sketch validation failure"}))
+
+    page.route("**/generate/sketch", reject_sketch)
+    page.fill("#f-title", "Local style lifecycle")
+    page.fill("#f-goal", "Verify edited document download")
+    page.click("#generate-btn")
+    expect(page.locator("#status")).to_contain_text("스케치 실패")
+    expect(page.locator("#generate-btn")).to_be_enabled()
+    expect(page.locator("#f-title")).to_have_value("Local style lifecycle")
+    expect(page.locator("#f-goal")).to_have_value("Verify edited document download")
+    expect(page.locator("#inline-style-select")).to_have_value(profile_id)
+    expect(page.locator("#sketch-panel")).to_be_hidden()
+    expect(page.locator("#results")).to_be_hidden()
+    assert len(failed_payloads) == 1
+    assert failed_payloads[0]["style_profile_id"] == profile_id
+    page.unroute("**/generate/sketch", reject_sketch)
+    with page.expect_request(
+        lambda request: request.method == "POST"
+        and "/generate" in request.url
+        and "application/json" in request.headers.get("content-type", "")
+        and request.post_data_json.get("style_profile_id") == profile_id
+    ):
+        _generate_to_results(page, "Local style lifecycle", "Verify edited document download")
+    page.click("#edit-btn")
+    edited = "로컬 검수에서 추가한 편집 문장입니다."
+    page.locator(".doc-pane-content:visible").first.fill(edited)
+    page.click("#edit-btn")
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    page.locator("#results").screenshot(path=str(tmp_path / "edited-results.png"))
+    with page.expect_download() as downloaded:
+        page.click("#docx-btn")
+    download = downloaded.value
+    assert download.failure() is None
+    assert download.suggested_filename.endswith(".docx")
+    path = tmp_path / "edited.docx"
+    download.save_as(path)
+    with ZipFile(path) as archive:
+        document = ElementTree.fromstring(archive.read("word/document.xml"))
+    assert edited in "".join(document.itertext())
+
+
+@pytest.mark.parametrize("stream_body", [
+    "",
+    'event: progress\ndata: {"step":1,"msg":"Partial progress"}\n\n',
+], ids=["empty", "progress-only"])
+def test_incomplete_generation_stream_recovers_without_success(page, stream_body):
+    from playwright.sync_api import expect
+
+    def incomplete_stream(route):
+        route.fulfill(status=200, content_type="text/event-stream", body=stream_body)
+
+    page.route("**/generate/stream", incomplete_stream)
+    page.locator(".bundle-card").first.click()
+    page.fill("#f-title", "Incomplete stream recovery")
+    page.fill("#f-goal", "Preserve input when stream closes early")
+    page.click("#generate-btn")
+    page.wait_for_selector("#sketch-panel", state="visible")
+    page.click("#sketch-confirm-btn")
+    expect(page.locator("#status")).to_contain_text("생성 실패")
+    expect(page.locator("#gen-progress-wrap")).to_be_hidden()
+    expect(page.locator("#cancel-btn")).to_be_hidden()
+    expect(page.locator("#generate-btn")).to_be_enabled()
+    expect(page.locator("#results")).to_be_hidden()
+    expect(page.locator("#f-title")).to_have_value("Incomplete stream recovery")
+    expect(page.locator("#f-goal")).to_have_value("Preserve input when stream closes early")
+    assert page.evaluate("generatedDocs.length") == 0
+    page.unroute("**/generate/stream", incomplete_stream)
+    _generate_to_results(page, "Incomplete stream recovery", "Preserve input when stream closes early")
+    assert page.locator("#tab-bar .tab-btn").count() > 0
+
+
+def test_export_flow(page, tmp_path, live_server):
+    """Markdown download preserves the displayed draft without generating again."""
+    page.route('**/*', lambda route: route.continue_()
+               if route.request.url.startswith(live_server['base_url'] + '/') else route.abort())
+    with page.expect_response('**/generate/recommend-bundle'):
+        _generate_to_results(page, "내보내기 테스트", "내보내기 목표")
+    expected = page.evaluate("_getMarkdownContent()")
+    generation_requests = []
+    page.on('request', lambda request: generation_requests.append(request.url)
+            if request.method == 'POST' and '/generate/' in request.url else None)
+    with page.expect_download() as download:
+        page.click("#export-btn")
+    path = tmp_path / 'export.md'
+    download.value.save_as(path)
+    assert path.read_bytes() == expected.encode('utf-8')
+    assert download.value.suggested_filename.endswith('.md')
+    assert generation_requests == []
+    assert page.locator('#export-btn').inner_text() == '📥 Markdown'
 
 
 def test_generate_from_documents_modal_flow(page, tmp_path):
@@ -9363,6 +9727,7 @@ def test_project_detail_decision_council_run_posts_goal_and_refreshes(page, live
           document.getElementById('project-detail').style.display = 'block';
           window.__decisionCouncilReloaded = '';
           window.loadProjectDetail = async (projectId) => {
+            _projectDetailLoadId += 1;
             window.__decisionCouncilReloaded = projectId;
           };
         }""",

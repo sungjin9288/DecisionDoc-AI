@@ -3,7 +3,12 @@
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+import unicodedata
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from app.schemas.procurement import ProcurementUUID
+from app.schemas.procurement_binding import ProcurementSourceBinding
 
 
 class DocType(str, Enum):
@@ -41,6 +46,16 @@ class GenerateRequest(BaseModel):
     doc_tone: str = Field(default="formal", description="문서 톤: formal|concise|detailed|executive")
     project_id: str | None = None  # optional project linkage
     style_profile_id: str | None = None  # optional style profile chosen in the Web UI
+    procurement_decision_id: ProcurementUUID | None = None
+    expected_procurement_decision_revision: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def validate_procurement_selection(self):
+        if (self.procurement_decision_id is None) != (self.expected_procurement_decision_revision is None):
+            raise ValueError("Procurement decision ID and revision must be supplied together")
+        if self.procurement_decision_id is not None and not self.project_id:
+            raise ValueError("Procurement generation requires a project")
+        return self
 
     @field_validator("doc_types", mode="before")
     @classmethod
@@ -50,6 +65,17 @@ class GenerateRequest(BaseModel):
         if not isinstance(value, list):
             return value
         return [DocType(item) if isinstance(item, str) else item for item in value]
+
+    @field_validator("style_profile_id")
+    @classmethod
+    def validate_style_profile_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not value or value != value.strip() or any(
+            unicodedata.category(character).startswith("C") for character in value
+        ):
+            raise ValueError("style_profile_id must be a non-empty canonical identifier")
+        return value
 
 
 class FreeformRequest(BaseModel):
@@ -83,6 +109,7 @@ class GeneratedDoc(BaseModel):
     markdown: str
     total_slides: int | None = None
     slide_outline: list[dict[str, Any]] | None = None
+    source_procurement_binding: ProcurementSourceBinding | None = None
 
 
 class GenerateResponse(BaseModel):
@@ -102,6 +129,7 @@ class GenerateResponse(BaseModel):
     procurement_review_source_updated_at: str | None = None
     procurement_review_operational_approval: bool = False
     decision_evidence_refs: list[str] = Field(default_factory=list)
+    source_procurement_binding: ProcurementSourceBinding | None = None
     docs: list[GeneratedDoc]
 
 
@@ -119,6 +147,7 @@ class GenerateExportResponse(BaseModel):
     cache_hit: bool | None = None
     export_dir: str
     files: list[ExportedFile]
+    source_procurement_binding: ProcurementSourceBinding | None = None
 
 
 class FeedbackRequest(BaseModel):

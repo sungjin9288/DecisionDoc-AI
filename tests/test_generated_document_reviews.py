@@ -13,6 +13,9 @@ from app.services.generation_export_packet import (
     PERSISTED_PACKET_SCHEMA,
     verify_generation_export_packet,
 )
+from app.storage.generated_document_review_models import (
+    verify_generated_document_reviewed_package,
+)
 from app.storage.user_store import get_user_store
 from app.storage.audit_store import AuditStore
 
@@ -122,6 +125,27 @@ def _create_review(
     )
 
 
+def _complete_review(
+    client: TestClient,
+    *,
+    project_id: str,
+    packet_sha256: str,
+    headers: dict[str, str],
+    operation_id: str = "33333333-3333-4333-8333-333333333333",
+    decision: str = "accepted",
+    rationale: str = "The review evidence is complete.",
+):
+    return client.post(
+        f"/projects/{project_id}/generated-document-reviews/{packet_sha256}/complete",
+        headers=headers,
+        json={
+            "operation_id": operation_id,
+            "decision": decision,
+            "rationale": rationale,
+        },
+    )
+
+
 def test_admin_creates_persisted_review_packet_with_closed_authority_headers(client):
     admin_headers = _login(client, "review-admin", role="admin")
     _create_user(client, admin_headers, "review-member")
@@ -135,7 +159,7 @@ def test_admin_creates_persisted_review_packet_with_closed_authority_headers(cli
         reviewer="review-member",
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     assert response.headers["content-type"] == "application/zip"
     assert response.headers["cache-control"] == "no-store"
     assert response.headers["x-content-type-options"] == "nosniff"
@@ -387,7 +411,7 @@ def test_member_inbox_and_project_history_expose_only_safe_assigned_records(clie
     assert len(admin_inbox.json()["reviews"]) == 1
 
     for query in (
-        "review_status=completed",
+        "review_status=unknown",
         "limit=0",
         "limit=51",
         "limit=not-a-number",
@@ -584,3 +608,210 @@ def test_generated_review_emits_redacted_observability_and_audit_evidence(
     assert "creator_assignment" not in serialized_audit
     assert "reviewer_assignment" not in serialized_audit
     assert "doc_snapshot" not in serialized_audit
+
+
+def test_assigned_member_completes_review_and_exact_replay_returns_same_package(client):
+    admin_headers = _login(client, "complete-admin", role="admin")
+    member_headers = _create_user(client, admin_headers, "complete-member")
+    project, document = _project_document(client, title="Completion document")
+    created = _create_review(
+        client,
+        project_id=project.project_id,
+        document_id=document.doc_id,
+        headers=admin_headers,
+        reviewer="complete-member",
+        formats=["docx"],
+    )
+    packet_sha256 = created.headers["x-decisiondoc-packet-sha256"]
+
+    completed = _complete_review(
+        client,
+        project_id=project.project_id,
+        packet_sha256=packet_sha256,
+        headers=member_headers,
+    )
+
+    assert completed.status_code == 200
+    assert completed.headers["content-type"] == "application/zip"
+    assert completed.headers["x-decisiondoc-review-status"] == "completed"
+    assert completed.headers["x-decisiondoc-human-review-completed"] == "true"
+    assert completed.headers["x-decisiondoc-operational-approval"] == "false"
+    assert completed.headers["x-decisiondoc-review-decision"] == "accepted"
+    assert completed.headers["x-decisiondoc-replay"] == "false"
+    for key in AUTHORITY_FALSE:
+        assert (
+            completed.headers["x-decisiondoc-authority-" + key.replace("_", "-")]
+            == "false"
+        )
+    verified = verify_generated_document_reviewed_package(completed.content)
+    assert verified["receipt"]["packet_sha256"] == packet_sha256
+    assert verified["receipt"]["review_decision"] == "accepted"
+
+    original_packet = client.get(
+        f"/projects/{project.project_id}/generated-document-reviews/"
+        f"{packet_sha256}/packet",
+        headers=member_headers,
+    )
+    assert original_packet.status_code == 200
+    assert original_packet.content == created.content
+    assert original_packet.headers["x-decisiondoc-review-status"] == "pending"
+    assert original_packet.headers["x-decisiondoc-human-review-completed"] == "false"
+
+    replay = _complete_review(
+        client,
+        project_id=project.project_id,
+        packet_sha256=packet_sha256,
+        headers=member_headers,
+    )
+    assert replay.status_code == 200
+    assert replay.content == completed.content
+    assert replay.headers["x-decisiondoc-replay"] == "true"
+
+    changed_retry = _complete_review(
+        client,
+        project_id=project.project_id,
+        packet_sha256=packet_sha256,
+        headers=member_headers,
+        rationale="Changed retry payload.",
+    )
+    assert changed_retry.status_code == 409
+
+    history = client.get(
+        f"/projects/{project.project_id}/generated-document-reviews",
+        headers=member_headers,
+    )
+    summary = history.json()["reviews"][0]
+    assert summary["review_status"] == "completed"
+    assert summary["review_decision"] == "accepted"
+    serialized = json.dumps(summary, ensure_ascii=False)
+    assert "review_rationale" not in serialized
+    assert "completion_assignment" not in serialized
+    assert "completion_operation_id" not in serialized
+
+    downloaded = client.get(
+        f"/projects/{project.project_id}/generated-document-reviews/"
+        f"{packet_sha256}/reviewed-package",
+        headers=member_headers,
+    )
+    assert downloaded.status_code == 200
+    assert downloaded.content == completed.content
+    assert downloaded.headers["x-decisiondoc-replay"] == "true"
+
+
+def test_completion_requires_current_assignee_and_current_source_without_mutation(
+    client,
+):
+    admin_headers = _login(client, "completion-access-admin", role="admin")
+    member_headers = _create_user(client, admin_headers, "completion-access-member")
+    other_headers = _create_user(client, admin_headers, "completion-access-other")
+    viewer_headers = _create_user(
+        client, admin_headers, "completion-access-viewer", role="viewer"
+    )
+    project, document = _project_document(client)
+    created = _create_review(
+        client,
+        project_id=project.project_id,
+        document_id=document.doc_id,
+        headers=admin_headers,
+        reviewer="completion-access-member",
+        formats=["docx"],
+    )
+    packet_sha256 = created.headers["x-decisiondoc-packet-sha256"]
+
+    for headers, expected_status in (
+        (API_HEADERS, 401),
+        (OPS_HEADERS, 401),
+        (viewer_headers, 403),
+        (admin_headers, 404),
+        (other_headers, 404),
+    ):
+        denied = _complete_review(
+            client,
+            project_id=project.project_id,
+            packet_sha256=packet_sha256,
+            headers=headers,
+        )
+        assert denied.status_code == expected_status
+
+    invalid_rationale = _complete_review(
+        client,
+        project_id=project.project_id,
+        packet_sha256=packet_sha256,
+        headers=member_headers,
+        rationale="invalid\x7f rationale",
+    )
+    assert invalid_rationale.status_code == 422
+
+    projects_path = "tenants/system/projects.json"
+    projects = json.loads(
+        client.app.state.state_backend.read_text(projects_path) or "[]"
+    )
+    projects[0]["documents"][0]["title"] = "Changed before completion"
+    client.app.state.state_backend.write_text(
+        projects_path,
+        json.dumps(projects, ensure_ascii=False),
+    )
+    stale = _complete_review(
+        client,
+        project_id=project.project_id,
+        packet_sha256=packet_sha256,
+        headers=member_headers,
+    )
+    assert stale.status_code == 409
+    record = client.app.state.generated_document_review_store.list_by_project(
+        tenant_id="system", project_id=project.project_id
+    )[0]
+    assert record.review_status == "pending"
+    assert record.human_review_completed is False
+
+
+def test_completed_inbox_filter_and_audit_omit_private_completion_values(client):
+    admin_headers = _login(client, "completion-audit-admin", role="admin")
+    member_headers = _create_user(client, admin_headers, "completion-audit-member")
+    project, document = _project_document(client)
+    created = _create_review(
+        client,
+        project_id=project.project_id,
+        document_id=document.doc_id,
+        headers=admin_headers,
+        reviewer="completion-audit-member",
+        formats=["docx"],
+    )
+    packet_sha256 = created.headers["x-decisiondoc-packet-sha256"]
+    completed = _complete_review(
+        client,
+        project_id=project.project_id,
+        packet_sha256=packet_sha256,
+        headers=member_headers,
+        operation_id="44444444-4444-4444-8444-444444444444",
+        decision="changes_requested",
+        rationale="Private completion rationale.",
+    )
+    assert completed.status_code == 200
+
+    pending = client.get(
+        "/generated-document-reviews?review_status=pending&limit=50&offset=0",
+        headers=member_headers,
+    )
+    completed_inbox = client.get(
+        "/generated-document-reviews?review_status=completed&limit=50&offset=0",
+        headers=member_headers,
+    )
+    assert pending.json()["total"] == 0
+    assert completed_inbox.json()["total"] == 1
+    assert completed_inbox.json()["reviews"][0]["review_status"] == "completed"
+
+    audit = AuditStore(
+        "system",
+        data_dir=client.app.state.data_dir,
+        backend=client.app.state.state_backend,
+    ).query(filters={"action": "generated_document_review.complete"})[-1]
+    assert audit["user_id"] == ""
+    assert audit["session_id"] == ""
+    assert audit["ip_address"] == ""
+    assert audit["user_agent"] == ""
+    assert audit["detail"]["review_status"] == "completed"
+    assert audit["detail"]["review_decision"] == "changes_requested"
+    serialized = json.dumps(audit, ensure_ascii=False)
+    assert "Private completion rationale." not in serialized
+    assert "44444444-4444-4444-8444-444444444444" not in serialized

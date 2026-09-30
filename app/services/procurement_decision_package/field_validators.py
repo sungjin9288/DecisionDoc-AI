@@ -348,10 +348,11 @@ def _require_exact_string_list(
     return strings
 
 
-def _require_included_artifacts_field(value: dict[str, Any], *, path: str) -> None:
+def _require_included_artifacts_field(value: dict[str, Any], *, path: str,
+                                      included_artifacts=None) -> None:
     _require_exact_string_list(
         value.get("included_artifacts"),
-        INCLUDED_ARTIFACT_ORDER,
+        INCLUDED_ARTIFACT_ORDER if included_artifacts is None else included_artifacts,
         _field_path(path, "included_artifacts"),
     )
 
@@ -388,6 +389,8 @@ def _validate_audit_manifest(
     *,
     package_id: str,
     recommendation: str,
+    included_artifacts=None,
+    extra_evidence: str | None = None,
 ) -> None:
     audit_manifest = _require_mapping(value, path)
     _require_exact_mapping_fields(
@@ -415,8 +418,10 @@ def _validate_audit_manifest(
             f"{_field_path(path, 'recommendation')} "
             "must match package_doc.package.recommendation"
         )
-    _require_included_artifacts_field(audit_manifest, path=path)
+    _require_included_artifacts_field(audit_manifest, path=path, included_artifacts=included_artifacts)
     for group_name, expected_artifacts in AUDIT_MANIFEST_ARTIFACT_GROUPS.items():
+        if group_name == "evidence_artifacts" and extra_evidence is not None:
+            expected_artifacts = [*expected_artifacts, extra_evidence]
         group_artifacts = audit_manifest.get(group_name)
         group_path = _field_path(path, group_name)
         _require_exact_string_list(
@@ -428,12 +433,12 @@ def _validate_audit_manifest(
     _require_non_authorization_note_field(audit_manifest, path=path)
 
 
-def _validate_export_manifest(value: Any, path: str) -> None:
+def _validate_export_manifest(value: Any, path: str, *, included_artifacts=None) -> None:
     export_manifest = _require_mapping(value, path)
     _require_exact_mapping_fields(
         export_manifest,
         EXPORT_MANIFEST_FIELD_ORDER,
         path,
     )
-    _require_included_artifacts_field(export_manifest, path=path)
+    _require_included_artifacts_field(export_manifest, path=path, included_artifacts=included_artifacts)
     _require_excluded_actions_field(export_manifest, path=path)
