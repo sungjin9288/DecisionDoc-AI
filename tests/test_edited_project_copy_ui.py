@@ -1,11 +1,12 @@
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import expect, sync_playwright
+from playwright.sync_api import expect
+from tests.browser_pages import isolated_page
 
 
 @pytest.fixture
-def copy_page():
+def copy_page(browser):
     html = (Path(__file__).resolve().parents[1] / "app/static/index.html").read_text()
     functions = html[
         html.index("  const editedProjectDrafts =") : html.index(
@@ -17,9 +18,7 @@ def copy_page():
             "  function getCurrentApprovalRequestSource("
         )
     ]
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
-        page = browser.new_page()
+    with isolated_page(browser) as page:
         page.route(
             "**/*",
             lambda route: route.fulfill(
@@ -55,7 +54,6 @@ def copy_page():
         """
         )
         yield page
-        browser.close()
 
 
 def test_lost_response_retry_preserves_exact_operation(copy_page):

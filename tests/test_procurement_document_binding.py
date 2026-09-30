@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import io
 import json
@@ -50,6 +49,7 @@ from app.storage.project_store import (
     ProjectStoreError,
 )
 from app.storage.state_backend import LocalStateBackend
+from tests.async_helper import run_async
 from tests.test_project_approval_store_integrity import _s3_backend
 
 
@@ -286,7 +286,7 @@ def test_generation_packet_v1_bytes_stay_fixed_and_bound_v2_is_portable(monkeypa
         "app.services.generation_export_packet.build_docx",
         lambda docs, title: b"docx-fixed",
     )
-    legacy = asyncio.run(
+    legacy = run_async(
         build_generation_export_packet(
             docs=_docs(None, markdown="# x"),
             title="Title",
@@ -301,7 +301,7 @@ def test_generation_packet_v1_bytes_stay_fixed_and_bound_v2_is_portable(monkeypa
     )
 
     binding = _binding()
-    bound = asyncio.run(
+    bound = run_async(
         build_generation_export_packet(
             docs=_docs(binding),
             title="Bound",
@@ -345,7 +345,7 @@ def test_bound_packet_schemas_reject_explicit_null_binding(monkeypatch):
     document = _project_document(binding=binding)
     docs = json.loads(document.doc_snapshot)
     packets = [
-        asyncio.run(
+        run_async(
             build_generation_export_packet(
                 docs=docs,
                 title="Bound",
@@ -354,7 +354,7 @@ def test_bound_packet_schemas_reject_explicit_null_binding(monkeypatch):
                 formats="docx",
             )
         ),
-        asyncio.run(
+        run_async(
             build_generated_document_review_packet(
                 docs=docs,
                 title=document.title,
@@ -426,7 +426,7 @@ def test_persisted_review_packet_and_document_hash_include_optional_binding(monk
         tenant_id="alpha", project_id="project-a", document=legacy, docs=legacy_docs
     )
 
-    packet = asyncio.run(
+    packet = run_async(
         build_generated_document_review_packet(
             docs=docs,
             title=document.title,
@@ -455,7 +455,7 @@ def test_bound_review_store_and_completed_package_preserve_portable_binding(
     binding = _binding()
     document = _project_document(binding=binding)
     docs = json.loads(document.doc_snapshot)
-    packet = asyncio.run(
+    packet = run_async(
         build_generated_document_review_packet(
             docs=docs,
             title=document.title,
@@ -1118,7 +1118,7 @@ def test_project_binary_download_uses_headers_not_embedded_binding_claims(
         ),
         state=SimpleNamespace(tenant_id="alpha"),
     )
-    response = asyncio.run(
+    response = run_async(
         download_project_doc_endpoint(
             project.project_id, document.doc_id, "docx", request
         )

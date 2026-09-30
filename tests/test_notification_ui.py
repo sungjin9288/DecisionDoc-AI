@@ -1,22 +1,21 @@
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import expect, sync_playwright
+from playwright.sync_api import expect
+from tests.browser_pages import isolated_page
 
 
 INDEX = Path(__file__).resolve().parents[1] / "app/static/index.html"
 
 
 @pytest.fixture
-def notification_page():
+def notification_page(browser):
     html = INDEX.read_text(encoding="utf-8")
     css = html.split("<style>", 1)[1].split("</style>", 1)[0]
     helpers = html[html.index("  function escapeHtml("):html.index("  function makeButtonAccessible(")]
     notify = html[html.index("  function showNotification("):html.index("  let _pendingProjectSelectorFocus")]
     post_download = html[html.index("  function showPostDownloadPrompt("):html.index("  function showFeedbackCard(")]
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
-        page = browser.new_page()
+    with isolated_page(browser) as page:
         page.route("**/*", lambda route: route.abort())
         page.set_content(f'<style>{css}</style><div id="notification-container" aria-live="polite"></div>')
         page.add_script_tag(content="""
@@ -25,7 +24,6 @@ def notification_page():
             window.setTimeout = callback => notificationTimers.push(callback);
         """ + helpers + notify + post_download)
         yield page
-        browser.close()
 
 
 def test_notification_deduplicates_only_same_message_and_type(notification_page):

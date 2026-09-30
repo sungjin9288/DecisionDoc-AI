@@ -2,14 +2,14 @@
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import sync_playwright
+from tests.browser_pages import isolated_page
 
 
 INDEX = Path(__file__).resolve().parents[1] / "app/static/index.html"
 
 
 @pytest.fixture(params=[(390, 844), (1440, 1000)], ids=["mobile", "desktop"])
-def summary_page(request):
+def summary_page(request, browser):
     html = INDEX.read_text(encoding="utf-8")
     ranges = [
         ("  function escapeHtml(", "  function makeButtonAccessible("),
@@ -19,14 +19,11 @@ def summary_page(request):
     ]
     source = "\n".join(html[html.index(start):html.index(end)] for start, end in ranges)
     styles = html[html.index("<style>") + len("<style>"):html.index("</style>")]
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
-        page = browser.new_page(viewport={"width": request.param[0], "height": request.param[1]})
+    with isolated_page(browser, viewport={"width": request.param[0], "height": request.param[1]}) as page:
         page.route("**/*", lambda route: route.abort())
         page.set_content(f'<style>{styles}</style><main id="summary" style="padding:16px"></main>')
         page.add_script_tag(content=source)
         yield page
-        browser.close()
 
 
 def _render(page, **state):

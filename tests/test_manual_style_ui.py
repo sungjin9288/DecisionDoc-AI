@@ -5,21 +5,20 @@ import re
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import expect, sync_playwright
+from playwright.sync_api import expect
+from tests.browser_pages import isolated_page
 
 
 INDEX = Path(__file__).resolve().parents[1] / "app/static/index.html"
 
 
 @pytest.fixture
-def style_page():
+def style_page(browser):
     html = INDEX.read_text(encoding="utf-8")
     css = html.split("<style>", 1)[1].split("</style>", 1)[0]
     helpers = html[html.index("  function escapeHtml("):html.index("  function makeButtonAccessible(")]
     functions = html[html.index("  async function loadStyleDetail("):html.index("  async function setDefaultStyle(")]
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
-        page = browser.new_page(viewport={"width": 390, "height": 844})
+    with isolated_page(browser, viewport={"width": 390, "height": 844}) as page:
         page.set_default_timeout(5000)
         page.route("**/*", lambda route: route.abort())
         page.set_content(f"<style>{css}</style><div id='style-list'></div><div id='style-detail'></div>")
@@ -48,7 +47,6 @@ def style_page():
             };
         """ + helpers + functions + "\nrenderStyleDetail(profile);")
         yield page
-        browser.close()
 
 
 @pytest.mark.parametrize("outcome", ["success", "http_error", "network_error"])

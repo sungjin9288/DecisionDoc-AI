@@ -1,14 +1,14 @@
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import sync_playwright
+from tests.browser_pages import isolated_page
 
 
 INDEX = Path(__file__).resolve().parents[1] / "app/static/index.html"
 
 
 @pytest.fixture
-def content_page():
+def content_page(browser):
     html = INDEX.read_text(encoding="utf-8")
     functions = html[
         html.index("  function buildGeneratedApprovalSource("):
@@ -23,9 +23,7 @@ def content_page():
         html.index("  function _normalizeKnowledgePromotionTarget("):
         html.index("  function _getActiveKnowledgePromotionTarget(")
     ]
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
-        page = browser.new_page()
+    with isolated_page(browser) as page:
         page.route("**/*", lambda route: route.abort())
         page.add_script_tag(content="""
             let generatedDocs = [];
@@ -42,7 +40,6 @@ def content_page():
             };
         """ + functions + export + review + knowledge)
         yield page
-        browser.close()
 
 
 @pytest.mark.parametrize("edited", [None, "", "Changed content"])

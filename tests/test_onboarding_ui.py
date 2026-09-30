@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import sync_playwright
+from tests.browser_pages import isolated_page
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -97,6 +97,7 @@ def test_onboarding_content_and_actions_wrap_on_mobile() -> None:
 
 def test_onboarding_actual_css_renders_opaque_and_inside_viewport(
     tmp_path: Path,
+    browser,
 ) -> None:
     html = INDEX_HTML.read_text(encoding="utf-8")
     stylesheet = _stylesheet(html)
@@ -135,9 +136,7 @@ def test_onboarding_actual_css_renders_opaque_and_inside_viewport(
         ("short", 390, 360),
     )
 
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=True)
-        page = browser.new_page()
+    with isolated_page(browser) as page:
         for label, width, height in viewports:
             page.set_viewport_size({"width": width, "height": height})
             page.set_content(f"<style>{stylesheet}</style>{modal_markup}")
@@ -178,4 +177,3 @@ def test_onboarding_actual_css_renders_opaque_and_inside_viewport(
             page.screenshot(path=str(screenshot_path))
             assert screenshot_path.stat().st_size > 0
             print(f"onboarding screenshot: {screenshot_path}")
-        browser.close()

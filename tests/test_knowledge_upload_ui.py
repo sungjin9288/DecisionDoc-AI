@@ -2,18 +2,16 @@
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import sync_playwright
+from tests.browser_pages import isolated_page
 
 INDEX = Path(__file__).resolve().parents[1] / 'app/static/index.html'
 
 
 @pytest.fixture
-def knowledge_page():
+def knowledge_page(browser):
     html = INDEX.read_text(encoding='utf-8')
     functions = html[html.index('  async function knowledgeUploadFiles('):html.index('  async function deleteKnowledgeDoc(')]
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
-        page = browser.new_page()
+    with isolated_page(browser) as page:
         page.route('**/*', lambda route: route.abort())
         page.set_content('<div id="knowledge-upload-status"></div><div id="knowledge-doc-list"></div>'
                          '<span id="knowledge-doc-count">7</span><button id="knowledge-file-pick-btn">Upload</button>'
@@ -38,7 +36,6 @@ def knowledge_page():
             const files=[new File(['One'],'one.txt'),new File(['Two'],'two.txt')];
         """ + functions)
         yield page
-        browser.close()
 
 
 @pytest.mark.parametrize('change', ['project', 'auth'])

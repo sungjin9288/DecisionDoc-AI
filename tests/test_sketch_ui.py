@@ -1,27 +1,25 @@
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import expect, sync_playwright
+from playwright.sync_api import expect
+from tests.browser_pages import isolated_page
 
 
 INDEX = Path(__file__).resolve().parents[1] / "app/static/index.html"
 
 
 @pytest.fixture
-def sketch_page():
+def sketch_page(browser):
     html = INDEX.read_text(encoding="utf-8")
     helpers = html[html.index("  function escapeHtml("):html.index("  function makeButtonAccessible(")]
     functions = html[html.index("  function _captureSketchEdits("):html.index("  function rerunSketchFromCurrentPayload(")]
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
-        page = browser.new_page()
+    with isolated_page(browser) as page:
         page.route("**/*", lambda route: route.abort())
         ids = ["sketch-sections", "sketch-search-badge", "sketch-pages", "sketch-slides",
                "sketch-search-snippets", "sketch-page-cards", "sketch-slide-cards", "sketch-snippets-list"]
         page.set_content("".join(f'<div id="{name}"></div>' for name in ids))
         page.add_script_tag(content="const $id = id => document.getElementById(id);" + helpers + functions)
         yield page
-        browser.close()
 
 
 @pytest.mark.parametrize("presentation", [False, True])

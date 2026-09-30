@@ -117,7 +117,7 @@ def test_excerpt_bounds_and_source_order():
 
 
 @pytest.mark.parametrize("extension", ["docx", "hwpx", "pdf"])
-def test_real_document_parsers(extension):
+def test_real_document_parsers(extension, request):
     from app.services.local_style_examples import extract_local_examples
 
     buffer = BytesIO()
@@ -131,27 +131,23 @@ def test_real_document_parsers(extension):
         with ZipFile(buffer, "w") as archive:
             archive.writestr("Contents/section0.xml", f'<section xmlns:hp="urn:paragraph"><hp:p><hp:t>{marker}</hp:t></hp:p></section>')
     else:
-        buffer.write(_pdf_bytes(marker))
+        buffer.write(_pdf_bytes(request.getfixturevalue("browser"), marker))
     assert marker in extract_local_examples(f"source.{extension}", buffer.getvalue())
 
 
-def test_empty_pdf_and_file_size():
+def test_empty_pdf_and_file_size(browser):
     from app.services.attachment_service import AttachmentError, MAX_FILE_SIZE_BYTES
     from app.services.local_style_examples import extract_local_examples
     with pytest.raises(AttachmentError):
-        extract_local_examples("scan.pdf", _pdf_bytes(""))
+        extract_local_examples("scan.pdf", _pdf_bytes(browser, ""))
     with pytest.raises(AttachmentError):
         extract_local_examples("big.txt", b"a" * (MAX_FILE_SIZE_BYTES + 1))
 
 
-def _pdf_bytes(text):
-    from playwright.sync_api import sync_playwright
+def _pdf_bytes(browser, text):
+    from tests.browser_pages import isolated_page
 
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
-        page = browser.new_page()
+    with isolated_page(browser) as page:
         page.route("**/*", lambda route: route.abort())
         page.set_content("<p>" + text + "</p>")
-        raw = page.pdf()
-        browser.close()
-        return raw
+        return page.pdf()
