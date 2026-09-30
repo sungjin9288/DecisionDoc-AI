@@ -3230,7 +3230,15 @@ def test_ci_playwright_install_has_bounded_timeout_and_python_module_entrypoint(
         r"- name: Install Playwright browsers\n\s+timeout-minutes:\s*10\n[\s\S]*?run: python -m playwright install chromium --with-deps",
         workflow,
     )
-    assert re.search(r"- name: Run full test suite\n\s+timeout-minutes:\s*25", workflow)
+    assert re.search(
+        r"- name: Run test suite excluding browser E2E\n\s+timeout-minutes:\s*25\n[\s\S]*?run: \|\n\s+pytest tests/ -q --tb=short --ignore=tests/e2e\n",
+        workflow,
+    )
+    assert re.search(
+        r"- name: Run browser E2E tests\n\s+if: \$\{\{ !cancelled\(\) \}\}\n\s+timeout-minutes:\s*10\n[\s\S]*?run: \|\n\s+pytest tests/e2e -q --tb=short\n",
+        workflow,
+    )
+    assert "Run full test suite" not in workflow
     assert "run: playwright install chromium --with-deps" not in workflow
 
 

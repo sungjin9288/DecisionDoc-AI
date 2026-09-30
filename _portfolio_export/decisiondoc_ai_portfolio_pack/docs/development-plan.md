@@ -410,6 +410,26 @@ PPTX 보완 검증에서 이번 변경과 무관하게 실패하던 3건을 코�
 | `python3 -m pytest -q -p no:cacheprovider tests/test_infrastructure.py` | **179 passed, 1 failed** / `infra-drifts.xml`; 남은 1건은 기존 800줄 검사(6개 파일, 모듈 분할하지 않음) |
 | `tests/test_procurement_review_store.py tests/test_manage_portfolio_pack.py tests/test_count_readme_metrics.py` | **60 passed, 1 failed** / `review-store-and-docs.xml`; 실패는 portfolio pack에 없는 planned-feature spec 링크(기존) |
 
+### PR CI 실패 원인과 테스트 단계 분리 (2026-09-30)
+
+[sungjin9288/DecisionDoc-AI#74](https://github.com/sungjin9288/DecisionDoc-AI/pull/74)의
+첫 CI(run 36650119763)는 Test job에서 8 failed, 130 errors로 끝났다. `pytest tests/`가 한
+process에서 `tests/e2e`를 먼저 실행하면 pytest-playwright의 sync session과 event loop가 끝까지
+남는다. 그 뒤 자체 `sync_playwright()`를 여는 UI 테스트와 `asyncio.run()`을 직접 부르는 테스트가
+실패했다. 로컬 검증은 두 종류를 별도 process로 실행해 이 조합이 드러나지 않았다.
+
+- UI·PDF 테스트 9개 파일은 `tests/browser_pages.py`의 `isolated_page()`로 pytest-playwright
+  `browser` fixture에 테스트별 새 context를 연다. `test_procurement_document_binding.py`는
+  기존 `tests/async_helper.run_async`를 쓴다. assertion은 바꾸지 않았다.
+- 수정 후 CI(run 36652178786)는 실패 없이 84%까지 진행했지만 테스트 단계 25분 한도에서
+  중단됐다. 그 runner는 첫 실행보다 구간별로 약 40% 느렸고, 앞서 error로 끝나던 UI 테스트가
+  실제로 실행됐다. job 40분과 25분 한도는 늘리지 않고, CI 테스트 단계를
+  `pytest tests/ -q --tb=short --ignore=tests/e2e`(25분)와 `pytest tests/e2e -q --tb=short`
+  (10분, 앞 단계 실패 시에도 실행)로 나눴다. `test_ci_playwright_install_has_bounded_timeout_and_python_module_entrypoint`가
+  두 단계의 명령과 한도를 확인한다.
+- 로컬 재현: E2E 1개 뒤 같은 process에서 수정 대상 파일을 실행하면 수정 전 HEAD는
+  5 failed, 6 errors, 수정 후 169 passed, 1 failed(로컬 `pdfplumber` 미설치, CI는 설치)였다.
+
 ### 다운로드와 재생성 경로 분리 (2026-09-28)
 
 결과 화면의 공통 `내보내기`를 현재 탭의 `Markdown` 다운로드로 변경했다.
