@@ -410,6 +410,35 @@ PPTX 보완 검증에서 이번 변경과 무관하게 실패하던 3건을 코�
 | `python3 -m pytest -q -p no:cacheprovider tests/test_infrastructure.py` | **179 passed, 1 failed** / `infra-drifts.xml`; 남은 1건은 기존 800줄 검사(6개 파일, 모듈 분할하지 않음) |
 | `tests/test_procurement_review_store.py tests/test_manage_portfolio_pack.py tests/test_count_readme_metrics.py` | **60 passed, 1 failed** / `review-store-and-docs.xml`; 실패는 portfolio pack에 없는 planned-feature spec 링크(기존) |
 
+### 로컬 세션 작성 경로, 품질 보정 문구 결함, 화면 개선 (2026-10-07)
+
+운영자는 이 저장소를 Claude Code·Codex 세션에서 열고, 그 세션이 문서를 작성하는 로컬 사용을 목표로 정했다. 승인 게이트(`docs/future_feature_gates/agent_authored_local_generation.json`)와 설계·검증 문서(`docs/superpowers/specs/2026-10-07-agent-authored-local-generation-design.md`)를 남기고 다음을 구현했다.
+
+- **세션 작성 경로**
+  - `POST /generate/authoring-brief`는 실제 생성과 같은 프롬프트를 돌려준다. 같은 payload 준비와 문체·지식·조달 문맥을 쓴다.
+  - `POST /generate/authored`는 세션이 쓴 JSON을 기존 안정화·품질 보정·스키마 검증·렌더링·lint·이력·프로젝트 연결로 처리한다. provider 이름은 `agent_authored`로 남기고, cache와 provider는 쓰지 않는다.
+  - 검증 실패는 422 `AUTHORED_BUNDLE_INVALID`와 사유로 돌려주며, 이력과 프로젝트 문서는 쓰지 않는다.
+  - `scripts/decisiondoc_author.py`(bundles·brief·submit)와 `.claude/skills/decisiondoc-authoring/SKILL.md`를 추가했다.
+  - `scripts/run_free_local.py`에 `--agent-api-key`(0600 키 파일)와 `--procurement-multi-opportunity`를 추가했다. 기존 조달 상태가 있는 폴더는 preflight 확인 플래그 없이는 시작하지 않는다.
+- **기존 결함: 품질 보정에 다른 사업 문구가 섞임**
+  - proposal 품질 보정의 대체 문장이 보행 안전 사업 전용("교차로", "교통약자" 등)이었다. 짧은 맥락이나 짧은 첨부 RFP에서는 주제와 관계없이 이 문장이 문서에 들어갔다.
+  - 대체 문장을 주제 중립 문장과 사용자 목표로 바꿨다.
+  - 새 회귀 테스트는 수정 전 코드에서 2건 실패하고 수정 후 통과한다.
+- **화면 개선**
+  - 결과·비교 탭과 슬라이드 맵이 내부 id 대신 렌더링된 문서명을 표시한다.
+  - 거점 카드가 팀원 생성 뒤 다시 읽힌다.
+  - 업무 AI 미배정 사용자에게 "배정된 업무 AI 없음"을 표시한다.
+  - 검토함과 지식 scope의 UUID를 짧게 표시하고, 전체 값은 툴팁에 남긴다.
+  - 결과·비교 화면 Markdown 표에 테두리와 셀 여백을 넣었다.
+  - 지식 모달은 Escape로 닫히고 닫기 버튼에 접근성 이름이 있다.
+  - 조달 예산은 자릿수를 구분해 표시한다.
+- **검증**
+  - 이 Claude Code 세션이 skill 절차대로 합성 RFP로 `proposal_kr`을 직접 작성해 제출했다. 첫 제출에서 통과했다.
+  - 작성 항목 69개가 모두 최종 문서에 남았고, DOCX·PDF(14쪽)·PPTX(11장)·HWPX·XLSX를 생성해 렌더링으로 확인했다.
+  - 격리 환경 최종 전체(E2E 제외)는 5,492 passed, 1 skipped, 1 failed다. 실패 1건은 로컬 `pdfplumber` 미설치다. E2E 전체(별도 process)는 164 passed, 1 skipped다.
+  - E2E 1건(`test_generate_from_documents_modal_flow`)은 탭 이름 기대값을 문서명으로 바꿨다. 의도한 동작 변경이다.
+  - 첫 전체 실행에서 드러난 회귀(조달 요약 테스트가 자르는 구간 밖에 예산 함수가 있어 생긴 8건)는 함수 위치를 옮겨 고쳤다. 위 최종 수치는 고친 뒤 다시 실행한 결과다.
+
 ### Human UAT 사전 점검과 창 배경·문체 문구 보완 (2026-10-07)
 
 Human UAT용 격리 서버(mock provider, free mode, 새 빈 저장소, loopback 외 network 차단)를
@@ -1059,7 +1088,7 @@ python3 scripts/count_readme_metrics.py --field router_files      # → 23 (top-
 python3 scripts/count_readme_metrics.py --field service_files     # → 59 (서비스)
 python3 scripts/count_readme_metrics.py --field storage_files     # → 59 (top-level storage modules)
 python3 scripts/count_readme_metrics.py --field middleware_files  # → 14 (미들웨어)
-python3 scripts/count_readme_metrics.py --field route_decorators  # → 315 (라우트)
+python3 scripts/count_readme_metrics.py --field route_decorators  # → 317 (라우트)
 python3 scripts/count_readme_metrics.py --field test_files        # → 283 (테스트 파일)
 python3 scripts/count_readme_metrics.py --field test_functions    # → 3913 (Python AST test_ 정의; pass 수 아님)
 ```
@@ -1076,7 +1105,7 @@ FastAPI (app/main.py — create_app(), 모듈 레벨 side-effect 없음)
   │     audit context helpers: document_ops_audit / auth_session_retention_audit
   │       / procurement_review_audit
   │
-  ├─ Routers (23 top-level files, 라우트 315):
+  ├─ Routers (23 top-level files, 라우트 317):
   │     generate / approvals / projects / knowledge / report_workflows
   │     auth / sso / admin / audit / billing / dashboard / history
   │     eval / finetune / local_llm / g2b / document_ops_agent

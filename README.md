@@ -93,7 +93,7 @@ FastAPI (app/main.py — create_app(), 모듈 레벨 side-effect 없음)
   │     / rate_limit / audit / auth / tenant / billing / metrics
   │     / document_ops_audit / auth_session_retention_audit
   │     billing은 tenant/auth context가 확정된 뒤 metered request를 검사
-  ├─ Routers (23 top-level files, 라우트 315): generate / approvals / projects / knowledge
+  ├─ Routers (23 top-level files, 라우트 317): generate / approvals / projects / knowledge
   │     / report_workflows / auth / sso / admin / audit / billing / dashboard
   │     / history / eval / finetune / local_llm / g2b / templates / health ...
   ▼
@@ -122,7 +122,7 @@ python3 scripts/count_readme_metrics.py --field middleware_files  # → 14
 python3 scripts/count_readme_metrics.py --field router_files      # → 23
 python3 scripts/count_readme_metrics.py --field service_files     # → 59
 python3 scripts/count_readme_metrics.py --field storage_files     # → 59
-python3 scripts/count_readme_metrics.py --field route_decorators  # → 315
+python3 scripts/count_readme_metrics.py --field route_decorators  # → 317
 ```
 
 **설계 불변식**: Provider·Storage는 ABC + factory(환경변수로만 교체) · 모든 파일 쓰기는 atomic write(tmp + fsync + os.replace) · 라우트 핸들러는 `request.app.state.*`로 의존성 접근 · Request 모델은 `strict=True, extra="forbid"` · mock provider는 결정론적(CI 기준 경로).
@@ -183,6 +183,23 @@ ollama pull llama3.1:8b
 python3 scripts/run_free_local.py --provider local --reload
 ```
 
+**Claude Code·Codex 세션에서 문서 작성.** 이 저장소를 연 세션이 문서 내용을 직접
+쓰고, 서버는 provider 호출 없이 검증·이력 저장·형식별 내보내기만 합니다. 서버는
+에이전트 키를 켜고 실행합니다.
+
+```bash
+python3 scripts/run_free_local.py --agent-api-key
+```
+
+세션은 아래 순서를 따릅니다. 절차와 작성 규칙은
+`.claude/skills/decisiondoc-authoring/SKILL.md`에 있습니다.
+1. `scripts/decisiondoc_author.py brief`로 작성 지침을 받습니다.
+2. 지침대로 `bundle.json`을 작성합니다.
+3. `scripts/decisiondoc_author.py submit`으로 제출합니다.
+
+조달 복수 공고 opt-in은 `--procurement-multi-opportunity`로 켭니다. 기존 조달
+데이터가 있는 폴더에서는 preflight 확인 전에는 시작하지 않습니다.
+
 Local provider는 generation을 담당하고, 지원하지 않는 attachment OCR/vision과
 visual asset generation은 runner가 mock으로 고정합니다. 추후 AWS/cloud provider를
 사용할 때는 production 환경에서 `DECISIONDOC_FREE_MODE=0`을 명시하고 기존
@@ -211,10 +228,10 @@ python3 scripts/count_readme_metrics.py --field env_keys  # → 95
 
 ## API / Usage
 
-FastAPI 라우트는 **315개**입니다.
+FastAPI 라우트는 **317개**입니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field route_decorators  # → 315
+python3 scripts/count_readme_metrics.py --field route_decorators  # → 317
 ```
 
 대표 도메인:
@@ -339,11 +356,11 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **4,255개**, **322개 파일**입니다 (Python AST `test_` definition 기준 카운트이며 pass 수가 아닙니다). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **4,278개**, **326개 파일**입니다 (Python AST `test_` definition 기준 카운트이며 pass 수가 아닙니다). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 4255
-python3 scripts/count_readme_metrics.py --field test_files      # → 322
+python3 scripts/count_readme_metrics.py --field test_functions  # → 4278
+python3 scripts/count_readme_metrics.py --field test_files      # → 326
 ```
 
 > 위 수치는 Python AST로 확인한 `test_` 함수 정의 개수입니다. 각 테스트의 현재 pass 여부는 환경 구성 후 `pytest`로 재확인하세요. 검증되지 않은 커버리지·통과율 수치는 표기하지 않습니다.
@@ -480,4 +497,4 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 315 · 테스트 4,255 · env 키 95 등)는 소스 코드에서 직접 카운트했으며, 테스트 수는 Python AST `test_` 정의 기준이고 pass 수가 아닙니다. 재현은 `python3 scripts/count_readme_metrics.py --field test_functions`를 사용합니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 317 · 테스트 4,278 · env 키 95 등)는 소스 코드에서 직접 카운트했으며, 테스트 수는 Python AST `test_` 정의 기준이고 pass 수가 아닙니다. 재현은 `python3 scripts/count_readme_metrics.py --field test_functions`를 사용합니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
