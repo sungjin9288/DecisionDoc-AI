@@ -30,6 +30,7 @@ python3 scripts/run_free_local.py --agent-api-key
    - 사용자가 원하는 문서 종류에 맞는 번들을 고른다. 확실하지 않으면 묻는다.
 2. **지침 받기**
    - 맥락 자료는 파일로 넘긴다(`--context-file`). 프로젝트에 저장하려면 `--project-id`, 저장된 문체를 쓰려면 `--style-profile-id`를 더한다.
+   - 조달 공고 판단에 묶어 쓰려면 `--project-id`와 함께 `--procurement-decision-id`, `--procurement-revision`(현재 판단 revision)을 준다. revision이 바뀌었으면 409가 나오므로 최신 revision으로 다시 받는다.
 
    ```bash
    python3 scripts/decisiondoc_author.py brief --bundle <id> --title "<제목>" --goal "<목표>" \
@@ -56,7 +57,7 @@ python3 scripts/run_free_local.py --agent-api-key
 
 ## 작성 규칙
 
-- **수치:** 근거 없는 수치, 일정, 금액, 성과를 만들지 않는다. 맥락에 없는 숫자는 "확인 필요"로 적는다.
+- **수치:** 근거 없는 수치, 일정, 금액, 성과를 만들지 않는다. 맥락에 없는 숫자는 "확인 필요"로 적는다. 프롬프트 끝의 "수치 근거" 규칙이 다른 수치 요구보다 우선한다.
   - 짧은 맥락에서 근거 없는 수치를 쓰면 품질 보정 단계가 그 필드를 일반 문장으로 바꿀 수 있다.
 - **문체 예시:** 문체 예시는 prompt 참고 자료이며 모델 학습이 아니다. 예시 문장을 그대로 베끼지 말고 어조만 따른다.
 - **승인 표현:** 검토 완료, 결재, 제출 승인을 문서에서 이미 된 일처럼 쓰지 않는다.

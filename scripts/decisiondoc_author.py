@@ -76,6 +76,10 @@ def _build_request(args: argparse.Namespace) -> dict[str, Any]:
         "style_profile_id": args.style_profile_id,
     }
     request.update({key: value for key, value in optional.items() if value})
+    if args.procurement_decision_id:
+        # Pin generation to one decision revision; the server rejects a stale revision.
+        request["procurement_decision_id"] = args.procurement_decision_id
+        request["expected_procurement_decision_revision"] = args.procurement_revision
     return request
 
 
@@ -189,6 +193,8 @@ def _parser() -> argparse.ArgumentParser:
     brief.add_argument("--audience", default="")
     brief.add_argument("--project-id", default="")
     brief.add_argument("--style-profile-id", default="")
+    brief.add_argument("--procurement-decision-id", default="", help="Bind to this procurement decision.")
+    brief.add_argument("--procurement-revision", type=int, help="Expected decision revision for the binding.")
     brief.add_argument("--out", required=True, help="Work directory for this document.")
 
     send = commands.add_parser("submit", help="Submit bundle.json and download formats.")
@@ -198,7 +204,13 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = _parser().parse_args(argv)
+    parser = _parser()
+    args = parser.parse_args(argv)
+    if args.command == "brief":
+        if bool(args.procurement_decision_id) != (args.procurement_revision is not None):
+            parser.error("--procurement-decision-id and --procurement-revision must be used together")
+        if args.procurement_decision_id and not args.project_id:
+            parser.error("procurement binding requires --project-id")
     if args.command == "bundles":
         print(json.dumps(list_bundles(), ensure_ascii=False, indent=2))
         return 0

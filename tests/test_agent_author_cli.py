@@ -42,6 +42,8 @@ def _request() -> dict:
         audience="",
         project_id="",
         style_profile_id="",
+        procurement_decision_id="",
+        procurement_revision=None,
     )
     return cli._build_request(args)
 
@@ -103,3 +105,20 @@ def test_bundles_lists_registry_doc_keys():
     bundles = {item["id"]: item for item in cli.list_bundles()}
 
     assert bundles["proposal_kr"]["doc_keys"] == list(get_bundle_spec("proposal_kr").doc_keys)
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["--procurement-decision-id", "decision-a"],
+        ["--procurement-revision", "3"],
+        ["--procurement-decision-id", "decision-a", "--procurement-revision", "3"],
+    ],
+    ids=["id-only", "revision-only", "missing-project"],
+)
+def test_brief_rejects_incomplete_procurement_binding(argv, tmp_path):
+    base = ["brief", "--bundle", "bid_decision_kr", "--title", "t", "--goal", "g", "--out", str(tmp_path)]
+
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(base + argv)
+    assert excinfo.value.code == 2
