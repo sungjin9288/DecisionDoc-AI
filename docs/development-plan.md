@@ -410,6 +410,28 @@ PPTX 보완 검증에서 이번 변경과 무관하게 실패하던 3건을 코�
 | `python3 -m pytest -q -p no:cacheprovider tests/test_infrastructure.py` | **179 passed, 1 failed** / `infra-drifts.xml`; 남은 1건은 기존 800줄 검사(6개 파일, 모듈 분할하지 않음) |
 | `tests/test_procurement_review_store.py tests/test_manage_portfolio_pack.py tests/test_count_readme_metrics.py` | **60 passed, 1 failed** / `review-store-and-docs.xml`; 실패는 portfolio pack에 없는 planned-feature spec 링크(기존) |
 
+### Human UAT 사전 점검과 창 배경·문체 문구 보완 (2026-10-07)
+
+Human UAT용 격리 서버(mock provider, free mode, 새 빈 저장소, loopback 외 network 차단)를
+준비했다. 사람 검수 전에 Claude가 별도 빈 저장소의 서버에서 같은 시나리오를 브라우저로
+조작했다. 이 점검은 Human UAT가 아니며 Human UAT는 여전히 미실행이다.
+
+- 통과한 흐름은 다음과 같다.
+  - 편집본 저장·재열기와 형식별 다운로드: `export-edited`만 호출하며, 5개 형식 모두 편집 내용을 포함한다.
+  - 섹션 다시 쓰기의 초안 반영
+  - 문체 예시: 수동 입력, docx·hwpx·txt 가져오기, 생성 요청에 선택 반영, 삭제 후 선택 해제
+  - 지식 문서의 프로젝트 격리와 생성 문맥 포함
+  - 검토 전달 → 비담당자 404 → 담당자 완료 → 같은 hash의 완료 ZIP → CLI `verified`, 변조 사본 거부
+  - 조달 opt-in: 공고별 판단·요구사항 적용성 분리, 이전 판단 revision 생성 거부
+- 화면 결함 두 가지를 고쳤다.
+  - **창 배경:** 반투명 page card token `--surface`를 쓰던 창 패널 때문에 뒤 페이지 글자가 비쳤다. 공유 링크·번들별 설정 창의 `.modal-box`는 배경과 여백이 아예 없었다.
+    - 대상 창: 검토 전달·완료, 거점 창 6개, 프로젝트 생성, 결재, 사용자 메뉴
+    - 이 창들과 `.modal-box`를 불투명 `--surface-solid` 패널로 바꿨다.
+    - `tests/test_modal_surface_ui.py`가 실제 CSS로 렌더링해 패널 불투명도와 여백을 확인한다.
+  - **"학습" 문구:** 시작 가이드·지식 목록·업로드 옵션의 "스타일 학습" 문구를 prompt 참고라는 실제 동작에 맞게 고쳤다. `test_style_ui_copy_describes_prompt_reference_not_model_training`이 다시 들어오는 것을 막는다.
+- 결과 문서 탭의 내부 id 표시 등 개선 관찰은 승인 범위 밖으로 남겼다. 목록은 UAT 기록지
+  `output/uat-20260930/UAT-worksheet.md` 5절에 있다(gitignore 대상).
+
 ### PR CI 실패 원인과 테스트 단계 분리 (2026-09-30)
 
 [sungjin9288/DecisionDoc-AI#74](https://github.com/sungjin9288/DecisionDoc-AI/pull/74)의

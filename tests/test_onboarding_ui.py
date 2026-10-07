@@ -119,7 +119,7 @@ def test_onboarding_actual_css_renders_opaque_and_inside_viewport(
               <div class="onboard-features">
                 <div class="onboard-feature"><span class="onboard-icon">DOC</span><span>용도별 문서 번들</span></div>
                 <div class="onboard-feature"><span class="onboard-icon">G2B</span><span>나라장터 공고 연동</span></div>
-                <div class="onboard-feature"><span class="onboard-icon">STYLE</span><span>맞춤 스타일 학습</span></div>
+                <div class="onboard-feature"><span class="onboard-icon">STYLE</span><span>맞춤 문체 반영</span></div>
               </div>
             </div>
           </div>

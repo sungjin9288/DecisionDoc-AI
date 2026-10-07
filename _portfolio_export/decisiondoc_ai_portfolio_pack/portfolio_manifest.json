@@ -15,7 +15,7 @@
     },
     {
       "path": "README.md",
-      "sha256": "400b79d38dcab039df104d4e31f3191d5c6c97ac48d76c5a0201b76959e9008e",
+      "sha256": "d56333f26d3b38297414552f69e219d3f8240b4d74463549b14f120b4a6e2432",
       "size_bytes": 93799
     },
     {
@@ -40,8 +40,8 @@
     },
     {
       "path": "docs/development-plan.md",
-      "sha256": "1103f09d2cf1e754ebd98ec06996918ba7a036c58c5e9e3ee8cc01520664070b",
-      "size_bytes": 128103
+      "sha256": "41c722ab60015fd9f1cd3814329a940ff85a08e487e4137a6944d9724d0535d1",
+      "size_bytes": 130173
     },
     {
       "path": "docs/evidence-checklist.md",
