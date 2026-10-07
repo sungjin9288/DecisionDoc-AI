@@ -468,19 +468,19 @@ def test_proposal_quality_guard_rewrites_sparse_attachment_hallucinations():
     impact = guarded["expected_impact"]
 
     assert business["current_issues"] == [
-        "교차로 안전 강화 요구에 비해 현장 대응 체계가 분산되어 있음",
-        "장애인 보호 관점의 운영 기준과 현장 실행 절차가 일관되지 않음",
-        "안전 관련 현황을 통합적으로 확인하고 점검할 수 있는 운영 체계가 부족함",
+        "첨부 원문의 핵심 요구사항에 비해 현행 업무 체계가 분산되어 있음",
+        "요구사항별 운영 기준과 현장 실행 절차가 일관되지 않음",
+        "현황을 통합적으로 확인하고 점검할 수 있는 운영 체계가 부족함",
     ]
     assert tech["tech_stack"][0].startswith("데이터 수집·연계 |")
     assert tech["technical_summary"]
     assert "AWS Lambda" not in tech["technical_summary"]
     assert "초안을 작성한다." not in tech["ai_approach"]
-    assert tech["ai_approach"].startswith("AI 기능은 현장 위험 징후를 분석하고 대응 우선순위를 정리해")
+    assert tech["ai_approach"].startswith("AI 기능은 운영 데이터를 분석하고 대응 우선순위를 정리해")
     assert execution["milestones"][0].startswith("착수 및 요구사항 정리 |")
     assert impact["roi_estimate"] == "투자 대비 효과는 시범 운영 이후 실제 운영 데이터와 검수 결과를 바탕으로 산정합니다."
     assert "180%" not in impact["impact_summary"]
-    assert impact["monitoring_plan"][0].startswith("안전 관련 운영 로그 |")
+    assert impact["monitoring_plan"][0].startswith("사업 목표 관련 운영 로그 |")
     assert business["total_slides"] == 2
     assert tech["total_slides"] == 2
     assert execution["total_slides"] == 2
@@ -532,15 +532,42 @@ def test_proposal_quality_guard_rewrites_sparse_non_attachment_hallucinations():
 
     assert "20%" not in business["executive_summary"]
     assert "2027" not in business["project_background"]
-    assert business["project_objectives"][0] == "현장 위험 징후를 조기에 식별하고 대응 기준을 정리한다."
+    assert business["project_objectives"][0] == "현황 문제를 조기에 식별하고 대응 기준을 정리한다."
     assert "2027" not in execution["delivery_summary"]
     assert execution["milestones"][0].startswith("착수 및 요구사항 정리 |")
     assert "180%" not in impact["impact_summary"]
     assert impact["roi_estimate"] == "투자 대비 효과는 시범 운영 이후 실제 운영 데이터와 검수 결과를 바탕으로 산정합니다."
-    assert impact["monitoring_plan"][0].startswith("안전 관련 운영 로그 |")
+    assert impact["monitoring_plan"][0].startswith("사업 목표 관련 운영 로그 |")
     assert business["total_slides"] == 2
     assert execution["total_slides"] == 2
     assert impact["total_slides"] == 2
+
+
+@pytest.mark.parametrize(
+    "context_text",
+    [
+        "결재 문서 보관 체계를 정비한다.",
+        "=== RFP 원문 (참고용) ===\n[첨부파일: rfp.txt]\n결재 문서를 자동 보관하고 통합 검색을 제공한다.\n=== RFP 원문 끝 ===",
+    ],
+    ids=["sparse-context", "sparse-attachment"],
+)
+def test_proposal_quality_guard_fallback_stays_on_requested_subject(context_text):
+    goal = "결재 완료 문서를 자동 보관하고 검색 시간을 줄인다"
+    guarded = _apply_finished_doc_quality_guard(
+        deepcopy(_proposal_bundle_with_hallucinated_attachment_fields()),
+        bundle_type="proposal_kr",
+        title="문서관리시스템 고도화 제안",
+        goal=goal,
+        context_text=context_text,
+    )
+
+    text = json.dumps(guarded, ensure_ascii=False)
+    # Fallback text must not import another project's domain into this proposal.
+    for foreign in ("교차로", "교통약자", "장애인", "보행", "스쿨존", "위험 징후"):
+        assert foreign not in text
+    assert "문서관리시스템 고도화" in guarded["business_understanding"]["executive_summary"]
+    if "RFP 원문" not in context_text:
+        assert goal in guarded["business_understanding"]["project_background"]
 
 
 def test_proposal_quality_guard_keeps_dense_non_attachment_fields():

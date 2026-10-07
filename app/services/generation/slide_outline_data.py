@@ -18,13 +18,13 @@ def _attachment_grounded_slide_outline(title: str, *, section: str) -> list[dict
                 "page": 1,
                 "title": "사업 배경과 문제 정의",
                 "key_content": (
-                    f"{title} 제안은 교차로 안전 강화와 장애인 보호라는 핵심 요구를 먼저 정리하고, "
+                    f"{title} 제안은 첨부 원문에 명시된 핵심 요구를 먼저 정리하고, "
                     "현행 운영에서 어떤 문제가 반복되는지 평가위원이 바로 이해할 수 있게 설명합니다."
                 ),
                 "core_message": "첨부에서 확인된 요구사항을 기준으로 사업 필요성을 정리합니다.",
                 "evidence_points": [
-                    "첨부 원문에 교차로 안전 강화 요구가 명시됨",
-                    "첨부 원문에 장애인 보호 강화 요구가 명시됨",
+                    "첨부 원문에 핵심 요구사항이 명시됨",
+                    "요구사항별 현행 운영의 한계가 확인됨",
                 ],
                 "visual_type": "비교표",
                 "visual_brief": "현행 문제와 개선 방향을 좌우 비교표로 정리",
@@ -55,7 +55,7 @@ def _attachment_grounded_slide_outline(title: str, *, section: str) -> list[dict
                 "page": 1,
                 "title": "기술 접근 방향",
                 "key_content": (
-                    "특정 제품명을 앞세우기보다 데이터 수집, 위험 징후 분석, 운영 화면 제공 등 "
+                    "특정 제품명을 앞세우기보다 데이터 수집, 현황 분석, 운영 화면 제공 등 "
                     "실제 구현이 필요한 기능 단위로 기술 구성을 설명합니다."
                 ),
                 "core_message": "기술명보다 구현 기능과 운영 목적을 먼저 설명합니다.",
@@ -128,13 +128,13 @@ def _attachment_grounded_slide_outline(title: str, *, section: str) -> list[dict
             "page": 1,
             "title": "기대 효과 개요",
             "key_content": (
-                "정량 수치를 임의로 제시하기보다 교차로 안전성 개선, 교통약자 보호 강화, "
+                "정량 수치를 임의로 제시하기보다 요구사항 이행 수준 개선, 운영 기준 정착, "
                 "운영 신뢰도 향상 같은 효과 범주를 명확히 설명합니다."
             ),
             "core_message": "근거가 확인된 효과 범주 중심으로 기대효과를 설명합니다.",
             "evidence_points": [
-                "교차로 안전 강화 요구와 직접 연결된 효과",
-                "장애인 보호 강화 요구와 직접 연결된 효과",
+                "첨부 원문 핵심 요구사항과 직접 연결된 효과",
+                "현장 운영 기준 정착과 연결된 효과",
             ],
             "visual_type": "비교표",
             "visual_brief": "현행 문제와 기대 효과 범주를 비교하는 표",
@@ -168,13 +168,13 @@ def _sparse_proposal_slide_outline(title: str, *, section: str) -> list[dict[str
                 "page": 1,
                 "title": "사업 배경과 현안",
                 "key_content": (
-                    f"{title} 제안은 교차로 안전과 교통약자 보호가 왜 중요한지, "
+                    f"{title} 제안은 사업 목표가 왜 중요한지, "
                     "현장 운영 기준과 대응 체계가 왜 다시 정리되어야 하는지 설명합니다."
                 ),
                 "core_message": "문제 정의와 사업 필요성을 운영 관점에서 먼저 정리합니다.",
                 "evidence_points": [
-                    "현장 위험 징후를 더 빠르게 파악할 필요가 있음",
-                    "교통약자 보호 기준을 일관되게 운영해야 함",
+                    "현황 문제를 더 빠르게 파악할 필요가 있음",
+                    "업무 기준을 일관되게 운영해야 함",
                 ],
                 "visual_type": "비교표",
                 "visual_brief": "현행 한계와 개선 방향을 나란히 보여주는 비교표",
@@ -205,7 +205,7 @@ def _sparse_proposal_slide_outline(title: str, *, section: str) -> list[dict[str
                 "page": 1,
                 "title": "기술 구성 방향",
                 "key_content": (
-                    "데이터 수집, 위험 징후 분석, 운영 화면 제공처럼 실제 구현이 필요한 기능을 기준으로 "
+                    "데이터 수집, 현황 분석, 운영 화면 제공처럼 실제 구현이 필요한 기능을 기준으로 "
                     "기술 구성을 설명합니다."
                 ),
                 "core_message": "제품명보다 기능 흐름과 운영 목적을 먼저 설명합니다.",
@@ -276,7 +276,7 @@ def _sparse_proposal_slide_outline(title: str, *, section: str) -> list[dict[str
             "page": 1,
             "title": "기대 효과 개요",
             "key_content": (
-                "정량 수치를 임의로 약속하기보다 교차로 안전성 개선, 교통약자 보호 강화, 운영 신뢰도 향상 같은 효과 범주를 정리합니다."
+                "정량 수치를 임의로 약속하기보다 사업 목표 달성, 업무 기준 정착, 운영 신뢰도 향상 같은 효과 범주를 정리합니다."
             ),
             "core_message": "근거가 확인된 효과 범주와 점검 방법 중심으로 기대효과를 설명합니다.",
             "evidence_points": [
