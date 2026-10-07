@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import secrets
 import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -121,6 +122,31 @@ def build_free_environment(
     return env
 
 
+AGENT_API_KEY_FILENAME = ".agent-api-key"
+_PROCUREMENT_FACTORY = "app.main:create_procurement_multi_opportunity_app"
+
+
+def ensure_agent_api_key(data_dir: Path) -> Path:
+    """Create (0600) or reuse the local key that scripts/decisiondoc_author.py sends."""
+    key_path = data_dir.expanduser().resolve() / AGENT_API_KEY_FILENAME
+    if key_path.is_file() and key_path.read_text(encoding="utf-8").strip():
+        return key_path
+    key_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = key_path.with_name(f"{key_path.name}.tmp")
+    fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(secrets.token_urlsafe(32))
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(tmp_path, key_path)
+    return key_path
+
+
+def existing_procurement_state(data_dir: Path) -> list[Path]:
+    root = data_dir.expanduser().resolve() / "tenants"
+    return sorted(root.glob("*/procurement_decisions.json")) if root.is_dir() else []
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run DecisionDoc in fail-closed no-cost local mode."
@@ -135,6 +161,21 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print the non-secret enforced environment and exit.",
     )
+    parser.add_argument(
+        "--agent-api-key",
+        action="store_true",
+        help="Create or reuse <data-dir>/.agent-api-key for scripts/decisiondoc_author.py.",
+    )
+    parser.add_argument(
+        "--procurement-multi-opportunity",
+        action="store_true",
+        help="Opt in to the multi-opportunity procurement flow for this data dir.",
+    )
+    parser.add_argument(
+        "--procurement-existing-data-checked",
+        action="store_true",
+        help="Allow the opt-in on a data dir whose procurement state passed preflight.",
+    )
     return parser
 
 
@@ -148,16 +189,32 @@ def main(argv: Sequence[str] | None = None) -> int:
         provider=args.provider,
         data_dir=args.data_dir,
     )
+    app_target = ["app.main:app"]
+    if args.procurement_multi_opportunity:
+        existing = existing_procurement_state(args.data_dir)
+        if existing and not args.procurement_existing_data_checked:
+            raise SystemExit(
+                "Existing procurement state found:\n  "
+                + "\n  ".join(str(path) for path in existing)
+                + "\nRun scripts/procurement_transition_preflight.py on a copy first, "
+                "then add --procurement-existing-data-checked, or use a new --data-dir."
+            )
+        env["DECISIONDOC_PROCUREMENT_COPILOT_ENABLED"] = "1"
+        app_target = ["--factory", _PROCUREMENT_FACTORY]
     if args.print_env:
         for name in _PRINTED_ENV_NAMES:
             print(f"{name}={env[name]}")
         return 0
+    if args.agent_api_key:
+        key_path = ensure_agent_api_key(args.data_dir)
+        env["DECISIONDOC_API_KEYS"] = key_path.read_text(encoding="utf-8").strip()
+        print(f"Agent API key file: {key_path}", flush=True)
 
     command = [
         sys.executable,
         "-m",
         "uvicorn",
-        "app.main:app",
+        *app_target,
         "--host",
         args.host,
         "--port",
@@ -167,7 +224,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         command.append("--reload")
     print(
         f"Starting DecisionDoc free local mode at http://{args.host}:{args.port} "
-        f"(provider={args.provider}, storage=local)",
+        f"(provider={args.provider}, storage=local, "
+        f"procurement_multi_opportunity={args.procurement_multi_opportunity})",
         flush=True,
     )
     os.execvpe(command[0], command, env)

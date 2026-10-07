@@ -43,6 +43,11 @@ command listed in that record is not pass evidence without its execution result.
 - [Generated document reviewed-package verifier](./generated_document_reviewed_package_verifier.json):
   `approved`; admitted for the standalone read-only CLI, regression tests and
   coupled local documentation only. External effects remain excluded.
+- [Agent-authored local generation](./agent_authored_local_generation.json):
+  `approved`; a local Claude Code or Codex session writes the bundle and the
+  server validates, stores and exports it without any provider call. Design
+  and verification: the
+  [2026-10-07 spec](../superpowers/specs/2026-10-07-agent-authored-local-generation-design.md).
 
 Do not overwrite a prior terminal decision. Create a new record when the
 problem, acceptance criteria, or authority scope changes.

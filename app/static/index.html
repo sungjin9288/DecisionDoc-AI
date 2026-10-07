@@ -546,7 +546,7 @@
     .btn-danger { background:rgba(239,68,68,.1); color:#ef4444; border:1px solid rgba(239,68,68,.3); border-radius:6px; padding:7px 14px; cursor:pointer; font-weight:600; font-size:.85rem; }
     .btn-danger:hover { background:rgba(239,68,68,.18); }
     .approval-modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:1000; display:flex; align-items:center; justify-content:center; }
-    .approval-modal-box { background:var(--surface,#fff); border-radius:12px; padding:24px; width:100%; max-width:420px; box-shadow:0 8px 32px rgba(0,0,0,.2); }
+    .approval-modal-box { background:var(--surface-solid,#fff); border-radius:12px; padding:24px; width:100%; max-width:420px; box-shadow:0 8px 32px rgba(0,0,0,.2); }
     .approval-modal-box h4 { margin:0 0 16px; font-size:1.05rem; }
     .approval-modal-alert {
       margin: 0 0 14px;
@@ -2418,7 +2418,7 @@
       overflow: auto;
       border: 1px solid var(--border, #e5e7eb);
       border-radius: 8px;
-      background: var(--surface, #fff);
+      background: var(--surface-solid, #fff);
       box-shadow: 0 20px 45px rgba(15, 23, 42, 0.2);
       padding: 20px;
     }
@@ -4799,9 +4799,31 @@
     .tpl-btn:hover { border-color: var(--p1); color: var(--p1); }
 
     /* ── Generic modal helpers ──────────────────────────────── */
+    /* Markdown tables rendered in the document and compare panes. */
+    .doc-pane-content table, #compare-left-pane table, #compare-right-pane table {
+      border-collapse: collapse; width: 100%; margin: .75rem 0; font-size: .9rem;
+    }
+    .doc-pane-content th, .doc-pane-content td,
+    #compare-left-pane th, #compare-left-pane td, #compare-right-pane th, #compare-right-pane td {
+      border: 1px solid var(--border); padding: 6px 10px; text-align: left; vertical-align: top;
+      word-break: keep-all; overflow-wrap: anywhere;
+    }
+    .doc-pane-content th, #compare-left-pane th, #compare-right-pane th { background: var(--p-light); font-weight: 600; }
     .modal-overlay {
       position: fixed; inset: 0; background: rgba(0,0,0,.5);
       z-index: 2000; display: flex; align-items: center; justify-content: center;
+    }
+    /* Dialog panels stay opaque; the translucent --surface is for page cards. */
+    .modal-box {
+      width: min(480px, calc(100% - 2rem));
+      max-height: calc(100dvh - 2rem);
+      overflow-y: auto;
+      padding: 1.25rem;
+      background: var(--surface-solid);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.2);
     }
     .style-create-modal { z-index: 5000; }
     .style-create-modal .modal-box {
@@ -5026,7 +5048,7 @@
     #user-display-name { color: #fff; font-size: .85rem; font-weight: 600; }
     .user-menu {
       position: absolute; top: 100%; left: 0; z-index: 1001;
-      background: var(--surface, #fff);
+      background: var(--surface-solid, #fff);
       border: 1px solid var(--border, #e2e8f0); border-radius: 8px;
       padding: 4px; min-width: 130px;
       box-shadow: 0 4px 16px rgba(0,0,0,0.14);
@@ -6922,7 +6944,7 @@
     <div style="display:flex; gap:.5rem; align-items:center; justify-content:center; margin-top:.75rem; flex-wrap:wrap;">
       <label style="font-size:.82rem; color:var(--muted);">
         <input id="knowledge-analyze-style" type="checkbox" style="margin-right:.3rem;">
-        스타일 분석 포함 (AI가 문체·어투를 학습)
+        스타일 분석 포함 (AI가 문체·어투를 분석해 생성에 참고, 모델 학습 아님)
       </label>
     </div>
   </div>
@@ -6960,7 +6982,7 @@
            z-index:9000; align-items:center; justify-content:center;">
     <div style="background:var(--surface-solid); border-radius:var(--radius-md); padding:1.5rem;
                 max-width:680px; width:90%; max-height:80vh; overflow-y:auto; position:relative;">
-      <button type="button" data-close-modal="knowledge-context-modal"
+      <button type="button" data-close-modal="knowledge-context-modal" aria-label="닫기"
         style="position:absolute; top:.75rem; right:.75rem; background:none; border:none;
                cursor:pointer; font-size:1.2rem; color:var(--muted);">✕</button>
       <h3 style="margin:0 0 1rem; font-size:1rem; font-weight:800;">👁 생성 프롬프트 컨텍스트 미리보기</h3>
@@ -6998,7 +7020,7 @@
            z-index:9000; align-items:center; justify-content:center;">
     <div style="background:var(--surface-solid); border-radius:var(--radius-md); padding:1.5rem;
                 max-width:920px; width:94%; max-height:84vh; overflow-y:auto; position:relative;">
-      <button type="button" data-close-modal="knowledge-temporal-graph-modal"
+      <button type="button" data-close-modal="knowledge-temporal-graph-modal" aria-label="닫기"
         style="position:absolute; top:.75rem; right:.75rem; background:none; border:none;
                cursor:pointer; font-size:1.2rem; color:var(--muted);">✕</button>
       <h3 style="margin:0 0 1rem; font-size:1rem; font-weight:800;">🕸 Knowledge 관계 그래프</h3>
@@ -7509,7 +7531,7 @@
 
   <!-- Create location modal -->
   <div id="create-location-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:1200; align-items:center; justify-content:center;">
-    <div style="background:var(--surface,#fff); border-radius:12px; padding:1.5rem; width:100%; max-width:420px; box-shadow:0 8px 32px rgba(0,0,0,.2);">
+    <div style="background:var(--surface-solid,#fff); border-radius:12px; padding:1.5rem; width:100%; max-width:420px; box-shadow:0 8px 32px rgba(0,0,0,.2);">
       <h4 style="margin:0 0 1rem; font-size:1.05rem;">새 거점 추가</h4>
       <form id="create-location-form">
         <div style="display:flex; flex-direction:column; gap:.5rem; margin-bottom:.75rem;">
@@ -7530,7 +7552,7 @@
 
   <!-- API key modal -->
   <div id="location-key-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:1200; align-items:center; justify-content:center;">
-    <div style="background:var(--surface,#fff); border-radius:12px; padding:1.5rem; width:100%; max-width:460px; box-shadow:0 8px 32px rgba(0,0,0,.2);">
+    <div style="background:var(--surface-solid,#fff); border-radius:12px; padding:1.5rem; width:100%; max-width:460px; box-shadow:0 8px 32px rgba(0,0,0,.2);">
       <h4 style="margin:0 0 1rem; font-size:1.05rem;">🔑 API 키 관리</h4>
       <div id="location-key-modal-body">
         <p style="color:var(--muted); font-size:.9rem;">불러오는 중…</p>
@@ -7543,7 +7565,7 @@
 
   <!-- Users panel modal -->
   <div id="location-users-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:1200; align-items:center; justify-content:center;">
-    <div style="background:var(--surface,#fff); border-radius:12px; padding:1.5rem; width:100%; max-width:500px; max-height:80vh; overflow-y:auto; box-shadow:0 8px 32px rgba(0,0,0,.2);">
+    <div style="background:var(--surface-solid,#fff); border-radius:12px; padding:1.5rem; width:100%; max-width:500px; max-height:80vh; overflow-y:auto; box-shadow:0 8px 32px rgba(0,0,0,.2);">
       <h4 style="margin:0 0 1rem; font-size:1.05rem;">👥 팀원 관리</h4>
       <div id="location-users-panel-body">
         <p style="color:var(--muted); font-size:.9rem;">불러오는 중…</p>
@@ -7556,7 +7578,7 @@
 
   <!-- Direct user creation modal -->
   <div id="location-user-create-modal" data-location-backdrop-action="close-create-user" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:1250; align-items:center; justify-content:center; padding:1rem;">
-    <div style="background:var(--surface,#fff); border-radius:12px; padding:1.5rem; width:100%; max-width:620px; max-height:84vh; overflow-y:auto; box-shadow:0 8px 32px rgba(0,0,0,.2);">
+    <div style="background:var(--surface-solid,#fff); border-radius:12px; padding:1.5rem; width:100%; max-width:620px; max-height:84vh; overflow-y:auto; box-shadow:0 8px 32px rgba(0,0,0,.2);">
       <div style="display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; margin-bottom:1rem;">
         <div>
           <h4 style="margin:0; font-size:1.05rem;">➕ 계정 직접 생성</h4>
@@ -7616,7 +7638,7 @@
 
   <!-- Location user edit modal -->
   <div id="location-user-edit-modal" data-location-backdrop-action="close-edit-user" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:1260; align-items:center; justify-content:center; padding:1rem;">
-    <div style="background:var(--surface,#fff); border-radius:12px; padding:1.5rem; width:100%; max-width:620px; max-height:84vh; overflow-y:auto; box-shadow:0 8px 32px rgba(0,0,0,.2);">
+    <div style="background:var(--surface-solid,#fff); border-radius:12px; padding:1.5rem; width:100%; max-width:620px; max-height:84vh; overflow-y:auto; box-shadow:0 8px 32px rgba(0,0,0,.2);">
       <div style="display:flex; justify-content:space-between; gap:1rem; align-items:flex-start; margin-bottom:1rem;">
         <div>
           <h4 style="margin:0; font-size:1.05rem;">권한/배정 수정</h4>
@@ -7680,7 +7702,7 @@
 
   <!-- Procurement quality summary modal -->
   <div id="location-procurement-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:1200; align-items:center; justify-content:center;">
-    <div style="background:var(--surface,#fff); border-radius:12px; padding:1.5rem; width:100%; max-width:760px; max-height:82vh; overflow-y:auto; box-shadow:0 8px 32px rgba(0,0,0,.2);">
+    <div style="background:var(--surface-solid,#fff); border-radius:12px; padding:1.5rem; width:100%; max-width:760px; max-height:82vh; overflow-y:auto; box-shadow:0 8px 32px rgba(0,0,0,.2);">
       <h4 style="margin:0 0 1rem; font-size:1.05rem;">🛡 조달 품질 요약</h4>
       <div id="location-procurement-modal-body">
         <p style="color:var(--muted); font-size:.9rem;">불러오는 중…</p>
@@ -14102,7 +14124,7 @@
             </div>
             <div style="font-size:.75rem;color:var(--muted);margin-top:.1rem;">
               ${Math.round((doc.text_len||0)/1000*10)/10}K자
-              ${doc.has_style ? ' · <span style="color:#22c55e;font-weight:600;">스타일 학습됨</span>' : ''}
+              ${doc.has_style ? ' · <span style="color:#22c55e;font-weight:600;">문체 분석됨</span>' : ''}
               · ${_knowledgeFormatDate(doc.created_at)}
             </div>
             ${(doc.source_organization || doc.reference_year || (doc.tags && doc.tags.length))
@@ -14229,7 +14251,7 @@
   function _formatKnowledgeScope(scope, options = {}) {
     const s = (scope && typeof scope === 'object') ? scope : {};
     const bits = [];
-    if (s.project_id) bits.push(`project ${s.project_id}`);
+    if (s.project_id) bits.push(`project ${_shortId(s.project_id)}`);
     if (s.organization) bits.push(`org ${s.organization}`);
     if (s.report_workflow_id) bits.push(`workflow ${s.report_workflow_id}`);
     const bundles = Array.isArray(s.bundle_types) ? s.bundle_types.filter(Boolean) : [];
@@ -14238,6 +14260,11 @@
     if (bundles.length) bits.push(`bundles ${bundles.slice(0, limit).join(', ')}`);
     if (topics.length) bits.push(`topics ${topics.slice(0, limit).join(', ')}`);
     return bits.join(' · ');
+  }
+
+  function _shortId(value) {
+    const text = String(value || '');
+    return text.length > 12 ? `${text.slice(0, 8)}…` : text;
   }
 
   function _renderKnowledgeScopeLine(scope) {
@@ -16439,7 +16466,7 @@
       const data = await res.json();
       renderBundleGrid(data);
       const countBadge = $id('bundle-count-badge');
-      if (countBadge) countBadge.textContent = `🗂️ ${data.length}가지 번들`;
+      if (countBadge) countBadge.textContent = data.length ? `🗂️ ${data.length}가지 번들` : '🗂️ 배정된 업무 AI 없음';
     } catch {
       $id('bundle-grid').innerHTML =
         '<div style="color:var(--color-error,#dc2626);font-size:.9rem">번들 목록을 불러오지 못했습니다. 서버를 확인하세요.</div>';
@@ -17408,6 +17435,8 @@
   }
 
   function _getStoryboardDocLabel(docType) {
+    const doc = (typeof generatedDocs !== 'undefined' ? generatedDocs : []).find(item => item?.doc_type === docType);
+    if (doc) return _docTabLabel(doc);
     return String(docType || '')
       .replace(/_/g, ' ')
       .replace(/\b\w/g, ch => ch.toUpperCase());
@@ -18131,6 +18160,13 @@
   }
 
   /* ── Render results ────────────────────────────────────────────── */
+  // Tab label from the rendered first heading; templates use "문서명" or "문서명: 제목".
+  function _docTabLabel(doc) {
+    const heading = String(doc?.markdown || '').match(/^#\s+(.+)$/m)?.[1] || '';
+    const label = heading.split(/[:：]/)[0].trim();
+    return label && label.length <= 24 ? label : String(doc?.doc_type || '문서').replace(/_/g, ' ');
+  }
+
   function renderResults() {
     const tabBar = $id('tab-bar');
     tabBar.innerHTML = '';
@@ -18138,7 +18174,7 @@
     generatedDocs.forEach((doc, i) => {
       const btn = document.createElement('button');
       btn.className = 'tab-btn' + (i === 0 ? ' active' : '');
-      btn.textContent = doc.doc_type.replace(/_/g, ' ');
+      btn.textContent = _docTabLabel(doc);
       btn.addEventListener('click', () => {
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
@@ -19313,7 +19349,7 @@
       const tb = document.createElement('button');
       tb.className = 'tab-btn' + (i === 0 ? ' active' : '');
       tb.style.fontSize = '.72rem';
-      tb.textContent = doc.doc_type.replace(/_/g, ' ');
+      tb.textContent = _docTabLabel(doc);
       tb.addEventListener('click', () => {
         tabsEl.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         tb.classList.add('active');
@@ -21817,7 +21853,7 @@
             </div>
             <div class="onboard-feature">
               <span class="onboard-icon">✍️</span>
-              <span>맞춤 스타일 학습</span>
+              <span>맞춤 문체 반영</span>
             </div>
           </div>
         `,
@@ -23180,7 +23216,7 @@
     modal.className = 'modal-overlay project-modal-overlay';
     modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;';
     modal.innerHTML = `
-      <div style="background:var(--surface,#fff);border-radius:12px;padding:24px;width:min(460px,90vw);max-height:90vh;overflow:auto;">
+      <div style="background:var(--surface-solid,#fff);border-radius:12px;padding:24px;width:min(460px,90vw);max-height:90vh;overflow:auto;">
         <h4 style="margin:0 0 16px;font-size:1.1rem;font-weight:700;">📁 새 프로젝트 생성</h4>
         <input id="proj-name" placeholder="프로젝트명 *" class="gov-input" style="width:100%;margin-bottom:10px;box-sizing:border-box;">
         <input id="proj-client" placeholder="발주처/고객사" class="gov-input" style="width:100%;margin-bottom:10px;box-sizing:border-box;">
@@ -23560,7 +23596,7 @@
       const formatCount = Array.isArray(review?.formats) ? review.formats.length : Number(review?.artifact_count || 0);
       const projectLabel = surface === 'project'
         ? String(_currentProjectDetail?.project?.name || projectId)
-        : projectId;
+        : `프로젝트 ${_shortId(projectId)}`;
       const canComplete = (
         review?.assigned_to_current_user === true
         && reviewStatus === 'pending' && sourceStatus === 'current'
@@ -23570,7 +23606,7 @@
           <div class="generated-document-review-primary">
             <span class="generated-document-review-status ${reviewStatus === 'completed' ? 'completed' : ''}">${reviewStatus === 'completed' ? '검토 완료' : '검토 대기'}</span>
             <strong>${escapeHtml(String(review?.title || '프로젝트 문서'))}</strong>
-            <span>${escapeHtml(projectLabel)} · document ${escapeHtml(documentId)}</span>
+            <span title="project ${escapeHtml(projectId)} · document ${escapeHtml(documentId)}">${escapeHtml(projectLabel)} · 문서 ${escapeHtml(_shortId(documentId))}</span>
           </div>
           <div class="generated-document-review-meta">
             <span>reviewer ${escapeHtml(String(review?.reviewer?.username || ''))} · creator ${escapeHtml(String(review?.creator?.username || ''))}</span>
@@ -26221,7 +26257,7 @@
         </div>
         <div class="procurement-summary-card">
           <div class="procurement-summary-label">예산</div>
-          <div class="procurement-summary-value">${escapeHtml(opportunity.budget || '—')}</div>
+          <div class="procurement-summary-value">${escapeHtml(formatProcurementBudget(opportunity.budget))}</div>
         </div>
         <div class="procurement-summary-card">
           <div class="procurement-summary-label">마감일</div>
@@ -26252,6 +26288,13 @@
         <li><strong>우선 조치:</strong> ${escapeHtml(priorityText)}</li>
         <li><strong>최근 override 사유:</strong> ${escapeHtml(latestOverride ? `${latestOverride.reason} (${latestOverride.actor || 'unknown'}, ${formatProcurementActivityTime(latestOverride.timestamp, '최근 저장')})` : '아직 기록 없음')}</li>
       </ul>`;
+  }
+
+  function formatProcurementBudget(value) {
+    const text = String(value ?? '').trim();
+    if (!text) return '—';
+    // G2B sends plain won amounts; keep any other wording (e.g. "1억 원") as is.
+    return /^\d[\d,]*$/.test(text) ? `${Number(text.replace(/,/g, '')).toLocaleString('ko-KR')}원` : text;
   }
 
   function renderProcurementDecisionCouncilPanel(project, decision, docs, councilSession) {
@@ -35957,6 +36000,7 @@
       showNotification(`계정 ${username} 이(가) 생성되었습니다.`, 'success');
       closeLocationCreateUserModal();
       await openLocationUsersPanel(tenantId);
+      void loadLocations();
     } catch (e) {
       if (status) {
         status.style.color = '#dc2626';
@@ -36809,6 +36853,14 @@ function showBundleRecommendation(bundleIds) {
       const sketchPanel = $id('sketch-panel');
       if (sketchPanel && sketchPanel.style.display !== 'none') {
         sketchPanel.style.display = 'none';
+        return;
+      }
+      // data-close-modal 버튼이 있는 지식 모달 닫기
+      const closableModal = [...document.querySelectorAll('[data-close-modal]')]
+        .map(btn => $id(btn.dataset.closeModal || ''))
+        .find(modal => modal && modal.style.display !== 'none');
+      if (closableModal) {
+        closableModal.style.display = 'none';
         return;
       }
       // 비교 모달 닫기

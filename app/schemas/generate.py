@@ -133,6 +133,27 @@ class GenerateResponse(BaseModel):
     docs: list[GeneratedDoc]
 
 
+class AuthoredGenerateRequest(BaseModel):
+    """A bundle that a local agent session wrote from the authoring brief."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    request: GenerateRequest
+    bundle: dict[str, Any]
+
+
+class AuthoredGenerateResponse(GenerateResponse):
+    project_document_id: str | None = None
+
+
+class AuthoringBriefResponse(BaseModel):
+    bundle_type: str
+    schema_version: str
+    doc_keys: list[str]
+    json_schema: dict[str, Any]
+    prompt: str
+
+
 class ExportedFile(BaseModel):
     doc_type: str  # str (not DocType enum) — supports all bundle types
     path: str

@@ -50,6 +50,14 @@
 
 ---
 
+## 로컬 문서 작성 (Claude Code·Codex 세션)
+
+사용자가 이 저장소에서 문서를 만들어 달라고 하면, 세션이 내용을 직접 쓰고 DecisionDoc 기능으로 검증·저장·내보내기를 한다. 절차는 `.claude/skills/decisiondoc-authoring/SKILL.md`를 따른다.
+
+- **도구:** `scripts/decisiondoc_author.py`의 `brief`·`submit`. 서버 경로는 `/generate/authoring-brief`·`/generate/authored`이며 provider를 호출하지 않는다.
+- **서버 실행:** `python3 scripts/run_free_local.py --agent-api-key` (조달 복수 공고는 `--procurement-multi-opportunity`)
+- **호출 금지:** 이 경로에서는 서버의 `/generate`·`/generate/stream`을 호출하지 않는다.
+
 ## Tech Stack
 
 | 구분 | 기술 | 비고 |

@@ -899,3 +899,14 @@ def test_recent_valid_style_examples_reach_bundle_prompt(tmp_path, monkeypatch):
         assert prompt.index("통합 B 문장입니다.") < prompt.index("통합 C 문장입니다.")
     finally:
         _current_tenant_id.value = None
+
+
+def test_style_ui_copy_describes_prompt_reference_not_model_training():
+    html = Path("app/static/index.html").read_text(encoding="utf-8")
+
+    # Style examples and analysis feed the prompt; no model weights are trained.
+    for phrase in ("맞춤 스타일 학습", "스타일 학습됨", "문체·어투를 학습"):
+        assert phrase not in html
+    assert "맞춤 문체 반영" in html
+    assert "문체 분석됨" in html
+    assert "모델 학습 아님" in html

@@ -37,7 +37,9 @@ tmp/
 
 # Local agent / assistant overlays
 .ai/
-.claude/
+.claude/*
+# Repository skills for local Claude Code / Codex authoring are tracked.
+!.claude/skills/
 .agents/skills/release-evidence
 .agents/skills/repo-intake
 .agents/skills/task-ledger-sync
