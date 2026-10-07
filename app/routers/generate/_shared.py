@@ -721,6 +721,16 @@ def _mark_decision_council_handoff_context(
 
 def _run_generate(req: GenerateRequest, request: Request) -> GenerateResponse:
     """Shared generate logic — called by both /generate and /generate/with-attachments."""
+    return _run_generate_with_result(req, request)[0]
+
+
+def _run_generate_with_result(
+    req: GenerateRequest,
+    request: Request,
+    *,
+    authored_bundle: dict[str, Any] | None = None,
+) -> tuple[GenerateResponse, dict[str, Any]]:
+    """Run generation and also return the service result for project linking."""
     _ensure_procurement_bundle_enabled(req.bundle_type, request)
     service = request.app.state.service
     template_version = request.app.state.template_version
@@ -730,7 +740,9 @@ def _run_generate(req: GenerateRequest, request: Request) -> GenerateResponse:
     _ensure_procurement_override_reason_for_downstream(req, request, tenant_id=tenant_id)
     _mark_procurement_downstream_resolved_context(req, request, tenant_id=tenant_id)
     _mark_decision_council_handoff_context(req, request, tenant_id=tenant_id)
-    result = service.generate_documents(req, request_id=request_id, tenant_id=tenant_id)
+    # Keep the ordinary call shape; only the authored route adds its bundle.
+    authored = {"authored_bundle": authored_bundle} if authored_bundle is not None else {}
+    result = service.generate_documents(req, request_id=request_id, tenant_id=tenant_id, **authored)
     metadata = result["metadata"]
     _apply_generate_state(request, result, template_version)
     _store_zip_docs(
@@ -751,7 +763,7 @@ def _run_generate(req: GenerateRequest, request: Request) -> GenerateResponse:
         applied_references=metadata.get("applied_references", []),
     )
 
-    return GenerateResponse(
+    response = GenerateResponse(
         request_id=request_id,
         bundle_id=metadata["bundle_id"],
         title=req.title,
@@ -777,3 +789,4 @@ def _run_generate(req: GenerateRequest, request: Request) -> GenerateResponse:
         source_procurement_binding=metadata.get("source_procurement_binding"),
         docs=_build_generated_docs_response(result["docs"], result.get("raw_bundle")),
     )
+    return response, result

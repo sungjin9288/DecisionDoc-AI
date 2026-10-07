@@ -49,6 +49,7 @@ from app.services.hwp_service import build_hwp
 from app.services.pptx_service import build_pptx_from_docs
 from app.services.generation.context_store import record_direct_provider_usage
 from app.services.generation.procurement_source import ProcurementGenerationError
+from app.routers.generate._project_link import link_generated_document
 from app.services.procurement_document_binding import binding_sha256
 from app.services.visual_asset_service import requires_provider_visuals
 from app.storage.usage_store import UsageStoreError
@@ -421,37 +422,9 @@ async def generate_stream(
                 # Auto-link to project if project_id provided
                 if getattr(payload, "project_id", None):
                     try:
-                        linked_document = project_store.add_document(
-                            project_id=payload.project_id,
-                            tenant_id=tenant_id,
-                            request_id=request_id,
-                            bundle_id=payload.bundle_type,
-                            title=payload.title,
-                            docs=result["docs"],
-                            approval_id=None,
-                            tags=[],
-                            source_decision_council_session_id=metadata.get("decision_council_session_id"),
-                            source_decision_council_session_revision=metadata.get("decision_council_session_revision"),
-                            source_decision_council_direction=metadata.get("decision_council_direction"),
-                            source_procurement_review_packet_sha256=metadata.get(
-                                "procurement_review_packet_sha256"
-                            ),
-                            source_procurement_review_decision=metadata.get(
-                                "procurement_review_decision"
-                            ),
-                            source_procurement_reviewed_at=metadata.get(
-                                "procurement_reviewed_at"
-                            ),
-                            source_procurement_review_source_updated_at=metadata.get(
-                                "procurement_review_source_updated_at"
-                            ),
-                            source_procurement_review_operational_approval=metadata.get(
-                                "procurement_review_operational_approval"
-                            ),
-                            source_evidence_refs=metadata.get(
-                                "decision_evidence_refs", []
-                            ),
-                            source_procurement_binding=metadata.get("source_procurement_binding"),
+                        linked_document = link_generated_document(
+                            project_store, payload, tenant_id=tenant_id, request_id=request_id,
+                            docs=result["docs"], metadata=metadata,
                         )
                         if linked_document is None and metadata.get("source_procurement_binding"):
                             raise ValueError("Bound project document was not persisted")

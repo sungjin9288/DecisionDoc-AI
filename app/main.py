@@ -609,6 +609,11 @@ def create_app(
     return app
 
 
+def create_procurement_multi_opportunity_app() -> FastAPI:
+    """uvicorn --factory target for the explicit local procurement opt-in."""
+    return create_app(procurement_multi_opportunity_enabled=True)
+
+
 # Lazy module attribute (PEP 562): `uvicorn app.main:app` and
 # `from app.main import app` still work, but importing this module no longer
 # builds the app (and thus no longer runs load_dotenv) as an import

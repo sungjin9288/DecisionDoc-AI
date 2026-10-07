@@ -1,0 +1,48 @@
+{
+  "schema_version": "decisiondoc.future_feature_gate.v1",
+  "gate_id": "agent-authored-local-generation",
+  "title": "Agent-authored local document generation",
+  "target_user": "The repository operator who generates documents on a local machine by opening this repository in a subscribed Claude Code or Codex session",
+  "observed_problem": "Generation, validation, export and project storage are reachable only through the web UI or HTTP generate routes, which always call a configured provider. A local Claude Code or Codex session cannot hand its own draft to the existing pipeline, so it cannot use bundle structure, style and knowledge context, schema validation, export or project history without an API provider.",
+  "evidence": [
+    {"kind": "repository", "reference": "app/services/generation/service_core_mixin.py: _generate_documents_for_tenant", "observation": "Context injection, style snapshot and procurement binding are prepared and then always handed to a provider selected by _safe_get_provider."},
+    {"kind": "repository", "reference": "scripts/run_free_local.py", "observation": "Free local mode allows only mock or loopback Ollama providers, so subscribed CLI sessions have no entry point."},
+    {"kind": "user_feedback", "reference": "Conversation 2026-10-07", "observation": "The operator plans to generate documents locally from a subscribed Codex or Claude session that uses the features built in this repository."}
+  ],
+  "current_workaround": "Copy text from an agent session into the web editor manually; the result skips bundle validation and is not linked to the generated history.",
+  "desired_outcome": "A local agent session can request the exact generation brief for a bundle, write the bundle JSON itself, and submit it through the existing validation, rendering, history, project and export pipeline without any server-side provider call.",
+  "acceptance_criteria": [
+    "An authoring-brief route returns the same prompt the provider path would build for the same request, including style snapshot, project knowledge and bound procurement context, without resolving or calling a provider.",
+    "An authored-generation route runs a submitted bundle through the existing stabilizer, quality guard, schema validation, rendering, lint, history and optional project linking, records provider name agent_authored and never reads or writes the generation cache.",
+    "Schema failures in an authored bundle return 422 with the validation reason so the session can correct it; no partial history or project document is written.",
+    "A local CLI lists bundles, writes a brief file, submits authored JSON and downloads selected formats through export-edited with generate_missing_visuals=false.",
+    "A repository skill document describes the brief → write → submit → export loop for Claude Code and Codex sessions.",
+    "The free local runner can enable the procurement multi-opportunity opt-in and a local API key for the CLI without changing the default app."
+  ],
+  "affected_boundaries": [
+    "Generation service payload preparation and a new authored provider",
+    "Generate router authoring endpoints, API key authentication and bundle access checks",
+    "scripts/run_free_local.py, a new local authoring CLI and repository skill documentation"
+  ],
+  "authority_scope": {
+    "review_only": true,
+    "allowed_effects": [
+      "Persist authored documents in local/fake-S3 history and project storage",
+      "Render and export authored documents through existing local exporters"
+    ],
+    "excluded_effects": [
+      "Call any provider, API or subscription service from the server",
+      "Activate procurement multi-opportunity in the default app or convert existing user data",
+      "Commit, push, install or modify credentials"
+    ],
+    "separate_approval_required_for": [
+      "Paid provider calls, dataset upload or model training",
+      "Live AWS/G2B access, deployment or publication"
+    ]
+  },
+  "local_verification": [
+    {"command": "python3 -m pytest -q tests/test_agent_authored_generation.py tests/test_agent_author_cli.py tests/test_run_free_local.py", "proves": "Brief parity, authored pipeline, validation errors, CLI flow and runner opt-in flags; exact run evidence is recorded in the implementation spec."},
+    {"command": "git diff --check", "proves": "Patch whitespace integrity only"}
+  ],
+  "decision": {"status": "approved", "rationale": "The repository operator directed agent-session authoring with subscribed Codex or Claude for local document generation in the current conversation. Server-side provider calls and external effects remain excluded.", "decided_by": "repository-operator", "decided_at": "2026-10-07T03:30:00Z"}
+}

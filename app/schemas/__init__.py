@@ -8,6 +8,9 @@ so existing ``from app.schemas import X`` call sites keep working unchanged.
 """
 
 from app.schemas.generate import (
+    AuthoredGenerateRequest,
+    AuthoredGenerateResponse,
+    AuthoringBriefResponse,
     DocType,
     ErrorResponse,
     ExportedFile,
@@ -188,6 +191,9 @@ __all__ = [
     "HealthResponse",
     "GeneratedDoc",
     "GenerateResponse",
+    "AuthoredGenerateRequest",
+    "AuthoredGenerateResponse",
+    "AuthoringBriefResponse",
     "ExportedFile",
     "GenerateExportResponse",
     "FeedbackRequest",

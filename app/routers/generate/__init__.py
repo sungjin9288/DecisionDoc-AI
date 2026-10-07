@@ -92,6 +92,7 @@ from app.routers.generate.export import router as _export_router
 from app.routers.generate.export_packet import router as _export_packet_router
 from app.routers.generate.ai_features import router as _ai_features_router
 from app.routers.generate.ops import router as _ops_router
+from app.routers.generate.authoring import router as _authoring_router
 
 router = APIRouter(tags=["generate"])
 
@@ -100,3 +101,4 @@ router.include_router(_export_router)
 router.include_router(_export_packet_router)
 router.include_router(_ai_features_router)
 router.include_router(_ops_router)
+router.include_router(_authoring_router)

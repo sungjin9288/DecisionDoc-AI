@@ -2,17 +2,19 @@
 from __future__ import annotations
 
 import os
+from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, Iterator, NamedTuple
 from uuid import uuid4
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from app.bundle_catalog.registry import get_bundle_spec
 from app.config import env_is_enabled
-from app.domain.schema import SCHEMA_VERSION
+from app.domain.schema import SCHEMA_VERSION, build_bundle_prompt
 from app.eval.lints import lint_docs
 from app.observability.timing import Timer
+from app.providers.authored_provider import AuthoredBundleProvider
 from app.providers.base import Provider
 from app.schemas import GenerateRequest
 from app.services.generation.context_store import (
@@ -43,6 +45,14 @@ if TYPE_CHECKING:
     from app.storage.feedback_store import FeedbackStore
     from app.storage.finetune_store import FineTuneStore
     from app.storage.state_backend import StateBackend
+
+
+class _PreparedGeneration(NamedTuple):
+    payload: dict[str, Any]
+    bundle_type: str
+    bundle_spec: Any
+    source: Any
+    procurement_override_applied: bool
 
 
 class GenerationCoreMixin:
@@ -95,21 +105,15 @@ class GenerationCoreMixin:
         self.env.filters["markdown_kv_table"] = build_markdown_kv_table
         self.env.filters["slide_outline_table"] = build_slide_outline_table
 
-    def generate_documents(
-        self,
-        requirements: GenerateRequest,
-        *,
-        request_id: str,
-        tenant_id: str,
-    ) -> dict[str, Any]:
-        """Generate one bundle while binding tenant customizations to this call."""
+    @contextmanager
+    def _generation_tenant_scope(self, tenant_id: str) -> Iterator[None]:
+        """Bind tenant, data dir and state backend for prompt and style lookups."""
         from app.domain.schema import (
             _current_generation_data_dir,
             _current_generation_state_backend,
             _current_tenant_id,
         )
 
-        tenant_id = require_tenant_id(tenant_id)
         had_previous_tenant = hasattr(_current_tenant_id, "value")
         previous_tenant = getattr(_current_tenant_id, "value", None)
         previous_data_dir = getattr(_current_generation_data_dir, "value", None)
@@ -118,11 +122,7 @@ class GenerationCoreMixin:
         _current_generation_data_dir.value = self.data_dir
         _current_generation_state_backend.value = self.state_backend
         try:
-            return self._generate_documents_for_tenant(
-                requirements,
-                request_id=request_id,
-                tenant_id=tenant_id,
-            )
+            yield
         finally:
             if had_previous_tenant:
                 _current_tenant_id.value = previous_tenant
@@ -138,6 +138,62 @@ class GenerationCoreMixin:
                     del _current_generation_state_backend.value
             else:
                 _current_generation_state_backend.value = previous_backend
+
+    def generate_documents(
+        self,
+        requirements: GenerateRequest,
+        *,
+        request_id: str,
+        tenant_id: str,
+        authored_bundle: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Generate one bundle while binding tenant customizations to this call.
+
+        ``authored_bundle`` is JSON written by a local agent session from the
+        authoring brief; it replaces the provider call and skips the cache.
+        """
+        tenant_id = require_tenant_id(tenant_id)
+        with self._generation_tenant_scope(tenant_id):
+            return self._generate_documents_for_tenant(
+                requirements,
+                request_id=request_id,
+                tenant_id=tenant_id,
+                authored_bundle=authored_bundle,
+            )
+
+    def build_authoring_brief(
+        self,
+        requirements: GenerateRequest,
+        *,
+        request_id: str,
+        tenant_id: str,
+    ) -> dict[str, Any]:
+        """Return the exact provider prompt so a local agent can write the bundle."""
+        tenant_id = require_tenant_id(tenant_id)
+        with self._generation_tenant_scope(tenant_id):
+            prepared = self._prepare_generation_payload(
+                requirements,
+                request_id=request_id,
+                tenant_id=tenant_id,
+            )
+            feedback_hints = self._build_feedback_hints(
+                prepared.bundle_spec.id,
+                title=prepared.payload.get("title", ""),
+                tenant_id=tenant_id,
+            )
+            prompt = build_bundle_prompt(
+                prepared.payload,
+                SCHEMA_VERSION,
+                prepared.bundle_spec,
+                feedback_hints=feedback_hints,
+            )
+        return {
+            "bundle_type": prepared.bundle_type,
+            "schema_version": SCHEMA_VERSION,
+            "doc_keys": list(prepared.bundle_spec.doc_keys),
+            "json_schema": prepared.bundle_spec.json_schema,
+            "prompt": prompt,
+        }
 
     def resolve_style_snapshot(
         self,
@@ -155,27 +211,18 @@ class GenerationCoreMixin:
             state_backend=self.state_backend,
         )
 
-    def _generate_documents_for_tenant(
+    def _prepare_generation_payload(
         self,
         requirements: GenerateRequest,
         *,
         request_id: str,
         tenant_id: str,
-    ) -> dict[str, Any]:
-        bundle_id = str(uuid4())
+    ) -> _PreparedGeneration:
+        """Build the provider payload: procurement binding, style snapshot and project context."""
         payload = requirements.model_dump(mode="json")
         payload.pop("style_profile_id", None)
         payload.pop("procurement_decision_id", None)
         payload.pop("expected_procurement_decision_revision", None)
-
-        # Seed thread-local context so it's available after generation.
-        _generation_context.request_id = request_id
-        _generation_context.title = payload.get("title", "")
-        _generation_context.goal = payload.get("goal", "")
-        _generation_context.context_text = payload.get("context", "")
-        _generation_context.bundle_type = payload.get("bundle_type", "tech_decision") or "tech_decision"
-        _generation_context.system_prompt = ""
-        _generation_context.output = ""
 
         # Resolve bundle spec (defaults to tech_decision for backward compatibility).
         bundle_type = payload.get("bundle_type", "tech_decision") or "tech_decision"
@@ -220,6 +267,30 @@ class GenerationCoreMixin:
             request_id=request_id,
             procurement_source=source,
         )
+        return _PreparedGeneration(payload, bundle_type, bundle_spec, source, procurement_override_applied)
+
+    def _generate_documents_for_tenant(
+        self,
+        requirements: GenerateRequest,
+        *,
+        request_id: str,
+        tenant_id: str,
+        authored_bundle: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        bundle_id = str(uuid4())
+        payload, bundle_type, bundle_spec, source, procurement_override_applied = (
+            self._prepare_generation_payload(requirements, request_id=request_id, tenant_id=tenant_id)
+        )
+
+        # Seed thread-local context so it's available after generation.
+        _generation_context.request_id = request_id
+        _generation_context.title = payload.get("title", "")
+        _generation_context.goal = payload.get("goal", "")
+        _generation_context.context_text = payload.get("context", "")
+        _generation_context.bundle_type = payload.get("bundle_type", "tech_decision") or "tech_decision"
+        _generation_context.system_prompt = ""
+        _generation_context.output = ""
+
         procurement_handoff_used = bool(payload.get("_procurement_context"))
         procurement_review_handoff_used = bool(payload.get("_procurement_review_context"))
         procurement_review_handoff_skipped_reason = (
@@ -253,9 +324,13 @@ class GenerationCoreMixin:
             if str(item).strip()
         ]
 
-        provider = self._safe_get_provider(bundle_type=bundle_type, tenant_id=tenant_id)
+        if authored_bundle is not None:
+            provider: Provider = AuthoredBundleProvider(authored_bundle)
+        else:
+            provider = self._safe_get_provider(bundle_type=bundle_type, tenant_id=tenant_id)
         timer = Timer()
-        cache_enabled = env_is_enabled("DECISIONDOC_CACHE_ENABLED")
+        # Authored bundles are the caller's own draft: never served from or written to cache.
+        cache_enabled = authored_bundle is None and env_is_enabled("DECISIONDOC_CACHE_ENABLED")
         cache_hit = False
         provider_attempted = False
         usage_totals: dict[str, int] = {}
@@ -292,7 +367,11 @@ class GenerationCoreMixin:
                     )
             else:
                 # Inject web search context if available
-                if self._search_service is not None and self._search_service.is_available():
+                if (
+                    authored_bundle is None
+                    and self._search_service is not None
+                    and self._search_service.is_available()
+                ):
                     query_parts = [
                         str(payload.get("title", "")),
                         str(payload.get("goal", "")),
