@@ -8884,8 +8884,9 @@ def test_generate_from_documents_modal_flow(page, tmp_path):
     page.wait_for_selector("#from-documents-modal", state="hidden", timeout=30000)
     page.wait_for_selector("#results", state="visible", timeout=30000)
     assert page.locator("#tab-bar .tab-btn").count() == 2
-    assert page.locator("#tab-bar .tab-btn").nth(0).inner_text() == "adr"
-    assert page.locator("#tab-bar .tab-btn").nth(1).inner_text() == "onepager"
+    # Tabs show the rendered document name ("# ADR: ..." -> "ADR"), not the internal id.
+    assert page.locator("#tab-bar .tab-btn").nth(0).inner_text() == "ADR"
+    assert page.locator("#tab-bar .tab-btn").nth(1).inner_text() == "Onepager"
     assert page.locator("#doc-pane").is_visible()
 
 
