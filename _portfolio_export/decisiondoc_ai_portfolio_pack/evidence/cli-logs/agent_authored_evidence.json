@@ -1,0 +1,68 @@
+{
+  "schema_version": "decisiondoc.agent_authored_evidence.v1",
+  "scope": "in-process app, temporary data directory; the session-authored bundle is replayed, not regenerated",
+  "inputs": {
+    "request": "docs/samples/agent_authored_local/input.json",
+    "authored_bundle": "docs/samples/agent_authored_local/bundle.json",
+    "authored_by": "Claude Code session following .claude/skills/decisiondoc-authoring/SKILL.md (2026-10-07)"
+  },
+  "server_calls": [
+    "POST /generate/authoring-brief",
+    "POST /generate/authored",
+    "POST /generate/export-edited"
+  ],
+  "bundle_type": "proposal_kr",
+  "provider": "agent_authored",
+  "doc_types": [
+    "business_understanding",
+    "execution_plan",
+    "expected_impact",
+    "tech_proposal"
+  ],
+  "markdown": [
+    "evidence/generated-samples/agent-authored/business_understanding.md",
+    "evidence/generated-samples/agent-authored/execution_plan.md",
+    "evidence/generated-samples/agent-authored/expected_impact.md",
+    "evidence/generated-samples/agent-authored/tech_proposal.md"
+  ],
+  "authored_text": {
+    "checked_in": "rendered Markdown and slide outline",
+    "probes": 106,
+    "survived": 106,
+    "missing": []
+  },
+  "exports": {
+    "docx": {
+      "bytes": 49399
+    },
+    "pdf": {
+      "bytes": 781130,
+      "pages": 14
+    },
+    "pptx": {
+      "bytes": 65900,
+      "slides": 11
+    },
+    "hwpx": {
+      "bytes": 13472
+    },
+    "xlsx": {
+      "bytes": 17328
+    }
+  },
+  "exports_tracked": false,
+  "previews": {
+    "pdf_page1": "evidence/screenshots/agent-authored-pdf-page1.png",
+    "pdf_pages": "evidence/screenshots/agent-authored-pdf-pages.png",
+    "pptx_slides": "evidence/screenshots/agent-authored-pptx-slides.png"
+  },
+  "external_actions_excluded": [
+    "provider API execution",
+    "G2B live API execution",
+    "AWS runtime execution",
+    "dataset upload",
+    "training execution",
+    "model promotion",
+    "external submission"
+  ]
+}

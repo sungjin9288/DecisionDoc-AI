@@ -3,8 +3,9 @@
 ## 프로젝트 정보
 
 - 프로젝트명: DecisionDoc AI
-- 기준일: 2026-07-14
-- 현재 상태: AI-assisted documentation PoC/MVP 고도화, 외부 실증 보류
+- 기준일: 2026-10-08
+- 현재 상태: 로컬 문서 작업 도구. 계획한 로컬 기능 구현과 자동 회귀 검증 완료, 사람 사용 검증(UAT)과 외부 실증 보류
+- 먼저 읽을 문서: `docs/portfolio.md`
 - 핵심 기술스택: Python 3.12, FastAPI, Pydantic v2, Jinja2, provider/storage abstraction, Docker Compose, AWS SAM/Lambda, pytest
 - 이력서 반영 가능 여부: 조건부 가능
 
@@ -15,7 +16,9 @@
 포함 범위:
 
 - README, DEV_LOG, 링크, 제품 방향과 실행 계획
+- 한 페이지 요약(`docs/portfolio.md`)과 세션 작성 경로 설계 기록
 - architecture, case study, contribution note, project card, resume bullets, interview story, roadmap
+- 세션 작성 실증의 합성 입력과 작성 결과(`docs/samples/agent_authored_local/`)
 - local API, UI, architecture, execution, generated document evidence
 - 각 파일의 path, size, SHA-256을 기록한 `portfolio_manifest.json`
 

@@ -15,8 +15,8 @@
     },
     {
       "path": "README.md",
-      "sha256": "b3b4514c600e3ed0084b7438ab855145942b580ac2e9b9ee24894769aeb08479",
-      "size_bytes": 94632
+      "sha256": "36df1fcde307e3b12213c7d486dcc7df46d6aec630a05be8341af5a2b7d4edd0",
+      "size_bytes": 95673
     },
     {
       "path": "docs/architecture.md",
@@ -25,8 +25,8 @@
     },
     {
       "path": "docs/case-study.md",
-      "sha256": "db5833cdec3e033e0fdad8dc67ab98ca78b316672a6591498e2bbbac1fd3b90a",
-      "size_bytes": 12092
+      "sha256": "d2a4f26835c026b829d79a96b0bd5edebcc34222877c240b1d4aa94ef3ceba07",
+      "size_bytes": 14814
     },
     {
       "path": "docs/completion-readiness-runbook.md",
@@ -35,13 +35,13 @@
     },
     {
       "path": "docs/contribution-note.md",
-      "sha256": "24e1a95c0c4b53415c0d114c17719f504835beb15beba103d9f1d4e7a28c6c06",
-      "size_bytes": 31062
+      "sha256": "a8e8b2d862f9f4cebd1afccce4e87cc2469196185814f7b0eb9b714838732623",
+      "size_bytes": 32749
     },
     {
       "path": "docs/development-plan.md",
-      "sha256": "63ebf7753ce8e482fb78936e8c695c6333dd26efa993b30bd92bbf73b8a38b15",
-      "size_bytes": 134520
+      "sha256": "a91a462f51e033fe1d37f34ad5ee3f3a39e8918f25784cde66d2ea337935e49b",
+      "size_bytes": 136457
     },
     {
       "path": "docs/evidence-checklist.md",
@@ -50,8 +50,8 @@
     },
     {
       "path": "docs/evidence-gallery.md",
-      "sha256": "6479c4a36a4052e9b0389ad4b3999b2232013834dc877fb5fecd651557610d4f",
-      "size_bytes": 10439
+      "sha256": "028a8abeac8e54ed5188473149f978d8a0cda122002f1059aa1fa1f645abd668",
+      "size_bytes": 11643
     },
     {
       "path": "docs/future_feature_gate.md",
@@ -70,8 +70,13 @@
     },
     {
       "path": "docs/interview-story.md",
-      "sha256": "d66c0f4faac2c7944c8642414675b5670c69c9b4b0e7ad21b1ab11bfe6760e83",
-      "size_bytes": 11830
+      "sha256": "607725c69ea00de02f75d12897612f0d2bd7c49193e569947e325aea16b8bf12",
+      "size_bytes": 13908
+    },
+    {
+      "path": "docs/portfolio.md",
+      "sha256": "1cbbfd6af728f7f20a5e51e23dc78be03af8083e0b81ed6084782009632260e3",
+      "size_bytes": 8875
     },
     {
       "path": "docs/product_demo_scenario.md",
@@ -95,18 +100,33 @@
     },
     {
       "path": "docs/project-card.md",
-      "sha256": "79eb5787ddfe0e07589835f128902737c3d57b41faa98752646d5656a34c4e1c",
-      "size_bytes": 18176
+      "sha256": "2e3481bd24634d94a1788344e148a8f5bb20d8ccb3ab6506445b38f9c3f1ab43",
+      "size_bytes": 19535
     },
     {
       "path": "docs/resume-bullets.md",
-      "sha256": "192bed5dce691e0ad3e10be7d82fc4803c1143aa185a2aab03229c9e2c066aa9",
-      "size_bytes": 7202
+      "sha256": "6bafd7ae5c86253e8f1a7924151b1468250f5481ebc86d29e858b52612e57658",
+      "size_bytes": 8523
     },
     {
       "path": "docs/roadmap.md",
       "sha256": "6d3855b2c8fd2c19ab6cddbc96fb572ca47f257b834361e519643d2c394444a5",
       "size_bytes": 158140
+    },
+    {
+      "path": "docs/samples/agent_authored_local/README.md",
+      "sha256": "39d2db9170b972bf999f431db376295029098bede9518dd55e8d692faab639bd",
+      "size_bytes": 1274
+    },
+    {
+      "path": "docs/samples/agent_authored_local/bundle.json",
+      "sha256": "039856f1c49cbbd5e9a13b690a533f87713a11df5af504d14ce6647b4ba76c0d",
+      "size_bytes": 20943
+    },
+    {
+      "path": "docs/samples/agent_authored_local/input.json",
+      "sha256": "6311b3b261abbf789c5b8081a46af9bedb2b1ac3b2b5dca64c4c8337134b0f8a",
+      "size_bytes": 941
     },
     {
       "path": "docs/samples/bundle_quality_evidence/current/human_review.html",
@@ -219,6 +239,11 @@
       "size_bytes": 22362
     },
     {
+      "path": "docs/superpowers/specs/2026-10-07-agent-authored-local-generation-design.md",
+      "sha256": "6e96cf604e1bbc1a047ae045e12b297f45eefa25e6b7093bf620581a4be21777",
+      "size_bytes": 8341
+    },
+    {
       "path": "evidence/api-responses/bundles.json",
       "sha256": "31330df8033bd361dd2ea9021619003b9f1dd30a584182cf62b5a0e45174d097",
       "size_bytes": 13250
@@ -267,6 +292,11 @@
       "path": "evidence/architecture/system-architecture.md",
       "sha256": "b46ef75def51d5eee24bd9371df94a988dc076623ece2c942cb44dbaee092ff9",
       "size_bytes": 1255
+    },
+    {
+      "path": "evidence/cli-logs/agent_authored_evidence.json",
+      "sha256": "327452dd35f12a409b9a73231f1c42431ea3f2d17d51472a48735d24205348a1",
+      "size_bytes": 1943
     },
     {
       "path": "evidence/cli-logs/api_capture.exitcodes",
@@ -335,8 +365,8 @@
     },
     {
       "path": "evidence/cli-logs/ui_flow_evidence.json",
-      "sha256": "7c286fc50b1b3e824cef5f78d1d693b04388ffae7a33e654ec4a6c716b4ad139",
-      "size_bytes": 1048
+      "sha256": "ee6f1402702d3a11d9e4ddf50e2c0dda15fee93c638c2e6ec140181e63c9bea9",
+      "size_bytes": 1121
     },
     {
       "path": "evidence/evidence_manifest.md",
@@ -362,6 +392,26 @@
       "path": "evidence/execution-logs/playwright_swagger_snapshot.log",
       "sha256": "4849819d1702e85d3864fcb5177079e9c6b95f95a531b86f841a529b1356e0e9",
       "size_bytes": 148
+    },
+    {
+      "path": "evidence/generated-samples/agent-authored/business_understanding.md",
+      "sha256": "daff92706dcbeeaef6e5ffb7e99f435cfbe5c89c08c996faee135333d142f97c",
+      "size_bytes": 5484
+    },
+    {
+      "path": "evidence/generated-samples/agent-authored/execution_plan.md",
+      "sha256": "3a6cfb70d681cb54a775332ff2ac0a7e1cfbf14f044ae3be72262a7fa9b11e2f",
+      "size_bytes": 4257
+    },
+    {
+      "path": "evidence/generated-samples/agent-authored/expected_impact.md",
+      "sha256": "376913d51533a5696d594d950c6d9c5d02e977abf38eee14b8500500d5ac2782",
+      "size_bytes": 3970
+    },
+    {
+      "path": "evidence/generated-samples/agent-authored/tech_proposal.md",
+      "sha256": "952146d51a41943dc493c480a266ff4668292e32798a2635dab6f09b54728e06",
+      "size_bytes": 4683
     },
     {
       "path": "evidence/generated-samples/exported_adr.md",
@@ -419,6 +469,21 @@
       "size_bytes": 464
     },
     {
+      "path": "evidence/screenshots/agent-authored-pdf-page1.png",
+      "sha256": "9b0e7b411cc690f33b2f2b00e1c025a9f4f1e28fcfc0fc76b2fa22aa6b53afbb",
+      "size_bytes": 63963
+    },
+    {
+      "path": "evidence/screenshots/agent-authored-pdf-pages.png",
+      "sha256": "2e604946a533257c9556a2b579ec0c93757c2d47c51d85a292cacf6b66110c93",
+      "size_bytes": 235874
+    },
+    {
+      "path": "evidence/screenshots/agent-authored-pptx-slides.png",
+      "sha256": "d92f30a982f67ff24b027c0bfcdad5785abcaf66ef7aabdbcafbfaa954e3b4d6",
+      "size_bytes": 201845
+    },
+    {
       "path": "evidence/screenshots/guided-review-demo-01-project-created.png",
       "sha256": "8053c5a1fe1bc6bb5c600fd04cfd2bac12731426c4f7b6ee9ec072698c147b3a",
       "size_bytes": 339898
@@ -445,23 +510,23 @@
     },
     {
       "path": "evidence/screenshots/ui-flow-01-after-login.png",
-      "sha256": "d3287274b443f61eec300b7e8eba747992bd1ca3c5c2b4dbe5c46f7ff3d91fd4",
-      "size_bytes": 643467
+      "sha256": "ccedb50b8ed13bcb91d8900f3f57c14615db29b18577d7198491430dc6a43742",
+      "size_bytes": 694536
     },
     {
       "path": "evidence/screenshots/ui-flow-02-generate-ready.png",
-      "sha256": "9a3c5898fe9f9643b0c7dbc363e813886c24e6902eefab75823872266ba06ce8",
-      "size_bytes": 199421
+      "sha256": "7e2c703c66288de3eda077004a1ad6f6b9053a7488dcb032d937f8ed778b395c",
+      "size_bytes": 198764
     },
     {
       "path": "evidence/screenshots/ui-flow-03-results.png",
-      "sha256": "0d40aee165f17f6675f8027eada3aa83e3842278a64c53d746a2c49db15e81aa",
-      "size_bytes": 149563
+      "sha256": "99dfe9a47aba7b2370fb9e5122f103bb7e01d503f78020ecc461006d1683b298",
+      "size_bytes": 150874
     },
     {
       "path": "evidence/screenshots/ui-flow-04-export-complete.png",
-      "sha256": "57f9f59adab60a40bc9a41abaf46f0f63ac22d3145f67d93c1226577946a3916",
-      "size_bytes": 156573
+      "sha256": "e72e74daad0cf08c9ca5559ceddc86d119a23c68bc4bd5a24457bc54fc40e60b",
+      "size_bytes": 165012
     },
     {
       "path": "evidence/screenshots/web-ui-home.png",
@@ -485,13 +550,13 @@
     },
     {
       "path": "links.md",
-      "sha256": "7c9ae61f0b61714a80f4d421157b2c707d442d4bd82e603639d694871bcfaf6c",
-      "size_bytes": 525
+      "sha256": "1377ca4a7cbd19bf479c0af6ea7b3a32f8150426502e49eab5b5f63020985ac3",
+      "size_bytes": 650
     },
     {
       "path": "portfolio_manifest.md",
-      "sha256": "b6bd294253fdb1917a7d2ec6d7ad719a5ac5d6540af8fa4eb13ed07c069e2276",
-      "size_bytes": 2402
+      "sha256": "2d40af27942266f5e895a139951cb13235beec3a8dd39bdce10eadac53496fdd",
+      "size_bytes": 2699
     },
     {
       "path": "reports/eval/v1/eval_report.md",

@@ -410,6 +410,24 @@ PPTX 보완 검증에서 이번 변경과 무관하게 실패하던 3건을 코�
 | `python3 -m pytest -q -p no:cacheprovider tests/test_infrastructure.py` | **179 passed, 1 failed** / `infra-drifts.xml`; 남은 1건은 기존 800줄 검사(6개 파일, 모듈 분할하지 않음) |
 | `tests/test_procurement_review_store.py tests/test_manage_portfolio_pack.py tests/test_count_readme_metrics.py` | **60 passed, 1 failed** / `review-store-and-docs.xml`; 실패는 portfolio pack에 없는 planned-feature spec 링크(기존) |
 
+### 포트폴리오 증거 갱신과 UI 캡처 스크립트 계약 보완 (2026-10-08)
+
+- **main CI:** #76 merge commit `15722921`의 push CI([run 37594471323](https://github.com/sungjin9288/DecisionDoc-AI/actions/runs/37594471323))가 통과했다.
+  - "Run test suite excluding browser E2E" 단계: 5,542 passed, 4 skipped
+  - "Run browser E2E tests" 단계: 164 passed, 1 skipped
+  - Lint, Secret Hygiene, Security Scan: 통과
+  - 같은 run의 두 단계 결과이며 합산하지 않는다. #75 merge(`f93df1ce`) 때는 main push CI가 시작되지 않았고, 이 run이 그 내용까지 포함한 tree를 검사했다.
+- **세션 작성 증거 재현:** `scripts/capture_agent_authored_evidence.py`를 추가했다.
+  - 2026-10-07 세션 작성 결과(`docs/samples/agent_authored_local/`)를 임시 데이터 폴더의 앱에 다시 제출한다.
+  - 작성 문장 106개 유지, PDF 14쪽, PPTX 11장을 receipt와 미리보기 이미지로 남긴다.
+  - `tests/test_capture_agent_authored_evidence.py` 6건이 통과한다.
+- **UI 캡처 스크립트 결함:** `scripts/capture_ui_flow_evidence.py`가 2026-09-30 Markdown 브라우저 다운로드 전환 뒤에도 내보내기 버튼의 "완료" 문구를 기다려 실패했다.
+  - 실제 다운로드 이벤트와 완료 알림을 기다리도록 고쳤다.
+  - 다운로드 중 생성 API 호출을 receipt의 `export_generation_requests`에 기록하고, 1건이라도 있으면 실패한다.
+  - 다시 캡처한 결과 호출 0건, browser HTTP 오류 0건이다.
+- **포트폴리오 문서:** 한 페이지 요약 `docs/portfolio.md`를 추가했다. case study, project card, resume bullets, interview story, contribution note, evidence gallery를 로컬 세션 작성 방향에 맞게 고쳤다.
+- 두 캡처는 `.env` 차단, 임시 데이터 폴더, mock/local, loopback 외 네트워크 차단 조건에서 실행했다. Human UAT는 여전히 미실행이다.
+
 ### 작성 지침 프롬프트 정리와 CLI 조달 연결 (2026-10-07)
 
 로컬 세션 작성 경로의 남은 한계 두 가지를 마무리했다. 자세한 내용은 설계 문서 5절에 있다.

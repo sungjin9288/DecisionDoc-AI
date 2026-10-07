@@ -1,24 +1,24 @@
 # Project Card
 
-분석 기준: 2026-07-24 현재 저장소 코드, README, docs, local evidence, completion readiness receipt를 기준으로 업데이트했다. procurement review state authority와 검증된 원본 packet 재다운로드, reproducible portfolio pack을 반영했다.
+분석 기준: 2026-10-08 현재 저장소 코드, README, docs, local evidence, completion readiness receipt를 기준으로 업데이트했다. 로컬 우선 방향 전환, Claude Code·Codex 세션 작성 경로와 새로 캡처한 화면·산출물 evidence를 반영했다. 한 페이지 요약은 [portfolio.md](./portfolio.md)에 있다.
 
 ## 1. Snapshot
 
 - 프로젝트명: DecisionDoc AI
 - 프로젝트 유형: 개인 PoC / MVP 확장 프로젝트로 판단
 - 기간: 확인 필요
-- 현재 상태: MVP/PoC 구현 후 외부 실증 대기
+- 현재 상태: 계획한 로컬 기능 구현과 자동 회귀 검증 완료, 사람 사용 검증(UAT) 전. 운영 배포 서비스가 아니라 로컬 문서 작업 도구로 사용
 - 내 역할: [contribution-note.md](./contribution-note.md)의 직접 설명 가능 범위를 기준으로 설명한다.
 - GitHub 링크: https://github.com/sungjin9288/DecisionDoc-AI
 - Release evidence: https://github.com/sungjin9288/DecisionDoc-AI/releases/tag/v1.1.77
-- Demo 링크: 현재 README에는 검증된 Demo URL을 싣지 않는다. 최신 로컬 UI screenshot은 `evidence/screenshots/web-ui-home.png`에 있다.
+- Demo 링크: 공개 Demo URL은 없다. 로컬 화면과 산출물은 `evidence/screenshots/ui-flow-*.png`(2026-10-08)와 `evidence/screenshots/agent-authored-*.png`에 있다.
 - 핵심 기술스택: Python 3.12, FastAPI, Pydantic v2, Jinja2, OpenAI/Gemini/Claude/Local/Mock provider abstraction, Docker Compose, AWS SAM/Lambda, local/S3 storage, pytest
 - 이력서 반영 가능 여부: 조건부 가능
 - 판단 이유: 코드상 문서 생성 API, provider/storage abstraction, export, 프로젝트/승인/지식 문서/G2B/report workflow/ops 기능이 존재한다. non-live regression, static PWA/CSP, post-login local UI flow, portfolio pack integrity 경로도 있다. 다만 잔여 live provider, G2B 실데이터, 배포 URL, 사용자 사용 실적은 추가 증거가 필요하다.
 
 ## 2. One-liner
 
-의사결정 문서와 업무 산출물을 빠르게 구조화해야 하는 사용자의 초안 작성, 첨부 문서 기반 생성, 프로젝트별 지식 재사용 문제를 해결하기 위해 FastAPI 기반 AI 문서 생성 및 협업 플랫폼을 개발 중인 서비스
+제안서·보고서·의사결정 문서를 구조 → 작성 → 검증 → 5종 형식 변환까지 한 흐름으로 다루는 로컬 문서 작업 도구. 문서 내용은 사용자의 Claude Code·Codex 세션이 쓰고, FastAPI 서버가 작성 지침·검증·렌더링·이력·DOCX/PDF/PPTX/HWPX/XLSX 변환을 맡는다.
 
 ## 3. Problem
 
@@ -37,6 +37,7 @@
 - 제공하려는 핵심 기능: AI 문서 bundle 생성, 첨부 문서/PDF 기반 생성, 프로젝트 관리, 지식 문서 재사용, 승인/공유/이력, 다양한 파일 export, 운영/평가 도구
 - 현재 실제로 제공 가능한 기능:
   - `/generate`, `/generate/stream`, `/generate/export`, `/generate/from-documents`, `/generate/from-pdf`
+  - 세션 작성 경로: `/generate/authoring-brief`, `/generate/authored`, `scripts/decisiondoc_author.py`, `.claude/skills/decisiondoc-authoring/SKILL.md`
   - bundle catalog와 Jinja2 template 기반 문서 렌더링
   - provider fallback chain: mock, openai, gemini, claude, local
   - local/S3 storage abstraction
@@ -141,6 +142,9 @@ User / Team
 | 구현 완료 | local procurement decision package evidence contract | 구현 완료 | `docs/samples/procurement_decision_package_local_demo/cli_contract_manifest.json`, `scripts/validate_procurement_decision_package_cli_contract_manifest.py`, `scripts/check_procurement_decision_package_cli_contract_manifest_result.py` | 가능 |
 | 구현 완료 | procurement review state/freshness/audit와 verified original-packet retrieval boundary | 구현 완료 | `app/storage/procurement_review_store.py`, `app/routers/projects/procurement_reviews.py`, `app/routers/projects/procurement_review_packets.py`, `app/routers/history.py`, `app/routers/approvals.py` | 가능 |
 | 구현 완료 | reproducible portfolio evidence pack | 구현 완료 | `scripts/manage_portfolio_pack.py`, `portfolio_manifest.md` | 가능 |
+| 구현 완료 | Claude Code·Codex 세션 작성 경로(provider 미호출) | 구현 완료 | `app/routers/generate/authoring.py`, `app/providers/authored_provider.py`, `scripts/decisiondoc_author.py`, `tests/test_agent_authored_generation.py` | 가능 |
+| 구현 완료 | 번들 프롬프트 수치 근거 우선 규칙 | 구현 완료 | `app/bundle_catalog/system_prompt.py`, `tests/test_bundle_prompt_rules.py` | 가능 |
+| 검증 필요 | 사람 사용 검증(UAT) | 사전 점검 완료, 실사용 확인 전 | `docs/development-plan.md` §0 | 보류 |
 | 구현 완료 | health/metrics/version | 구현 완료 | `app/routers/health.py` | 가능 |
 | 개발 중 | report workflow quality learning | 개발 중/고도화 중 | `app/routers/report_workflows.py`, `app/services/report_quality_learning.py` | 조건부 가능 |
 | 개발 중 | document ops agent/training artifacts | 개발 중/고도화 중 | `app/agents/document_ops_agent.py`, `app/routers/document_ops_agent.py` | 조건부 가능 |
@@ -161,9 +165,10 @@ User / Team
 - Completion readiness 근거: `scripts/check_completion_readiness.py`, `scripts/check_completion_readiness_result.py`, M2/M6 runner-owned proof receipt, gitignored `reports/completion-readiness/` local receipt.
 - Portfolio pack 근거: `scripts/manage_portfolio_pack.py`, tracked `_portfolio_export/decisiondoc_ai_portfolio_pack/portfolio_manifest.json`, local gitignored ZIP.
 - 최신 UI/CSP evidence: `evidence/screenshots/web-ui-home.png`, `evidence/cli-logs/ui_csp_nonce_check.log`, `evidence/cli-logs/playwright_console.log`, `evidence/cli-logs/ui_flow_evidence.json`.
+- 세션 작성 evidence: `scripts/capture_agent_authored_evidence.py`, `evidence/cli-logs/agent_authored_evidence.json`, `evidence/generated-samples/agent-authored/`, `evidence/screenshots/agent-authored-*.png`. 합성 입력, 외부 호출 없음.
 - 최근 git 상태: `main` 브랜치가 `origin/main`과 동기화되어 있고 최신 확인 시점의 worktree는 clean이다. 후속 작업 전에는 항상 `git status --short --branch`와 최신 CI/CD 상태를 다시 확인한다.
 - 실행 방법이 명확한지: 로컬 `pip install -r requirements.txt`, `python -m uvicorn app.main:app --reload`, Docker `docker compose up -d`가 문서와 설정에 존재한다.
-- 스크린샷/데모가 필요한 부분: Web UI 첫 화면, `/generate` 결과, 문서 upload flow, report workflow, export 결과, admin/ops 화면
+- 스크린샷/데모가 아직 없는 부분: 문서 upload flow, report workflow, admin/ops 화면
 
 ## 10. Consulting Angle
 
@@ -179,7 +184,8 @@ User / Team
 
 ### 써도 되는 표현
 
-- FastAPI 기반 AI 문서 생성 API와 PWA를 개발 중
+- FastAPI 기반 AI 문서 생성 API와 PWA를 개발
+- 구독형 코딩 에이전트 세션이 문서를 쓰고 서버가 검증·렌더링·형식 변환을 맡는 provider 미호출 작성 경로를 설계·구현
 - LLM provider abstraction과 fallback chain을 적용
 - bundle schema, Jinja2 template, validation/lint 기반 문서 생성 파이프라인 구성
 - local/S3 storage abstraction과 Docker Compose/AWS SAM 배포 경로 구성

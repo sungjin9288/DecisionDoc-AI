@@ -1,6 +1,6 @@
 # DecisionDoc AI Contribution Note
 
-기준일: 2026-09-04
+기준일: 2026-10-08
 
 이 문서는 DecisionDoc AI를 포트폴리오나 면접에서 설명할 때 사용할 수 있는 직접 구현 범위와 검증 범위를 정리한다. 제품 성과나 운영 상태를 과장하기 위한 문서가 아니라, 코드와 증거로 설명 가능한 범위를 좁히기 위한 문서다.
 
@@ -24,6 +24,8 @@ DecisionDoc AI는 LLM이 만든 문서를 단발성 텍스트가 아니라 evide
 | Password credential epoch revocation | Password hash와 `credential_version`을 같은 user-state CAS에서 갱신하고 이전 access/refresh token을 모두 거부한다. 변경 요청 browser는 새 pair를 atomic commit하고 같은 origin의 다른 tab은 version mismatch에서 reload한다. Legacy versionless state는 version 0에서만 호환하며 exact-session 폐기는 별도 authority로 다룬다 | `app/storage/user_store.py`, `app/services/auth_service.py`, `app/routers/auth.py`, `app/static/index.html`, `tests/test_auth.py`, `tests/test_identity_store_integrity.py`, `tests/e2e/test_main_flow.py` |
 | Open SSE auth revalidation | 열린 `/events` connection이 최대 15초마다 token expiry와 persisted user/session authority를 다시 확인하고 invalid·unavailable 상태에서 application event를 중단한다. Browser는 fixed control event를 기존 refresh 경계로 처리해 invalid credential만 session cleanup하고 일시 장애에서는 credential과 draft를 보존한다. 이는 bounded termination이며 즉시 cross-device push를 주장하지 않는다 | `app/routers/events.py`, `app/services/auth_service.py`, `app/static/index.html`, `tests/test_auth.py`, `tests/e2e/test_main_flow.py` |
 | Per-session auth revocation and self-service inventory | 새 token pair를 tenant-scoped persisted session identity에 결속하고 refresh에서도 유지한다. `/auth/logout`은 current session만 CAS 폐기하고, 본인 inventory는 selected local/S3 prefix 전체를 strict 검증한 뒤 현재 credential version의 active session만 반환한다. Selected revoke는 current·foreign target을 보호하고 owner retry를 idempotent하게 조정한다. Confirmed other-session bulk revoke는 current를 보존하고, confirmed all-device revoke는 같은 snapshot에서 current를 마지막에 써 본인 active session 전체를 종료한다. Profile은 session ID를 DOM에 넣지 않고 모든 action에 같은 single-flight와 late-response guard를 적용하며 전체 종료 성공 뒤에만 browser credential과 page-memory evidence를 정리한다. Corrupt state는 mutation 전 원본 보존 `503`, legacy sessionless logout/list/revoke는 `409`이고 audit은 aggregate count 외 token/session ID를 복사하지 않는다. Bulk는 multi-object transaction이 아니어서 partial progress와 current-write response-loss가 가능하며 User-Agent/IP, admin mass revoke, expired-session GC와 즉시 push는 범위 밖이다 | `app/storage/auth_session_store.py`, `app/services/auth_service.py`, `app/middleware/auth.py`, `app/middleware/audit.py`, `app/routers/auth.py`, `app/routers/sso.py`, `app/routers/admin/_invite.py`, `app/static/index.html`, `tests/storage/test_auth_session_store.py`, `tests/test_auth.py`, `tests/test_audit.py`, `tests/test_infrastructure.py`, `tests/e2e/test_main_flow.py` |
+| Session-authored local generation | Claude Code·Codex 세션이 받은 작성 지침(`/generate/authoring-brief`)이 provider 경로와 같은 프롬프트인지 확인하고, 세션이 쓴 bundle을 `/generate/authored`에서 `AuthoredBundleProvider`로 기존 검증·품질 보정·렌더링·이력 단계에 넣는다. Provider·cache·웹 검색은 쓰지 않고 실패는 `422 AUTHORED_BUNDLE_INVALID`와 사유로 돌려주며 이력을 남기지 않는다 | `app/routers/generate/authoring.py`, `app/providers/authored_provider.py`, `scripts/decisiondoc_author.py`, `tests/test_agent_authored_generation.py`, `tests/test_agent_author_cli.py` |
+| Prompt evidence rule | 모든 번들 프롬프트 끝에 근거 없는 수치를 금지하는 우선 규칙을 두고 번들 지시 중복을 제거. 품질 보정 대체 문장을 주제 중립으로 바꿔 다른 사업 문구 혼입을 막음 | `app/bundle_catalog/system_prompt.py`, `app/services/generation/quality_guard_finish.py`, `tests/test_bundle_prompt_rules.py` |
 | Provider abstraction | mock/openai/gemini/claude/local provider를 factory와 capability route 뒤에 둔 구조 | `app/providers/`, `tests/test_live_providers.py` |
 | Storage abstraction | local/S3 storage를 같은 interface 뒤에 두고 local path에서는 atomic write를 유지하는 구조 | `app/storage/`, `tests/test_storage.py` |
 | Reusable template integrity | 사용자 문서 입력 템플릿을 tenant별 local/S3 JSONL에 저장하고 malformed state·duplicate key/identity를 덮어쓰지 않는다. Worker mutation은 conditional create/CAS 충돌마다 최신 state 위에 add/delete/use-count를 재적용하고 bounded private receipt로 불확실 commit을 조정하며, delete는 같은 ID로 재생성된 후속 record를 제거하지 않는다 | `app/storage/template_store.py`, `app/routers/templates.py`, `tests/test_template_store_integrity.py` |
@@ -69,7 +71,8 @@ Report Quality receiver inspection은 ZIP 무결성만 확인하지 않는다. �
 | Static PWA screenshot | `evidence/screenshots/web-ui-home.png` |
 | Static PWA CSP boundary | `evidence/cli-logs/ui_csp_nonce_check.log` |
 | Playwright console check | `evidence/cli-logs/playwright_console.log` |
-| Post-login UI flow | `python3 scripts/capture_ui_flow_evidence.py` -> `evidence/cli-logs/ui_flow_evidence.json`, `evidence/screenshots/ui-flow-01-after-login.png`, `evidence/screenshots/ui-flow-02-generate-ready.png`, `evidence/screenshots/ui-flow-03-results.png`, `evidence/screenshots/ui-flow-04-export-complete.png` |
+| Session-authored path replay | `python3 scripts/capture_agent_authored_evidence.py` -> `evidence/cli-logs/agent_authored_evidence.json`, `evidence/generated-samples/agent-authored/`, three `evidence/screenshots/agent-authored-*.png` files; 합성 입력, provider·외부 호출 없음, 2026-10-08 |
+| Post-login UI flow | `python3 scripts/capture_ui_flow_evidence.py` (2026-10-08 재캡처, Markdown 다운로드 중 생성 API 호출 0건 기록) -> `evidence/cli-logs/ui_flow_evidence.json`, `evidence/screenshots/ui-flow-01-after-login.png`, `evidence/screenshots/ui-flow-02-generate-ready.png`, `evidence/screenshots/ui-flow-03-results.png`, `evidence/screenshots/ui-flow-04-export-complete.png` |
 | Guided Review local mock demo | `python3 scripts/capture_guided_decision_review_demo_evidence.py` -> `evidence/cli-logs/guided_review_h126_h128_demo.json`, five `evidence/screenshots/guided-review-demo-*.png` files; H126/H127/H128 only, no persistence or external execution |
 | Portfolio pack integrity | `python3 scripts/manage_portfolio_pack.py sync --prune`, `check`, `package`, `verify-zip` |
 
@@ -84,6 +87,8 @@ Report Quality receiver inspection은 ZIP 무결성만 확인하지 않는다. �
 | G2B 실데이터 end-to-end 완료 | `G2B_API_KEY`, stage URL/API key가 필요하다 | `scripts/run_stage_procurement_smoke.py` 실행 receipt |
 | 운영 배포 완료 | `.env.prod`, runtime URL, post-deploy smoke 증거가 필요하다 | `scripts/run_deployed_smoke.py`, `scripts/ops_smoke.py` 결과 |
 | 실제 입찰 제출, 법적 승인, 계약 확약 | 제품 boundary 밖이며 현재 로컬 evidence는 이를 실행하지 않는다 | 별도 승인/법무/운영 절차 |
+| 사람 사용 검증(UAT) 완료 | 사전 점검만 했고 실제 업무 문서로 쓴 확인이 없다 | UAT worksheet 결과 |
+| 실제 모델 문서 품질 | 세션 작성 실증은 합성 입력 1건이다 | 대표 사례와 판정 기준이 있는 평가 기록 |
 | 사용자 성과 수치 | 측정 데이터가 없다 | 수집 방법과 원자료가 있는 metric evidence |
 | production readiness | 현재 README는 MVP/PoC로 제한한다 | 운영 URL, SLO, incident/runbook, deployed smoke evidence |
 

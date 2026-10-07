@@ -40,6 +40,7 @@ SOURCE_FILES = (
     "docs/implementation-evidence.md",
     "docs/inspection-20260630.md",
     "docs/interview-story.md",
+    "docs/portfolio.md",
     "docs/product_demo_scenario.md",
     "docs/product_direction.md",
     "docs/product_execution_plan.md",
@@ -49,11 +50,13 @@ SOURCE_FILES = (
     "docs/roadmap.md",
     "docs/specs/external_repo_integration/ANALYSIS_20260812.md",
     "docs/specs/report_quality_learning/PILOT_REVIEW_RUNBOOK.md",
+    "docs/superpowers/specs/2026-10-07-agent-authored-local-generation-design.md",
     "docs/samples/future_feature_gate/template.json",
     "evidence/evidence_manifest.md",
     "reports/eval/v1/eval_report.md",
 )
 SOURCE_DIRS = (
+    "docs/samples/agent_authored_local",
     "docs/samples/bundle_quality_evidence/current",
     "docs/samples/procurement_decision_package_local_demo",
     "evidence/api-responses",
