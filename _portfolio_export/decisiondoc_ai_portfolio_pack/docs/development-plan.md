@@ -410,6 +410,16 @@ PPTX 보완 검증에서 이번 변경과 무관하게 실패하던 3건을 코�
 | `python3 -m pytest -q -p no:cacheprovider tests/test_infrastructure.py` | **179 passed, 1 failed** / `infra-drifts.xml`; 남은 1건은 기존 800줄 검사(6개 파일, 모듈 분할하지 않음) |
 | `tests/test_procurement_review_store.py tests/test_manage_portfolio_pack.py tests/test_count_readme_metrics.py` | **60 passed, 1 failed** / `review-store-and-docs.xml`; 실패는 portfolio pack에 없는 planned-feature spec 링크(기존) |
 
+### 작성 지침 프롬프트 정리와 CLI 조달 연결 (2026-10-07)
+
+로컬 세션 작성 경로의 남은 한계 두 가지를 마무리했다. 자세한 내용은 설계 문서 5절에 있다.
+
+- **프롬프트 중복 제거:** 번들 지시문(`prompt_hint`)이 시스템 지시와 안정성 체크리스트에 두 번 들어가던 중복을 없앴다.
+- **수치 규칙 통일:** 스타일 가이드의 "구체적 수치 반드시 포함"과 제안서 지시문의 "수치로 증명"을 근거 조건부 표현으로 바꿨다. 모든 번들 프롬프트 끝에 "수치 근거(다른 지시보다 우선)" 규칙을 넣었다.
+  - `tests/test_bundle_prompt_rules.py` 41건은 수정 전 코드에서 모두 실패하고 수정 후 통과한다.
+- **CLI 조달 연결:** `scripts/decisiondoc_author.py brief`에 `--procurement-decision-id`·`--procurement-revision`을 추가했다.
+  - local·fake-S3에서 다음을 확인했다: 선택 공고 문맥만 지침에 들어감, 결과 binding, provider 미호출, 이전 revision 409.
+
 ### 로컬 세션 작성 경로, 품질 보정 문구 결함, 화면 개선 (2026-10-07)
 
 운영자는 이 저장소를 Claude Code·Codex 세션에서 열고, 그 세션이 문서를 작성하는 로컬 사용을 목표로 정했다. 승인 게이트(`docs/future_feature_gates/agent_authored_local_generation.json`)와 설계·검증 문서(`docs/superpowers/specs/2026-10-07-agent-authored-local-generation-design.md`)를 남기고 다음을 구현했다.

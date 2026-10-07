@@ -73,8 +73,15 @@
   - PDF 표와 PPTX 구조화 슬라이드를 렌더링해 확인했다.
 - 증빙은 `output/agent-e2e-20261007/`(gitignore 대상)에 있다.
 
-## 5. 남은 한계
+## 5. 후속 정리 (2026-10-07)
 
-- 지침 프롬프트에는 번들 지시문 일부가 두 번 들어 있다. 스타일 규칙("구체적 수치 반드시 포함")과 품질 기준("근거 없는 수치 금지")도 서로 충돌한다. skill은 근거 없는 수치를 쓰지 않도록 정했지만, 프롬프트 정리는 별도 과제다.
-- 조달 binding 생성(`procurement_decision_id`)은 API로는 가능하지만 CLI 옵션으로는 노출하지 않았다.
+- **지시문 중복 제거:** `BundleSpec.stability_checklist`가 `prompt_hint`를 한 번 더 넣던 중복을 없앴다. `prompt_hint`는 시스템 지시에 한 번만 들어간다.
+- **수치 규칙 통일:** 스타일 가이드의 "구체적 수치 반드시 포함"과 제안서 지시문의 "수치로 증명"을 근거 조건부 표현으로 바꿨다. 모든 번들 프롬프트 끝의 공통 품질 기준에 "수치 근거(다른 지시보다 우선)" 규칙을 추가했다.
+  - `tests/test_bundle_prompt_rules.py` 41건은 수정 전 코드에서 모두 실패하고 수정 후 통과한다.
+- **CLI 조달 연결:** `brief`에 `--procurement-decision-id`·`--procurement-revision`을 추가했다.
+  - `tests/test_agent_authored_procurement.py`(local·fake-S3)는 다음을 확인한다: 선택 공고 문맥만 지침에 들어감, 결과 binding, provider 미호출, 이전 revision 409.
+
+## 6. 남은 한계
+
 - Human UAT와 실제 모델 출력 품질 평가는 이 작업으로 대신하지 않는다.
+- 결과·준공 보고서와 투자제안서 지시문의 수치 요구는 그대로 두었다. 공통 우선 규칙으로 근거 없는 수치 생성을 막는다.

@@ -98,7 +98,7 @@ class BundleSpec:
         lang_instruction = (
             "- 모든 내용을 한국어로 작성하세요.\n" if self.prompt_language == "ko" else ""
         )
-        hint = f"{self.prompt_hint}\n" if self.prompt_hint else ""
+        # prompt_hint is placed once in the system instruction by build_bundle_prompt.
         return (
             "Stability checklist:\n"
             "- Return one JSON bundle object only.\n"
@@ -108,7 +108,6 @@ class BundleSpec:
             "- Keep each doc section sufficiently detailed (target >= 600 chars per doc after rendering).\n"
             "- Output JSON only, no markdown.\n"
             f"{lang_instruction}"
-            f"{hint}"
         ).rstrip()
 
     def get_doc(self, key: str) -> DocumentSpec | None:
