@@ -410,6 +410,19 @@ PPTX 보완 검증에서 이번 변경과 무관하게 실패하던 3건을 코�
 | `python3 -m pytest -q -p no:cacheprovider tests/test_infrastructure.py` | **179 passed, 1 failed** / `infra-drifts.xml`; 남은 1건은 기존 800줄 검사(6개 파일, 모듈 분할하지 않음) |
 | `tests/test_procurement_review_store.py tests/test_manage_portfolio_pack.py tests/test_count_readme_metrics.py` | **60 passed, 1 failed** / `review-store-and-docs.xml`; 실패는 portfolio pack에 없는 planned-feature spec 링크(기존) |
 
+### DocumentOps 병합 이식 명세와 준비 작업 (2026-10-08)
+
+`proposal-v3-work`의 10-07 대응표(`docs/integration/decisiondoc-documentops-map-20261007.md`)를 기준으로 DecisionDoc 기능의 이식 명세를 썼다(`docs/superpowers/specs/2026-10-08-documentops-merge-port-spec.md`). 두 저장소는 읽기만 했고 `proposal-v3-work`의 고객·작업 폴더는 열지 않았다.
+
+- **결정(2026-10-08):** DocumentOps 완성이 먼저이며 그 전에는 준비만 한다. DecisionDoc은 포트폴리오 저장소로 보존하고 결함 수정만 한다. 새 저장소는 비공개로 시작한다.
+- **준비 1 — 문서 유형 데이터:** `scripts/export_documentops_type_catalog.py`가 번들 20종을 `docs/integration/documentops-type-catalog-v1.json`으로 바꾼다.
+  - 문서별 필수 heading(경고용·오류용 합집합, 템플릿 순서), 비어 있으면 안 되는 heading, 지침, 번들별 문체 규칙, 공통 품질 규칙을 담는다.
+  - JSON schema·Jinja2 템플릿·few-shot은 넣지 않는다.
+  - 지침이 JSON 필드 이름을 언급하는 경우(`guidance_json_fields`)와 금액·비율 예시(`amount_mentions`, 5개 번들)를 표시해 이식 때 고쳐 쓰게 한다.
+- **준비 2 — 의존성 정리:** `visual_asset_service.py`의 `Provider` import를 type annotation 전용으로 옮겼다. 이 import 때문에 HWPX·DOCX·PDF 출력 모듈이 provider 모듈을 끌고 왔다. 실행 동작은 바뀌지 않는다.
+- **테스트:** `tests/test_documentops_port_prep.py`가 이식 대상 7개 모듈이 서버·provider 없이 import되는지, 추적 중인 유형 데이터가 최신인지, 모든 필수 heading이 남고 few-shot이 빠졌는지 확인한다.
+- 조달 판단 모듈은 store·tenant·인증과 결합돼 있어 이식할 때 입력 방식을 바꾸며 끊는다(명세 2-5).
+
 ### 포트폴리오 증거 갱신과 UI 캡처 스크립트 계약 보완 (2026-10-08)
 
 - **main CI:** #76 merge commit `15722921`의 push CI([run 37594471323](https://github.com/sungjin9288/DecisionDoc-AI/actions/runs/37594471323))가 통과했다.

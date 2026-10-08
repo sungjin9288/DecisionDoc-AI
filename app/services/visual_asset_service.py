@@ -11,16 +11,19 @@ from __future__ import annotations
 
 import base64
 import html
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
-from app.providers.base import Provider
 from app.services.markdown_utils import (
     slide_outline_evidence,
     slide_outline_layout,
     slide_outline_message,
     slide_outline_visual,
 )
+
+if TYPE_CHECKING:
+    # Annotation only: export modules (HWPX/DOCX/PDF) import this file without a provider.
+    from app.providers.base import Provider
 
 _MAX_PROVIDER_IMAGE_ASSETS = 2
 
