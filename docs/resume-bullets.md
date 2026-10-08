@@ -1,21 +1,26 @@
 # Resume Bullets
 
-분석 기준: 2026-07-14 현재 저장소 코드, README, docs, local evidence, completion readiness receipt를 기준으로 업데이트했다. 직접 설명 가능한 범위는 `docs/contribution-note.md`를 기준으로 한다.
+분석 기준: 2026-10-08 현재 저장소 코드, README, docs, local evidence, completion readiness receipt를 기준으로 업데이트했다. 한 페이지 요약은 [portfolio.md](./portfolio.md)에 있다. 직접 설명 가능한 범위는 `docs/contribution-note.md`를 기준으로 한다.
 
 ## 1. 이력서용 프로젝트 제목 후보
 
+- DecisionDoc AI - 코딩 에이전트 세션과 연결한 로컬 업무 문서 작성·검증·변환 도구
 - DecisionDoc AI - FastAPI 기반 AI 문서 생성 및 협업 플랫폼
 - LLM Provider Abstraction 기반 의사결정 문서 자동화 서비스
 - 프로젝트 지식 재사용과 문서 export를 지원하는 AI 업무 문서 생성 API
 
 ## 2. 한 줄 소개 후보
 
+- Claude Code·Codex 세션이 쓴 제안서·보고서를 schema 검증, 품질 보정, 렌더링, DOCX/PDF/PPTX/HWPX/XLSX 변환까지 처리하는 로컬 문서 작업 도구를 만들었습니다.
 - FastAPI와 LLM provider abstraction을 활용해 의사결정 문서, 제안서, 보고서 초안을 생성하고 저장/export하는 AI 문서 생성 플랫폼을 개발 중입니다.
 - 문서 유형별 bundle schema, Jinja2 template, validation/lint를 결합해 LLM 생성 결과를 업무 산출물로 관리하는 서비스를 구현했습니다.
 - 파일/PDF 업로드, 프로젝트 지식 문서, 승인/공유/이력 흐름을 연결하는 AI 기반 문서 업무 자동화 MVP를 고도화하고 있습니다.
 
 ## 3. 현재 이력서에 넣어도 되는 bullet
 
+- 구독형 코딩 에이전트 세션을 문서 작성자로 쓰기 위해 서버의 provider 호출 자리를 `AuthoredBundleProvider`로 대체하는 작성 경로(`/generate/authoring-brief`, `/generate/authored`)와 CLI를 설계·구현하고, 기존 검증·렌더링·이력·5종 형식 변환 파이프라인을 그대로 재사용
+- 세션 작성 경로를 합성 RFP로 실증하며 품질 보정 대체 문장이 특정 사업 문구로 고정돼 다른 주제 문서에 섞이는 결함을 발견해 주제 중립 문장과 회귀 테스트로 수정
+- 모든 문서 번들 프롬프트에 근거 없는 수치 생성을 금지하는 우선 규칙을 두고, 번들 지시 중복과 상충하는 수치 요구를 정리해 20개 번들 전체를 테스트로 고정
 - 반복적인 업무 문서 초안 작성 문제를 해결하기 위해 FastAPI 기반 `/generate` API를 구현하고, Pydantic `GenerateRequest`와 bundle schema로 입력/출력 구조를 표준화한 AI 문서 생성 MVP를 개발 중
 - LLM provider 교체와 장애 대응을 고려해 Mock/OpenAI/Gemini/Claude/Local provider factory와 fallback chain을 구성하고, 모델 의존 로직을 route handler 밖으로 분리
 - 문서 유형별 품질 편차를 줄이기 위해 `BundleSpec`/`DocumentSpec`, Jinja2 template, stabilizer, lint/validation 단계를 결합한 생성 파이프라인 설계
@@ -32,12 +37,13 @@
 ## 4. 구현 후 넣을 수 있는 bullet
 
 - 구현 후 사용 가능: 실제 사용자 피드백과 사용 로그를 기반으로 문서 생성 품질 개선 루프를 운영하고, correction artifact를 fine-tuning/eval 데이터로 전환
-- 구현 후 사용 가능: 검증된 배포 URL, smoke evidence, UAT 결과를 확보해 외부 접근 가능한 AI 문서 생성 서비스로 검증
+- 구현 후 사용 가능: 사람 사용 검증(UAT) 결과를 확보해 실제 업무 문서 작성에 쓰고 있다고 설명
+- 구현 후 사용 가능: 검증된 배포 URL, smoke evidence를 확보해 외부 접근 가능한 AI 문서 생성 서비스로 검증
 - 구현 후 사용 가능: tenant별 권한, billing, SSO, audit 흐름을 실제 운영 환경에서 검증해 조직 단위 문서 협업 플랫폼으로 확장
 
 ## 5. 기술스택 한 줄
 
-- 현재 사용 중: Python, FastAPI, Pydantic v2, Jinja2, OpenAI API, Google Gemini, Claude, local/mock provider, pytest, Docker, Docker Compose, AWS SAM/Lambda, boto3, Playwright, python-docx, python-pptx, xlsxwriter
+- 현재 사용 중: Python, FastAPI, Pydantic v2, Jinja2, Claude Code skill·Codex AGENTS.md 연동 CLI, OpenAI API, Google Gemini, Claude, local/mock provider, pytest, Docker, Docker Compose, AWS SAM/Lambda, boto3, Playwright, python-docx, python-pptx, xlsxwriter
 - 예정/검증 필요: live provider route 운영, tenant별 운영 준비성, 사용자 성과 측정 dashboard
 
 ## 6. 지원 직무별 강조 포인트

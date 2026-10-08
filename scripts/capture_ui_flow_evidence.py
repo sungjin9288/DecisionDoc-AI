@@ -201,6 +201,7 @@ def capture_ui_flow_evidence(
         "export_complete": screenshot_dir / "ui-flow-04-export-complete.png",
     }
     browser_http_errors: list[dict[str, str | int]] = []
+    export_generation_requests: list[str] = []
 
     with playwright_factory() as playwright:
         browser = playwright.chromium.launch(headless=not headed, slow_mo=int(slow_mo_ms or 0))
@@ -239,14 +240,26 @@ def capture_ui_flow_evidence(
             page.locator("#results").scroll_into_view_if_needed()
             _capture_screenshot(page, screenshots["results"])
 
-            page.click("#export-btn")
-            _wait_until_text_contains(page, "#export-btn", "완료", timeout_ms=5000)
+            # Markdown download is browser-side: it must not call the generation API.
+            page.on(
+                "request",
+                lambda request: export_generation_requests.append(request.url)
+                if request.method == "POST" and "/generate" in request.url
+                else None,
+            )
+            with page.expect_download(timeout=5000) as download:
+                page.click("#export-btn")
+            if not download.value.suggested_filename.endswith(".md"):
+                raise RuntimeError(f"unexpected export file: {download.value.suggested_filename}")
+            _wait_until_text_contains(page, "body", "Markdown 다운로드를 요청했습니다", timeout_ms=5000)
             page.locator("#results").scroll_into_view_if_needed()
             _capture_screenshot(page, screenshots["export_complete"])
         finally:
             context.close()
             browser.close()
 
+    if export_generation_requests:
+        raise RuntimeError(f"Markdown export called the generation API: {export_generation_requests}")
     receipt = {
         "schema_version": SCHEMA_VERSION,
         "scope": "local mock browser UI flow; no external proof executed",
@@ -256,9 +269,10 @@ def capture_ui_flow_evidence(
             "authenticated browser session reached bundle grid",
             "bundle selection enabled generate button",
             "generation result rendered document tabs and document pane",
-            "export button reported completion",
+            "Markdown export downloaded in the browser without a generation request",
         ],
         "browser_http_errors": browser_http_errors,
+        "export_generation_requests": export_generation_requests,
         "external_actions_excluded": list(EXCLUDED_EXTERNAL_ACTIONS),
     }
     _write_text_atomic(receipt_path, json.dumps(receipt, ensure_ascii=False, indent=2) + "\n")

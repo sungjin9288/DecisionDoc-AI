@@ -5,6 +5,8 @@
 | 파일 | 설명 | 상태 |
 |---|---|---|
 | `evidence/screenshots/web-ui-home.png` | 로컬 FastAPI static PWA root 화면. 2026-07-08 기준 로그인 폼 렌더링 확인 | 검증 완료 |
+| `evidence/screenshots/ui-flow-01-after-login.png` through `ui-flow-04-export-complete.png` | `scripts/capture_ui_flow_evidence.py`로 2026-10-08 다시 캡처한 로그인, 번들 선택, 생성 결과, Markdown 다운로드 화면. 다운로드 중 생성 API 호출 0건은 `evidence/cli-logs/ui_flow_evidence.json`에 기록 | 검증 완료 |
+| `evidence/screenshots/agent-authored-pdf-page1.png`, `agent-authored-pdf-pages.png`, `agent-authored-pptx-slides.png` | Claude Code 세션이 합성 RFP로 작성한 `proposal_kr` 결과의 PDF 표지, PDF 첫 6쪽, PPTX 11장 미리보기. `scripts/capture_agent_authored_evidence.py`가 PyMuPDF와 LibreOffice로 렌더링 | 검증 완료 |
 | `evidence/screenshots/guided-review-demo-01-project-created.png` through `guided-review-demo-05-disposition.png` | local mock app shell에서 project 생성, Guided Review, H126 handoff, unchanged H127 recheck, H128 disposition 순서로 캡처 | 검증 완료 |
 
 ## 2. API Responses
@@ -31,6 +33,7 @@
 | `evidence/cli-logs/playwright_console.log` | Playwright console warning/error 확인 로그. warning 이상 0건 | 검증 완료 |
 | `evidence/cli-logs/playwright_requests.log` | Playwright network request 확인 로그 | 검증 완료 |
 | `evidence/cli-logs/ui_csp_nonce_check.log` | 로컬 UI 응답의 CSP nonce, `unsafe-inline` 부재, inline handler 0개 확인 로그 | 검증 완료 |
+| `evidence/cli-logs/agent_authored_evidence.json` | 세션 작성 결과 재제출 receipt. provider `agent_authored`, 작성 문장 106개 유지, 5종 형식 크기, PDF 쪽수, PPTX 장수. 형식별 파일 자체는 저장소에 넣지 않음 | 검증 완료 |
 | `evidence/cli-logs/guided_review_h126_h128_demo.json` | H126-H128 repeatable local mock capture의 artifact hash/size binding, page-memory, non-persistence, external-action exclusion receipt | local capture verified; portfolio pack included |
 
 ## 3-1. Reproducible Local Evidence Commands
@@ -99,6 +102,7 @@ M1 DoD는 아직 충족하지 않았다. Gemini quota/billing과 Anthropic credi
 | `evidence/generated-samples/generated_ops_checklist.md` | `POST /generate` 생성 결과 | 검증 완료 |
 | `evidence/generated-samples/exported_adr.md` | `POST /generate/export` 산출물 | 검증 완료 |
 | `evidence/generated-samples/exported_onepager.md` | `POST /generate/export` 산출물 | 검증 완료 |
+| `evidence/generated-samples/agent-authored/*.md` | 세션이 작성한 `proposal_kr` 4개 문서(사업 이해, 기술 제안, 수행 계획, 기대 효과)의 렌더링 결과. 입력은 `docs/samples/agent_authored_local/` | 검증 완료 |
 
 ## 7. Swagger / OpenAPI
 

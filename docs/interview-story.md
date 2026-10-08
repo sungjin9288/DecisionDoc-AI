@@ -1,10 +1,10 @@
 # Interview Story
 
-분석 기준: 2026-07-17 현재 저장소 코드, README, local evidence, completion readiness boundary를 기준으로 작성했다. 운영·성과 주장은 검증된 범위와 분리한다.
+분석 기준: 2026-10-08 현재 저장소 코드, README, local evidence, completion readiness boundary를 기준으로 작성했다. 한 페이지 요약은 [portfolio.md](./portfolio.md)에 있다. 운영·성과 주장은 검증된 범위와 분리한다.
 
 ## 1. 1분 프로젝트 소개
 
-DecisionDoc AI는 반복적인 업무 문서를 LLM으로 초안화하고, 그 결과를 검토 가능한 decision package로 관리하기 위한 FastAPI 기반 PoC/MVP입니다. `GenerationService`가 provider 호출, schema 안정화, 저장, Jinja2 rendering, lint를 조율하고, provider와 storage는 factory 뒤에 분리했습니다. 생성 결과는 project, knowledge, approval, share, export 흐름으로 이어집니다. 공공조달 기능에서는 tenant와 project에 결속된 review packet, reviewer inbox, downstream evidence freshness를 구현해 오래된 근거가 승인이나 공유로 조용히 넘어가지 않도록 했습니다. Mock/local regression과 evidence pack은 비용 없이 재현할 수 있지만, 잔여 live provider, G2B 실데이터, 배포 URL은 아직 완료 증거로 주장하지 않습니다.
+DecisionDoc AI는 제안서·보고서 같은 업무 문서를 구조, 작성, 검증, 형식 변환까지 한 흐름으로 다루는 로컬 문서 작업 도구입니다. 지금은 제가 구독 중인 Claude Code나 Codex 세션이 문서 내용을 쓰고, DecisionDoc 서버는 작성 지침을 주고 결과를 검증·렌더링·저장한 뒤 DOCX·PDF·PPTX·HWPX·XLSX로 바꿉니다. 처음에는 서버가 직접 LLM provider를 호출하는 구조였는데, provider를 하나의 교체 지점으로 분리해 둔 덕분에 그 자리만 바꿔 같은 파이프라인을 재사용할 수 있었습니다. `GenerationService`가 provider 호출, schema 안정화, 저장, Jinja2 rendering, lint를 조율하고, provider와 storage는 factory 뒤에 분리했습니다. 생성 결과는 project, knowledge, approval, share, export 흐름으로 이어집니다. 공공조달 기능에서는 tenant와 project에 결속된 review packet, reviewer inbox, downstream evidence freshness를 구현해 오래된 근거가 승인이나 공유로 조용히 넘어가지 않도록 했습니다. Mock/local regression과 evidence pack은 비용 없이 재현할 수 있지만, 잔여 live provider, G2B 실데이터, 배포 URL은 아직 완료 증거로 주장하지 않습니다.
 
 ## 2. 3분 상세 설명
 
@@ -37,6 +37,9 @@ DecisionDoc AI는 반복적인 업무 문서를 LLM으로 초안화하고, 그 �
 | 첫 관리자와 초대 수락의 worker 경쟁은 어떻게 다루나요? | Empty-tenant 확인과 first-admin create를 한 user-state CAS mutation으로 처리한다. Invite는 먼저 claim한 worker 하나만 account callback을 실행하고 실패 시 claim을 rollback한다. User/invite record의 private receipt로 불확실 commit을 조정하지만 두 state object의 transaction이나 crash recovery라고 주장하지 않는다. | `app/storage/user_store.py`, `app/storage/invite_store.py`, `tests/test_identity_store_integrity.py` |
 | 템플릿·생성 이력·공유 링크의 worker 경쟁은 어떻게 다루나요? | 각 tenant의 template/history/share object에 conditional create/CAS를 적용하고 충돌마다 최신 ownership·schema·lifecycle 위에 mutation을 재적용한다. Private receipt는 64개로 제한하고 public 응답에서 제거한다. Template/history 대상 mutation과 delete는 private immutable incarnation token에 결속해 timestamp가 같아도 같은 ID로 재생성된 후속 record를 변경하지 않는다. History retention은 제거된 record의 receipt를 남은 최신 record로 전달한다. | `app/storage/template_store.py`, `app/storage/history_store.py`, `app/storage/share_store.py`, 각 integrity test |
 | procurement review 증빙의 부분 쓰기는 어떻게 막나요? | Packet은 exact bytes만 write-if-absent/reuse하고 package는 SHA-256 경로에 immutable하게 저장한 뒤 record를 CAS로 전환한다. S3 commit 응답이 불확실하면 read-back으로 조정하고 record가 확정되지 않은 artifact는 권위로 사용하지 않는다. 완료 직전 packet과 완료 package semantic binding을 다시 검증하며 persisted 오류는 사용자 409가 아닌 500으로 처리한다. | `app/storage/state_backend.py`, `app/storage/procurement_review_store.py`, `app/services/procurement_review_evidence.py`, `tests/test_procurement_review_store.py` |
+| 왜 서버가 모델을 호출하지 않게 바꿨나요? | 혼자 로컬에서 쓰는 도구라 이미 구독 중인 코딩 에이전트 세션을 작성자로 쓰는 편이 비용과 키 관리가 단순했다. 서버는 provider 경로와 같은 프롬프트를 지침으로 주고, 제출된 bundle은 기존 검증·품질 보정·렌더링·이력 단계를 그대로 거친다. | `app/routers/generate/authoring.py`, `app/providers/authored_provider.py`, `tests/test_agent_authored_generation.py` |
+| 세션이 잘못 쓴 문서는 어떻게 막나요? | schema·lint·문서 검증 실패를 `422 AUTHORED_BUNDLE_INVALID`와 사유 목록으로 돌려주고 이력과 프로젝트 문서는 쓰지 않는다. CLI는 종료 코드 2로 알려 세션이 사유대로 고쳐 다시 제출한다. | `app/routers/generate/authoring.py`, `scripts/decisiondoc_author.py`, `tests/test_agent_author_cli.py` |
+| 근거 없는 수치는 어떻게 다루나요? | 모든 번들 프롬프트 끝에 수치 근거 규칙을 두고 다른 지시보다 우선하게 했다. 짧은 맥락의 근거 없는 수치는 품질 보정 단계가 일반 문장으로 바꾼다. 이 보정 문장이 특정 사업 문구로 고정된 결함을 새 경로 실증 중 찾아 고쳤다. | `app/bundle_catalog/system_prompt.py`, `tests/test_bundle_prompt_rules.py`, `tests/test_generate.py` |
 | 테스트와 외부 증거를 어떻게 구분하나요? | mock/non-live regression은 기본 gate로 두고, M1/M2/M6는 readiness와 no-secret proof receipt를 별도 계약으로 관리한다. | `scripts/check_completion_readiness.py`, `scripts/check_completion_proof_receipt.py` |
 
 ## 4. 프로젝트 면접 예상 질문
@@ -48,7 +51,7 @@ DecisionDoc AI는 반복적인 업무 문서를 LLM으로 초안화하고, 그 �
 | 왜 파일 기반 store를 사용했나요? | MVP의 local reproducibility와 테스트 단순성을 우선했고, bundle storage는 S3 option을 뒀다. | 운영 DB 수준으로 과장하지 않는다. |
 | 공공조달 review packet이 승인을 의미하나요? | 아니다. 검토 결과와 원본 결속을 남길 뿐 operational approval, bid submission, legal commitment를 허가하지 않는다. | 권한 경계를 명시한다. |
 | 포트폴리오 증거는 어떻게 신뢰하나요? | tracked allowlist를 source와 byte 비교하고 generated SHA-256 manifest와 deterministic ZIP을 검증한다. | ZIP은 local artifact이며 repo에는 없다. |
-| 현재 어디까지 검증됐나요? | mock/local regression, representative samples, local UI flow, CSP, evidence packaging은 검증 경로가 있다. | live provider/G2B/deploy는 미검증으로 분리한다. |
+| 현재 어디까지 검증됐나요? | mock/local regression, representative samples, local UI flow, CSP, evidence packaging, 세션 작성 경로 재현(합성 입력)은 검증 경로가 있다. | 사람 사용 검증(UAT), live provider/G2B/deploy는 미검증으로 분리한다. |
 | 다음 우선순위는 무엇인가요? | 비용 없이 가능한 workflow 품질과 evidence 정합성을 계속 높이고, 외부 실증 재개 시 readiness runbook을 따른다. | 완료되지 않은 M1/M2/M6를 숨기지 않는다. |
 
 ## 5. 안전한 표현과 피할 표현
@@ -56,6 +59,7 @@ DecisionDoc AI는 반복적인 업무 문서를 LLM으로 초안화하고, 그 �
 안전한 표현:
 
 - FastAPI 기반 AI-assisted documentation PoC/MVP를 개발했다.
+- 코딩 에이전트 세션이 문서를 쓰고 서버가 검증·변환하는 provider 미호출 작성 경로를 만들었다.
 - provider/storage abstraction과 deterministic validation pipeline을 구현했다.
 - tenant-bound procurement review와 stale evidence safeguard를 local test로 검증했다.
 - 외부 실행 전 readiness와 proof receipt를 분리했다.

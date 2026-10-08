@@ -2,9 +2,11 @@
 
 > 의사결정 문서·제안서·보고서를 **생성 → 검증 → 검토·승인 → 내보내기**까지 하나의 워크플로로 관리하는 FastAPI 기반 AI 문서 생성 플랫폼.
 
-LLM이 만든 결과를 단발성 텍스트가 아니라 **업무 산출물**로 다루는 데 초점을 둔 프로젝트입니다. 멀티 LLM provider 추상화, bundle/template/validation 파이프라인, 승인·이력·감사 워크플로, 공공조달(G2B) Go/No-Go 보조 흐름을 포함합니다.
+LLM이 만든 결과를 단발성 텍스트가 아니라 **업무 산출물**로 다루는 데 초점을 둔 프로젝트입니다. 멀티 LLM provider 추상화, bundle/template/validation 파이프라인, 승인·이력·감사 워크플로, 공공조달(G2B) Go/No-Go 보조 흐름을 포함합니다. 로컬에서는 Claude Code·Codex 세션이 문서 내용을 쓰고 서버가 provider 호출 없이 검증·렌더링·형식 변환을 맡는 작성 경로를 씁니다([Getting Started](#getting-started)).
 
-> ⚠️ 상태: **MVP 구현 후 고도화 중**. 운영 플랫폼이 아닌 PoC/MVP이며, 검증되지 않은 성과 수치는 사용하지 않습니다. 아래 수치는 모두 소스 코드에서 직접 카운트한 값이며 측정 커맨드를 함께 표기합니다.
+> ⚠️ 상태: **로컬 기능 구현과 자동 회귀 검증 완료, 사람 사용 검증(UAT) 전**. 운영 플랫폼이 아닌 개인 프로젝트이며, 검증되지 않은 성과 수치는 사용하지 않습니다. 아래 수치는 모두 소스 코드에서 직접 카운트한 값이며 측정 커맨드를 함께 표기합니다.
+>
+> 포트폴리오로 처음 보신다면 [한 페이지 요약](./docs/portfolio.md)부터 읽어 주세요.
 
 ---
 
@@ -135,6 +137,7 @@ python3 scripts/count_readme_metrics.py --field route_decorators  # → 317
 
 - **검토·승인 워크플로를 1급 기능으로** — 컨설팅 산출물은 검토 단계가 필수다. 단순 생성기는 실무에서 안 쓰인다고 판단해 approval/history를 생성 흐름의 일부로 설계.
 - **LLM provider abstraction** — 특정 모델 종속은 비용·정책 변화에 취약. Mock/OpenAI/Gemini/Claude/Local을 factory + fallback chain으로 추상화해 교체 가능하게 함. `mock`은 테스트·개발에서 결정론적으로 동작하도록 유지.
+- **모델 호출을 서버 밖으로 (로컬 세션 작성)** — 혼자 로컬에서 쓰는 도구라 이미 구독 중인 Claude Code·Codex 세션을 작성자로 쓴다. 서버는 provider 경로와 같은 프롬프트를 작성 지침으로 주고, 제출된 bundle은 `AuthoredBundleProvider`를 통해 기존 검증·품질 보정·렌더링·이력 단계를 그대로 거친다. 설계: [Agent-authored Local Generation Design](./docs/superpowers/specs/2026-10-07-agent-authored-local-generation-design.md).
 - **schema / template / validation 결합** — 문서 유형별 품질 편차를 사람 숙련도가 아니라 구조로 줄이기 위해 BundleSpec/DocumentSpec + Jinja2 + lint 단계를 결합.
 - **storage abstraction (local/S3)** — 로컬 개발과 클라우드 운영을 같은 코드 경로로 지원.
 - **DocumentOps skill registry** — first-party Markdown skill을 strict YAML metadata, content SHA-256, deterministic catalog로 검증하고, 인증된 read-only API에는 instruction body와 source path를 노출하지 않음.
@@ -356,11 +359,11 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **4,284개**, **328개 파일**입니다 (Python AST `test_` definition 기준 카운트이며 pass 수가 아닙니다). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **4,288개**, **329개 파일**입니다 (Python AST `test_` definition 기준 카운트이며 pass 수가 아닙니다). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 4284
-python3 scripts/count_readme_metrics.py --field test_files      # → 328
+python3 scripts/count_readme_metrics.py --field test_functions  # → 4288
+python3 scripts/count_readme_metrics.py --field test_files      # → 329
 ```
 
 > 위 수치는 Python AST로 확인한 `test_` 함수 정의 개수입니다. 각 테스트의 현재 pass 여부는 환경 구성 후 `pytest`로 재확인하세요. 검증되지 않은 커버리지·통과율 수치는 표기하지 않습니다.
@@ -492,9 +495,10 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 
 - GitHub: [sungjin9288/DecisionDoc-AI](https://github.com/sungjin9288/DecisionDoc-AI)
 - Release evidence: [DecisionDoc AI v1.1.77 Production Release](https://github.com/sungjin9288/DecisionDoc-AI/releases/tag/v1.1.77)
-- Demo: (접근 검증 후 추가)
+- 포트폴리오 요약: [docs/portfolio.md](./docs/portfolio.md)
+- Demo: 공개 URL 없음. 로컬 화면과 산출물은 [Evidence Gallery](./docs/evidence-gallery.md)
 - 엔지니어링/기여 가이드: [Contribution Note](./docs/contribution-note.md)
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 317 · 테스트 4,284 · env 키 95 등)는 소스 코드에서 직접 카운트했으며, 테스트 수는 Python AST `test_` 정의 기준이고 pass 수가 아닙니다. 재현은 `python3 scripts/count_readme_metrics.py --field test_functions`를 사용합니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 317 · 테스트 4,288 · env 키 95 등)는 소스 코드에서 직접 카운트했으며, 테스트 수는 Python AST `test_` 정의 기준이고 pass 수가 아닙니다. 재현은 `python3 scripts/count_readme_metrics.py --field test_functions`를 사용합니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

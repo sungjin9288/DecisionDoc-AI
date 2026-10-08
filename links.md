@@ -1,8 +1,9 @@
 # Links
 
 - GitHub: https://github.com/sungjin9288/DecisionDoc-AI
+- 포트폴리오 요약: [docs/portfolio.md](./docs/portfolio.md)
 - Release evidence: https://github.com/sungjin9288/DecisionDoc-AI/releases/tag/v1.1.77
-- Demo: 접근 검증 후 추가
+- Demo: 공개 URL 없음. 로컬 화면과 산출물은 `evidence/screenshots/`에 있다
 - 영상 시연: 아직 제작하지 않음
 - 발표자료: 없음
 - Notion: 없음

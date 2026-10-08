@@ -12,9 +12,10 @@
     "authenticated browser session reached bundle grid",
     "bundle selection enabled generate button",
     "generation result rendered document tabs and document pane",
-    "export button reported completion"
+    "Markdown export downloaded in the browser without a generation request"
   ],
   "browser_http_errors": [],
+  "export_generation_requests": [],
   "external_actions_excluded": [
     "provider API execution",
     "G2B live API execution",
