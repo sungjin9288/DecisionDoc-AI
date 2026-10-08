@@ -14,6 +14,8 @@ python3 scripts/capture_agent_authored_evidence.py
 python3 scripts/capture_agent_authored_evidence.py --check-only
 ```
 
+미리보기 이미지는 `requirements.txt`에 없는 PyMuPDF와 LibreOffice(`soffice`)가 있어야 만든다. 없으면 `--no-previews`로 receipt와 Markdown만 갱신한다.
+
 결과는 `evidence/cli-logs/agent_authored_evidence.json`, `evidence/generated-samples/agent-authored/`, `evidence/screenshots/agent-authored-*.png`에 쓴다. 형식별 파일(DOCX·PDF·PPTX·HWPX·XLSX)은 임시 폴더에만 만들고 저장소에 넣지 않는다.
 
 `bundle.json`은 작성 당시의 지침으로 쓴 결과다. 이후 지침이 바뀌어도 이 파일을 다시 쓰지 않으며, 재제출은 현재 서버가 같은 작성 결과를 어떻게 처리하는지를 보여 준다.

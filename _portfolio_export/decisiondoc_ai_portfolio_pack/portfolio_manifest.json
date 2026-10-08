@@ -115,8 +115,8 @@
     },
     {
       "path": "docs/samples/agent_authored_local/README.md",
-      "sha256": "39d2db9170b972bf999f431db376295029098bede9518dd55e8d692faab639bd",
-      "size_bytes": 1274
+      "sha256": "b99c16e622c196e0118d930ca8e2e4ef4bff9d9e41df3a771eab930a8e91dab6",
+      "size_bytes": 1454
     },
     {
       "path": "docs/samples/agent_authored_local/bundle.json",

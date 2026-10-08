@@ -6,7 +6,8 @@ DecisionDoc app with a temporary data directory, then records what the
 platform did with it: brief, validation, rendering and five export formats.
 No model provider is called, ``.env`` is not read, and the exported binaries
 stay in a temporary directory; only Markdown, preview images and a receipt
-are written to the repository.
+are written to the repository. Preview images need PyMuPDF (and LibreOffice
+``soffice`` for PPTX); ``--no-previews`` runs with the declared dependencies.
 
     python3 scripts/capture_agent_authored_evidence.py
     python3 scripts/capture_agent_authored_evidence.py --check-only
@@ -155,10 +156,16 @@ def _pdf_page_images(pdf_path: Path, *, limit: int | None = None) -> list[Any]:
 
 
 def _pdf_page_count(pdf_path: Path) -> int:
-    import fitz
+    # pdfplumber is a declared dependency; PyMuPDF is only needed for previews.
+    try:
+        import pdfplumber
+    except ImportError:
+        import fitz
 
-    with fitz.open(pdf_path) as document:
-        return document.page_count
+        with fitz.open(pdf_path) as document:
+            return document.page_count
+    with pdfplumber.open(pdf_path) as document:
+        return len(document.pages)
 
 
 def _pptx_slide_count(pptx_path: Path) -> int:
