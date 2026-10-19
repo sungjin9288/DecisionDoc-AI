@@ -22,6 +22,8 @@ reports/
 !_portfolio_export/decisiondoc_ai_portfolio_pack/reports/eval/v1/
 !_portfolio_export/decisiondoc_ai_portfolio_pack/reports/eval/v1/eval_report.md
 output/
+# Session work folders for RFPs, drafts and authored bundles (may hold customer material)
+work/
 .playwright-cli/
 _portfolio_export/*.zip
 

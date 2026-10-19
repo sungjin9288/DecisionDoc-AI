@@ -1,0 +1,50 @@
+{
+  "schema_version": "decisiondoc.future_feature_gate.v1",
+  "gate_id": "public-sector-specialization",
+  "title": "Public-sector proposal and report compliance package",
+  "target_user": "The repository operator, a consultant who writes proposals and project reports for central agencies, public enterprises, local governments and national research tasks with a subscribed Claude Code or Codex session",
+  "observed_problem": "A subscribed Claude or Codex session can already draft a proposal or report, so general drafting is not a differentiator. What the session does not do reliably is check a draft against the RFP and official public-sector rules: every RFP requirement ID answered, evaluation items mapped to pages for the mandatory cross-reference table, official Korean notation for item symbols, dates, times and amounts, submission conditions such as format, size and page limits, and consistency between the proposal and later stage reports.",
+  "evidence": [
+    {"kind": "user_feedback", "reference": "Conversation 2026-10-19", "observation": "The operator said direct document generation in Claude or Codex is already good enough to use as is, and that this project must specialize in tasks for public institutions, public enterprises, local governments and national projects, covering proposals and various reports."},
+    {"kind": "external_source", "reference": "조달청 협상에 의한 계약 제안서평가 세부기준 제379호(2026.1.26.) 제6조의2", "observation": "Proposals evaluated by PPS are submitted as PDF within 300MB with quantitative and qualitative proposals in separate files, and a cross-reference table listing the page for each evaluation item is mandatory."},
+    {"kind": "external_source", "reference": "과학기술정보통신부 고시 제2023-15호 소프트웨어사업 계약 및 관리감독에 관한 지침 별표2, 별지 제6호", "observation": "Software project requirements are classified into eleven categories and identified by a category with a serial number."},
+    {"kind": "external_source", "reference": "행정업무의 운영 및 혁신에 관한 규정(대통령령 제36728호) 제7조, 같은 규정 시행규칙(행정안전부령 제408호) 제2조·제4조", "observation": "Official rules fix item symbol order, dot date notation, 24-hour time with colon, amounts with Hangul in parentheses and the end mark for documents written by administrative agencies."},
+    {"kind": "external_source", "reference": "행정안전부 고시 제2025-1호 행정기관 및 공공기관 정보시스템 구축·운영 지침 제18조·제39조, 별지 제5호", "observation": "Information system projects cap technical evaluation at 90 points, and the project execution plan attached to the start notice has a sixteen-item outline."},
+    {"kind": "repository", "reference": "app/services/rfp_parser.py, app/services/procurement_applicability_service.py", "observation": "RFP fields are extracted only by a provider call, and requirement applicability tracks bid eligibility conditions by UUID; nothing traces RFP requirement IDs or evaluation items into a draft."}
+  ],
+  "current_workaround": "The operator reads the RFP and the draft side by side and builds the requirement table and cross-reference table by hand, then checks notation and submission conditions manually before submission.",
+  "desired_outcome": "A server-free package and CLI let a session turn an RFP into a structured condition profile and check any draft (Markdown, DOCX, HWPX or PDF) against it and against official notation rules, producing the requirement trace table and the evaluation cross-reference table, then extend the same checks to stage reports and the submission package.",
+  "acceptance_criteria": [
+    "Stage 1: an RFP profile JSON with requirements, evaluation items, submission and scoring conditions is validated strictly; a scan lists requirement ID candidates from RFP text; a trace reports covered, missing and unknown requirement IDs in a draft and writes a requirement trace table; a cross-reference table maps evaluation items to draft headings and rendered PDF pages.",
+    "Stage 2: a notation check reports item symbol order and skipped levels, date and time notation, amount and Hangul amount mismatch and the end mark, as errors for agency documents and warnings for proposals and reports.",
+    "Stage 3: report profiles for the project execution plan, start, interim and completion reports, policy research reports and business or feasibility plans, each with required sections, plus a task-order fulfilment table and a proposal-commitment consistency check.",
+    "Stage 4: a submission check compares rendered outputs with RFP conditions for format, total size, separate files, page limits and, when the RFP requires blind evaluation, company identifiers.",
+    "The package imports without FastAPI, providers, tenants or storage backends, so it can move unchanged to the merged local tool."
+  ],
+  "affected_boundaries": [
+    "A new app/public_sector package and scripts/publicdoc.py CLI",
+    "Repository skill documents for Claude Code and Codex sessions",
+    "Existing attachment text extraction reused read-only"
+  ],
+  "authority_scope": {
+    "review_only": true,
+    "allowed_effects": [
+      "Read local RFP and draft files the operator points to",
+      "Write check reports and generated tables to local paths"
+    ],
+    "excluded_effects": [
+      "Call any provider, G2B, AWS or external service",
+      "Submit proposals, register bids or claim evaluation results",
+      "Commit customer source material or client data to the repository"
+    ],
+    "separate_approval_required_for": [
+      "Commit, push, pull request and merge",
+      "Live G2B access, deployment or publication"
+    ]
+  },
+  "local_verification": [
+    {"command": "python3 -m pytest -q tests/test_public_sector_*.py", "proves": "Profile validation, requirement scan, trace, cross-reference and later stage checks on synthetic RFP and draft fixtures; exact run evidence is recorded in the design spec."},
+    {"command": "git diff --check", "proves": "Patch whitespace integrity only"}
+  ],
+  "decision": {"status": "approved", "rationale": "The repository operator directed public-sector specialization for proposals and reports on 2026-10-19 and chose to build it as a server-free package inside this repository, in the order requirement tracing, notation check, stage report set, submission check. This revises the 2026-10-08 defect-fix-only decision for this repository.", "decided_by": "repository-operator", "decided_at": "2026-10-19T00:00:00Z"}
+}

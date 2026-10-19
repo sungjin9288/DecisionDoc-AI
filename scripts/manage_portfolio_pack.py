@@ -51,6 +51,7 @@ SOURCE_FILES = (
     "docs/specs/external_repo_integration/ANALYSIS_20260812.md",
     "docs/specs/report_quality_learning/PILOT_REVIEW_RUNBOOK.md",
     "docs/superpowers/specs/2026-10-07-agent-authored-local-generation-design.md",
+    "docs/superpowers/specs/2026-10-19-public-sector-specialization-design.md",
     "docs/samples/future_feature_gate/template.json",
     "evidence/evidence_manifest.md",
     "reports/eval/v1/eval_report.md",
