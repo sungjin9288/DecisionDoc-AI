@@ -34,6 +34,7 @@ from app.services.markdown_utils import (
     build_markdown_kv_table,
     build_markdown_table,
     build_slide_outline_table,
+    nest_markdown_headings,
 )
 from app.services.validator import validate_docs
 from app.services.generation.procurement_source import ProcurementGenerationError, ProcurementGenerationResolver
@@ -104,6 +105,7 @@ class GenerationCoreMixin:
         self.env.filters["markdown_table"] = build_markdown_table
         self.env.filters["markdown_kv_table"] = build_markdown_kv_table
         self.env.filters["slide_outline_table"] = build_slide_outline_table
+        self.env.filters["nest_headings"] = nest_markdown_headings
 
     @contextmanager
     def _generation_tenant_scope(self, tenant_id: str) -> Iterator[None]:

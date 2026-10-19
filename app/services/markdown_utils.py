@@ -7,6 +7,10 @@ from typing import Any
 
 _BOLD_RE = re.compile(r"\*\*([^*]+)\*\*")
 _TABLE_SEPARATOR_RE = re.compile(r"^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s*$")
+_ATX_HEADING_RE = re.compile(r"^(#{1,6})(\s+\S.*)$")
+_FENCE_RE = re.compile(r"^\s*(```|~~~)")
+_DEEP_HEADING_RE = re.compile(r"^#{4,6}\s+(\S.*)$")
+_MAX_HEADING_LEVEL = 6
 
 
 def render_inline_html(text: str) -> str:
@@ -78,7 +82,11 @@ def parse_markdown_blocks(markdown: str) -> list[dict[str, Any]]:
             blocks.append({"type": "table", "headers": headers, "rows": rows})
             continue
 
-        if stripped.startswith("### "):
+        deep_heading = _DEEP_HEADING_RE.match(stripped)
+        if deep_heading:
+            # Export styles stop at level 3; deeper headings must not leak as literal '#'.
+            blocks.append({"type": "heading", "level": 3, "text": deep_heading.group(1)})
+        elif stripped.startswith("### "):
             blocks.append({"type": "heading", "level": 3, "text": stripped[4:]})
         elif stripped.startswith("## "):
             blocks.append({"type": "heading", "level": 2, "text": stripped[3:]})
@@ -260,3 +268,30 @@ def build_slide_outline_table(slides: list[dict[str, Any]]) -> str:
         rows,
         ["페이지", "슬라이드 제목", "핵심 메시지", "입증 포인트", "권장 시각자료", "배치 가이드"],
     )
+
+
+def nest_markdown_headings(text: str, min_level: int = 3) -> str:
+    """Shift headings in pasted text so they nest under the template's own section.
+
+    User context such as notes or RFP excerpts can carry its own ``#``/``##``
+    headings; rendered as-is they would become siblings of the document's
+    sections. Relative levels are kept, fenced code is left alone.
+    """
+    lines = text.splitlines()
+    in_fence = False
+    heading_rows: list[tuple[int, int, str]] = []
+    for index, line in enumerate(lines):
+        if _FENCE_RE.match(line):
+            in_fence = not in_fence
+            continue
+        match = None if in_fence else _ATX_HEADING_RE.match(line)
+        if match:
+            heading_rows.append((index, len(match.group(1)), match.group(2)))
+    if not heading_rows:
+        return text
+    shift = max(0, min_level - min(level for _, level, _ in heading_rows))
+    nested = list(lines)
+    for index, level, rest in heading_rows:
+        nested[index] = "#" * min(_MAX_HEADING_LEVEL, level + shift) + rest
+    return "\n".join(nested)
+
