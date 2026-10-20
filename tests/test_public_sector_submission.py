@@ -51,6 +51,7 @@ def test_conditions_from_the_profile_are_checked(tmp_path: Path, proposal_pdf: b
     codes = {(f["code"], f["target"]) for f in report["findings"]}
 
     assert ("format_not_allowed", "가격제안서.hwpx") in codes
+    assert ("unreadable_file", "가격제안서.hwpx") in codes  # a broken file is reported, the rest still checked
     assert ("over_size", "") in codes
     assert ("separate_file_not_found", "정량 제안서") in codes and ("separate_file_not_found", "정성 제안서") not in codes
     assert {("over_page_limit", "정성제안서.pdf"), ("over_page_limit", "요약본.pdf")} <= codes

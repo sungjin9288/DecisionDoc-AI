@@ -40,8 +40,8 @@
     },
     {
       "path": "docs/development-plan.md",
-      "sha256": "a30bf3e97a945fb4b770a10ee4fc3c38e65f61b04b1432d706d3865b6963bd8a",
-      "size_bytes": 144730
+      "sha256": "f335b43bfe1eaf20107c3e45ca4c1e014c708f23869e92908d6959f15432f3a5",
+      "size_bytes": 145065
     },
     {
       "path": "docs/evidence-checklist.md",
@@ -245,8 +245,8 @@
     },
     {
       "path": "docs/superpowers/specs/2026-10-19-public-sector-specialization-design.md",
-      "sha256": "00e5e147a39133bfb85be288e9ecec054c27f8eafd11a434405aca89a1c252a7",
-      "size_bytes": 18928
+      "sha256": "2256a057e72645d0abab71da39eb801c5f2eda927d5afb35701f8456f2a1b8b8",
+      "size_bytes": 19458
     },
     {
       "path": "evidence/api-responses/bundles.json",
