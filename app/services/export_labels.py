@@ -1,6 +1,19 @@
 """Shared helpers for human-friendly export labels."""
 from __future__ import annotations
 
+from typing import Any
+
+
+def shows_package_matter(opts: Any | None) -> bool:
+    """Whether to add the DecisionDoc cover and per-document intro cards.
+
+    Agency format has its own header block, and ``package_cover=False`` keeps only the
+    body for documents submitted to an agency.
+    """
+    if opts is None:
+        return True
+    return not getattr(opts, "is_government_format", False) and getattr(opts, "package_cover", True)
+
 
 _DOC_TYPE_LABELS = {
     "adr": "기술 의사결정 기록 (ADR)",

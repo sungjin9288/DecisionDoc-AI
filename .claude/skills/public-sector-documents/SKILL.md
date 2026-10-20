@@ -33,7 +33,22 @@ RFP에 없는 값은 비워 둔다. 짐작으로 채우지 않는다. 비운 값
 python3 scripts/publicdoc.py check-profile work/<과업>/rfp_profile.json
 ```
 
-## 3. 원고 검사
+## 3. 제안서 쓰기
+
+공공 제안서는 고정 번들 목차 대신 RFP의 목차와 평가항목을 따른다.
+
+- RFP 제안서 작성 요령에 지정 목차가 있으면 조건 카드 `outline`에 적는다. 목차마다 답하는 평가항목, 요구사항 번호, 작성 요령을 함께 적는다. 지정 목차가 없으면 비워 둔다. 그러면 평가항목마다 장을 만든다.
+- 뼈대를 만들고 그 파일에 직접 쓴다. `[작성 필요]` 줄은 모두 내용으로 바꾸고, 요구사항 고유번호는 본문에 적는다.
+
+  ```bash
+  python3 scripts/publicdoc.py proposal-skeleton --profile work/<과업>/rfp_profile.json --out work/<과업>/제안서.md
+  python3 scripts/publicdoc.py proposal-check --profile work/<과업>/rfp_profile.json work/<과업>/제안서.md
+  python3 scripts/publicdoc.py export work/<과업>/제안서.md --title "<제안서 제목>" --out-dir work/<과업>/제출 --name 정성제안서
+  ```
+
+- `export`는 서버 없이 HWPX·DOCX·PDF를 만들고 DecisionDoc 표지를 넣지 않는다.
+
+## 4. 원고 검사
 
 - 요구사항 추적은 내보내기 전 원고(`.md`·`.docx`·`.hwpx`)로 한다. 내보낸 파일은 표지 요약이 본문을 반복해 위치가 여러 개 잡힐 수 있다.
 - 번들처럼 원고가 여러 파일이면 제출본과 같은 순서로 모두 준다. `trace`·`crosswalk`·`notation`은 여러 파일을 한 문서로 읽는다.
@@ -57,7 +72,7 @@ python3 scripts/publicdoc.py check-profile work/<과업>/rfp_profile.json
   python3 scripts/publicdoc.py notation <원고> --kind submission
   ```
 
-## 4. 과업 단계 보고서
+## 5. 과업 단계 보고서
 
 - 사업수행계획서, 착수·중간·완료보고서, 정책연구 보고서, 사업계획서, 타당성 검토 유형이 있다. `report-types`로 섹션과 근거를 본다.
 - 조건 카드에 `tasks`(과업지시서 항목)와 `commitments`(제안서에서 약속한 인력·일정·산출물)를 적으면, 보고서의 과업 이행 대비표가 모든 항목을 다루는지 검사한다.
@@ -69,7 +84,7 @@ python3 scripts/publicdoc.py check-profile work/<과업>/rfp_profile.json
 
 - 뼈대의 `[작성 필요]`는 모두 내용으로 바꾼다. 남아 있으면 오류다.
 
-## 5. 제출 전 검사
+## 6. 제출 전 검사
 
 - 제출할 파일 또는 폴더를 조건 카드와 대조한다. 블라인드 평가면 회사명·약칭·대표자명 등을 `--identifier`로 모두 준다. 본문, 파일 이름, 메타데이터를 검사한다.
 

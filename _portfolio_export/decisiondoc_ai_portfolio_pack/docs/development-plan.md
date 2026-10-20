@@ -410,6 +410,16 @@ PPTX 보완 검증에서 이번 변경과 무관하게 실패하던 3건을 코�
 | `python3 -m pytest -q -p no:cacheprovider tests/test_infrastructure.py` | **179 passed, 1 failed** / `infra-drifts.xml`; 남은 1건은 기존 800줄 검사(6개 파일, 모듈 분할하지 않음) |
 | `tests/test_procurement_review_store.py tests/test_manage_portfolio_pack.py tests/test_count_readme_metrics.py` | **60 passed, 1 failed** / `review-store-and-docs.xml`; 실패는 portfolio pack에 없는 planned-feature spec 링크(기존) |
 
+### RFP 기반 제안서 목차와 서버 없는 제출 형식 변환 (2026-10-21)
+
+통합 검증의 관찰(고정 번들 목차가 RFP 평가항목과 맞지 않음, 변환에 번들·서버가 필요하고 DecisionDoc 표지가 붙음)을 해결했다. 승인 기록은 `docs/future_feature_gates/public_sector_proposal_outline.json`, 설계와 검증은 공공 특화 설계 문서 §10.
+
+- **조건 카드 `outline`:** RFP 지정 목차를 담는다. `proposal-skeleton`은 지정 목차 또는 평가항목으로 뼈대를 만들고, 배정되지 않은 요구사항을 별도 장에 모은다. `proposal-check`는 목차·자리 표시·요구사항 대응을 검사한다. 자리 표시 줄은 요구사항 추적에서 제외한다.
+- **`export`:** Markdown 원고를 서버 없이 HWPX·DOCX·PDF로 바꾼다.
+- **`GovDocOptions.package_cover`:** 기본값 `True`. `False`면 세 변환기가 DecisionDoc 표지와 문서별 소개 카드를 넣지 않는다.
+- **검증:** 새 테스트 14건. 합성 RFP로 다시 돌린 전 과정이 모두 통과했다. PDF에 DecisionDoc 표지와 도구 이름이 없다.
+- **다음 후보:** 출력에서 하위 항목 들여쓰기 표현(개조식 위계).
+
 ### 공공 과업 문서 검사 통합 검증과 PDF 엔진 오류 처리 (2026-10-20)
 
 PR #79(CI 통과: E2E 제외 5,610 passed, E2E 164 passed, 같은 run의 두 단계) 뒤, 실제 사용 순서대로 전 과정을 합성 자료로 돌렸다. 기록은 설계 문서 9절에 있다.

@@ -4,11 +4,10 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from app.public_sector.models import Obligation, RfpProfile
+from app.public_sector.models import PLACEHOLDER, Obligation, RfpProfile
 from app.public_sector.readers import SourceDocument
 from app.public_sector.report_types import STATUS_PENDING, ReportType, Section, obligation_sources
 
-PLACEHOLDER = "[작성 필요]"
 _NUMBERING_RE = re.compile(
     r"^(?:붙임\s*\d*\.?|제\s*\d+\s*[장절]|[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩⅪⅫ]+\.?|\d+(?:[.-]\d+)*[.)]?|[가-하][.)]"
     r"|\(\d+\)|\([가-하]\)|[①-⑳□○■●◦▪·-])\s*"

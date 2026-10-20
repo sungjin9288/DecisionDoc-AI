@@ -40,12 +40,31 @@ def _evaluation_findings(profile: RfpProfile) -> list[dict[str, str]]:
     for item in items:
         if item.points is None:
             findings.append(_finding("info", "missing_points", "배점 확인 필요", item.name))
-        if not item.headings:
-            findings.append(_finding("info", "no_headings", "이 평가항목에 답하는 제안서 목차를 정하지 않았다", item.name))
     technical = profile.scoring.technical
     points = [item.points for item in items]
     if technical is not None and None not in points and abs(sum(points) - technical) > _POINT_TOLERANCE:
         findings.append(_finding("warning", "points_mismatch", f"평가항목 배점 합계 {sum(points):g}점이 기술 배점 {technical:g}점과 다르다"))
+    return findings
+
+
+def _outline_findings(profile: RfpProfile) -> list[dict[str, str]]:
+    if not profile.outline:
+        return []
+    items = {item.name for item in profile.evaluation_items}
+    requirement_ids = {requirement.id for requirement in profile.requirements}
+    answered = {name for section in profile.outline for name in section.evaluation_items}
+    findings = [
+        _finding("error", "outline_unknown_item", f"목차가 없는 평가항목 '{name}'을 가리킨다", section.title)
+        for section in profile.outline for name in section.evaluation_items if name not in items
+    ]
+    findings += [
+        _finding("error", "outline_unknown_requirement", f"목차가 없는 요구사항 '{requirement_id}'을 가리킨다", section.title)
+        for section in profile.outline for requirement_id in section.requirement_ids if requirement_id not in requirement_ids
+    ]
+    findings += [
+        _finding("warning", "item_without_section", "어느 목차도 답하지 않는 평가항목이다", name)
+        for name in sorted(items - answered)
+    ]
     return findings
 
 
@@ -63,6 +82,9 @@ def _unknown_conditions(profile: RfpProfile) -> list[dict[str, str]]:
 
 
 def check_profile(profile: RfpProfile) -> dict[str, Any]:
-    findings = _requirement_findings(profile) + _evaluation_findings(profile) + _unknown_conditions(profile)
+    findings = (
+        _requirement_findings(profile) + _evaluation_findings(profile)
+        + _outline_findings(profile) + _unknown_conditions(profile)
+    )
     counts = {severity: sum(item["severity"] == severity for item in findings) for severity in ("error", "warning", "info")}
     return {"findings": findings, "counts": counts, "passed": counts["error"] == 0}

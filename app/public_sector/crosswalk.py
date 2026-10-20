@@ -15,6 +15,7 @@ import re
 from typing import Any
 
 from app.public_sector.models import RfpProfile
+from app.public_sector.proposals import headings_for_item
 from app.public_sector.readers import SourceDocument
 
 _TOC_MIN_TARGETS = 3
@@ -98,7 +99,9 @@ def _place(target: str, draft: SourceDocument, pages: SourceDocument | None, toc
 
 def build_crosswalk(profile: RfpProfile, draft: SourceDocument, pdf: SourceDocument | None = None) -> dict[str, Any]:
     pages = pdf if pdf is not None else (draft if draft.has_pages else None)
-    targets_by_item = [item.headings or [item.name] for item in profile.evaluation_items]
+    targets_by_item = [
+        item.headings or headings_for_item(profile, item.name) or [item.name] for item in profile.evaluation_items
+    ]
     toc = _toc_pages(pages, [t for targets in targets_by_item for t in targets]) if pages else set()
     rows = []
     for item, targets in zip(profile.evaluation_items, targets_by_item):

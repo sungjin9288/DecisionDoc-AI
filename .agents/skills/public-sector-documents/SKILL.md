@@ -7,5 +7,5 @@ description: Check a Korean public-sector proposal or report (공공기관·공�
 
 절차와 규칙은 Claude Code와 같다. `.claude/skills/public-sector-documents/SKILL.md`를 읽고 그대로 따른다.
 
-- `scripts/publicdoc.py`의 `text` → `scan-requirements` → RFP 조건 카드 작성 → `check-profile` → `trace` → `crosswalk --pdf` 순서이고, 공공 표기는 `notation`, 보고서는 `report-skeleton`·`report-check`, 제출 전에는 `submission`으로 검사한다.
+- `scripts/publicdoc.py`의 `text` → `scan-requirements` → RFP 조건 카드 작성 → `check-profile` → `trace` → `crosswalk --pdf` 순서이고, 제안서는 `proposal-skeleton`·`proposal-check`·`export`, 공공 표기는 `notation`, 보고서는 `report-skeleton`·`report-check`, 제출 전에는 `submission`으로 검사한다.
 - 서버, provider, 외부 서비스는 쓰지 않는다.

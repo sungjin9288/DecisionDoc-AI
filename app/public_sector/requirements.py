@@ -6,7 +6,7 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Any
 
-from app.public_sector.models import RfpProfile
+from app.public_sector.models import PLACEHOLDER, RfpProfile
 from app.public_sector.readers import SourceDocument
 
 # 과학기술정보통신부 고시 제2023-15호 「소프트웨어사업 계약 및 관리감독에 관한 지침」 별표2.
@@ -144,6 +144,8 @@ def trace_requirements(profile: RfpProfile, draft: SourceDocument) -> dict[str, 
     found: dict[RequirementKey, list[dict[str, Any]]] = {key: [] for key in keys}
     unknown: dict[str, list[dict[str, Any]]] = {}
     for index, block in enumerate(draft.blocks):
+        if PLACEHOLDER in block.text:
+            continue  # an unwritten outline line naming the IDs to answer is not an answer
         for match in find_ids(block.text):
             if match.key in found:
                 found[match.key].append(_location(draft, paths, index))

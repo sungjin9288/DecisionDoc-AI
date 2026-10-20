@@ -16,7 +16,7 @@
 
 제안서·보고서가 공공기관·공기업·지자체·국책과업용이거나 RFP·과업지시서가 주어지면 `.claude/skills/public-sector-documents/SKILL.md`를 따른다.
 
-- **도구:** `scripts/publicdoc.py`의 `text`·`scan-requirements`·`check-profile`·`trace`·`crosswalk --pdf`·`notation`·`report-skeleton`·`report-check`·`submission`. 서버와 외부 서비스를 쓰지 않는다.
+- **도구:** `scripts/publicdoc.py`의 `text`·`scan-requirements`·`check-profile`·`trace`·`crosswalk --pdf`·`notation`·`proposal-skeleton`·`proposal-check`·`export`·`report-skeleton`·`report-check`·`submission`. 서버와 외부 서비스를 쓰지 않는다.
 - **기준:** 공식 기준과 출처는 `docs/superpowers/specs/2026-10-19-public-sector-specialization-design.md`, RFP마다 다른 조건은 RFP 조건 카드(`rfp_profile.json`)를 따른다.
 - **작업 폴더:** 고객 자료는 git이 추적하지 않는 `work/`나 `output/`에 둔다.
 

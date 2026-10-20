@@ -6,6 +6,9 @@
     python3 scripts/publicdoc.py check-profile work/rfp_profile.json
     python3 scripts/publicdoc.py trace work/rfp_profile.json draft.docx --table work/대비표.md
     python3 scripts/publicdoc.py crosswalk work/rfp_profile.json draft.md --pdf proposal.pdf --table work/조견표.md
+    python3 scripts/publicdoc.py proposal-skeleton --profile work/rfp_profile.json --out work/제안서.md
+    python3 scripts/publicdoc.py proposal-check --profile work/rfp_profile.json work/제안서.md
+    python3 scripts/publicdoc.py export work/제안서.md --title "정성 제안서" --out-dir work/제출 --name 정성제안서
     python3 scripts/publicdoc.py notation draft.md --kind submission
     python3 scripts/publicdoc.py report-skeleton --type interim_report --profile work/rfp_profile.json --out work/중간보고서.md
     python3 scripts/publicdoc.py report-check work/중간보고서.md --type interim_report --profile work/rfp_profile.json
@@ -29,9 +32,11 @@ if str(_PROJECT_ROOT) not in sys.path:
 from pydantic import ValidationError  # noqa: E402
 
 from app.public_sector.crosswalk import build_crosswalk, crosswalk_table_markdown  # noqa: E402
+from app.public_sector.export import EXPORT_FORMATS, export_drafts  # noqa: E402
 from app.public_sector.models import load_profile  # noqa: E402
 from app.public_sector.notation import check_notation  # noqa: E402
 from app.public_sector.profile_check import check_profile  # noqa: E402
+from app.public_sector.proposals import check_proposal, proposal_skeleton  # noqa: E402
 from app.public_sector.readers import ReaderError, read_document, read_documents  # noqa: E402
 from app.public_sector.report_types import REPORT_TYPES  # noqa: E402
 from app.public_sector.reports import check_report, report_skeleton  # noqa: E402
@@ -138,6 +143,24 @@ def _cmd_submission(args: argparse.Namespace) -> int:
     return EXIT_PASSED if report["passed"] else EXIT_FINDINGS
 
 
+def _cmd_proposal_skeleton(args: argparse.Namespace) -> int:
+    _emit(proposal_skeleton(load_profile(args.profile)), args.out)
+    return EXIT_PASSED
+
+
+def _cmd_proposal_check(args: argparse.Namespace) -> int:
+    report = check_proposal(read_documents(args.draft), load_profile(args.profile))
+    _emit(report, args.out)
+    return EXIT_PASSED if report["passed"] else EXIT_FINDINGS
+
+
+def _cmd_export(args: argparse.Namespace) -> int:
+    formats = [item.strip().lower() for item in args.formats.split(",") if item.strip()]
+    for path in export_drafts(args.draft, formats, args.title, args.out_dir, args.name):
+        print(f"written: {path}")
+    return EXIT_PASSED
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Public-sector proposal and report checks.")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -166,6 +189,25 @@ def _parser() -> argparse.ArgumentParser:
     )
     notation.add_argument("--out")
     notation.set_defaults(handler=_cmd_notation)
+
+    proposal = commands.add_parser("proposal-skeleton", help="Write a proposal outline from the RFP outline or its evaluation items.")
+    proposal.add_argument("--profile", required=True)
+    proposal.add_argument("--out")
+    proposal.set_defaults(handler=_cmd_proposal_skeleton)
+
+    proposal_check = commands.add_parser("proposal-check", help="Check a proposal's outline, placeholders and requirement answers.")
+    proposal_check.add_argument("--profile", required=True)
+    proposal_check.add_argument("draft", nargs="+", help="Draft parts in submission order.")
+    proposal_check.add_argument("--out")
+    proposal_check.set_defaults(handler=_cmd_proposal_check)
+
+    export = commands.add_parser("export", help="Convert Markdown drafts to submission formats without the server.")
+    export.add_argument("draft", nargs="+", help="Markdown parts in submission order.")
+    export.add_argument("--title", required=True)
+    export.add_argument("--formats", default="hwpx,docx,pdf", help=f"Comma list of {', '.join(EXPORT_FORMATS)}.")
+    export.add_argument("--out-dir", required=True)
+    export.add_argument("--name", default="", help="Output file name without extension (default: title).")
+    export.set_defaults(handler=_cmd_export)
 
     types = commands.add_parser("report-types", help="List stage report types, their sections and basis.")
     types.add_argument("--out")

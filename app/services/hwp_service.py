@@ -17,7 +17,7 @@ import zipfile
 from io import BytesIO
 from typing import Any
 
-from app.services.export_labels import humanize_doc_type
+from app.services.export_labels import humanize_doc_type, shows_package_matter
 from app.services.export_outline import summarize_export_docs, summarize_export_package
 from app.services.export_reproducibility import write_archive_entry
 from app.services.hwp_image_metadata import _media_extension, _parse_jpeg_size, _parse_png_size
@@ -611,7 +611,7 @@ def _section_xml(
     # 공문서 헤더 블록
     if opts and opts.is_government_format:
         paras.extend(_gov_header_paras(title, opts))
-    else:
+    elif shows_package_matter(opts):
         paras.extend(_export_cover_paras(title, docs, opts))
 
     # Content
@@ -621,16 +621,17 @@ def _section_xml(
             paras.append(_para_xml(_separator_line(opts), "본문"))
             paras.append(_para_xml(""))
         if not (opts and opts.is_government_format):
-            doc_title = humanize_doc_type(str(doc.get("doc_type", "document")))
-            summary = summaries[i]
-            paras.append(_para_xml(f"문서 {i + 1:02d} / {len(docs):02d}", "제목3"))
-            paras.append(_para_xml(doc_title, "제목2"))
-            paras.append(_para_xml(summary["lead"], "본문"))
-            section_text = " · ".join(summary.get("section_items") or [summary["sections"]])
-            metric_text = " · ".join(summary.get("metric_items") or [summary["metrics"]])
-            paras.append(_para_xml(f"검토 초점: {section_text}", "본문"))
-            paras.append(_para_xml(f"구성 지표: {metric_text}", "본문"))
-            paras.append(_para_xml(""))
+            if shows_package_matter(opts):
+                doc_title = humanize_doc_type(str(doc.get("doc_type", "document")))
+                summary = summaries[i]
+                paras.append(_para_xml(f"문서 {i + 1:02d} / {len(docs):02d}", "제목3"))
+                paras.append(_para_xml(doc_title, "제목2"))
+                paras.append(_para_xml(summary["lead"], "본문"))
+                section_text = " · ".join(summary.get("section_items") or [summary["sections"]])
+                metric_text = " · ".join(summary.get("metric_items") or [summary["metrics"]])
+                paras.append(_para_xml(f"검토 초점: {section_text}", "본문"))
+                paras.append(_para_xml(f"구성 지표: {metric_text}", "본문"))
+                paras.append(_para_xml(""))
             visual_items = assets_by_doc_type.get(str(doc.get("doc_type", "document")), [])
             if visual_items:
                 paras.append(_para_xml("생성 시각자료", "제목3"))

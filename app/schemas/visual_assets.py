@@ -124,6 +124,8 @@ class GovDocOptions:
 
     # 플래그
     is_government_format: bool = False  # 공문서 표준 서식 적용 여부
+    # DecisionDoc 표지와 문서별 소개 카드. 공공기관 제출본처럼 본문만 필요하면 False.
+    package_cover: bool = True
 
 
 class EditedExportRequest(BaseModel):
