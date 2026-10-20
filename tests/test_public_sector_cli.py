@@ -99,3 +99,14 @@ def test_session_work_folders_named_in_the_skills_stay_out_of_git(path: str) -> 
     completed = subprocess.run(["git", "check-ignore", "-q", path], cwd=root, check=False)
 
     assert completed.returncode == 0, f"{path} may hold customer material and must stay gitignored"
+
+
+def test_cli_trace_reads_bundle_parts_in_order(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    profile = _write(tmp_path, "profile.json", PROFILE)
+    part1 = _write(tmp_path, "part1.md", "# 사업 이해\n\n## 사업 이해\nSFR-001 통합 검색\n")
+    part2 = _write(tmp_path, "part2.md", "# 기술 부문\n\n## 기술 부문\nSER-001 암호화\n")
+
+    assert main(["trace", profile, part1, "--out", str(tmp_path / "one.json")]) == EXIT_FINDINGS
+    assert main(["trace", profile, part1, part2, "--out", str(tmp_path / "both.json")]) == EXIT_PASSED
+    assert main(["notation", part1, part2, "--out", str(tmp_path / "n.json")]) == EXIT_PASSED
+    capsys.readouterr()

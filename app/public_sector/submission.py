@@ -22,6 +22,9 @@ from app.public_sector.readers import (
 
 _MB = 1024 * 1024
 _SUMMARY_MARKERS = ("요약",)
+# Authoring leftovers that must not reach a submitted file. "확인 필요" is what the writing
+# rules put in place of an unsupported number, so it marks an item still to be settled.
+_RESIDUE_MARKERS = ("[작성 필요]", "확인 필요", "PPT 구성 가이드", "TODO", "TBD")
 
 
 def _finding(severity: str, code: str, message: str, target: str = "") -> dict[str, str]:
@@ -102,12 +105,28 @@ def _blind_findings(profile: RfpProfile, files: list[Path], identifiers: list[st
     return findings
 
 
+def _residue_findings(files: list[Path]) -> list[dict[str, str]]:
+    findings = []
+    for path in files:
+        if path.suffix.lower() not in SUPPORTED_SUFFIXES:
+            continue
+        text = read_document(path).full_text()
+        for marker in _RESIDUE_MARKERS:
+            count = text.count(marker)
+            if count:
+                findings.append(_finding("warning", "authoring_residue", f"작성용 표시 '{marker}'가 {count}번 남아 있다", path.name))
+    return findings
+
+
 def check_submission(profile: RfpProfile, paths: list[str | Path], identifiers: list[str] | None = None) -> dict[str, Any]:
     files = collect_files(paths)
     if not files:
         raise ReaderError("검사할 제출 파일이 없습니다")
     page_findings, pages = _page_findings(profile, files)
-    findings = _format_findings(profile, files) + page_findings + _blind_findings(profile, files, identifiers or [])
+    findings = (
+        _format_findings(profile, files) + page_findings
+        + _blind_findings(profile, files, identifiers or []) + _residue_findings(files)
+    )
     counts = {severity: sum(item["severity"] == severity for item in findings) for severity in ("error", "warning", "info")}
     return {
         "files": [{"name": path.name, "bytes": path.stat().st_size, "pages": pages.get(path.name)} for path in files],

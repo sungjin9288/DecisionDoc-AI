@@ -112,3 +112,28 @@ def test_rendered_pdf_pages_are_confirmed_against_the_draft(tmp_path: Path) -> N
     for placement in placements:
         texts = [block.text for block in pdf.blocks if block.page == placement["page"]]
         assert any(placement["heading"].replace(" ", "") in text.replace(" ", "") for text in texts)
+
+
+def test_pdf_bullets_and_table_cells_still_confirm_the_body() -> None:
+    # Office-to-PDF conversion turns "- " into a bullet glyph line and "| a | b |" into one line per cell.
+    draft = SourceDocument("draft.md", "md", (
+        Block("현황 및 문제점", 2), Block("- 부서별 공유폴더에 문서가 분산되어 있다"),
+        Block("추진 일정", 2), Block("| 마일스톤 | 시점 | 완료 기준 |"),
+        Block("적용 기술", 2), Block("| 구성 영역 | 적용 기술 | 적용 목적 |"),
+    ))
+    pdf = SourceDocument("draft.pdf", "pdf", (
+        Block("핵심 섹션: 현황 및 문제점", page=1),
+        Block("현황 및 문제점", page=4), Block("", page=4), Block("부서별 공유폴더에 문서가", page=4),
+        Block("추진 일정", page=7), Block("마일스톤", page=7), Block("시점", page=7), Block("완료 기준", page=7),
+        # The table under 적용 기술 repeats the heading as a column name.
+        Block("적용 기술", page=8), Block("구성 영역", page=8), Block("적용 기술", page=8), Block("적용 목적", page=8),
+    ))
+    profile = RfpProfile.model_validate({
+        "schema_version": "publicdoc.rfp_profile.v1",
+        "project": {"name": "합성"},
+        "evaluation_items": [{"name": "이해도", "headings": ["현황 및 문제점", "추진 일정", "적용 기술"]}],
+    })
+
+    placements = build_crosswalk(profile, draft, pdf)["rows"][0]["placements"]
+
+    assert [(p["page"], p["page_basis"]) for p in placements] == [(4, "본문 확인"), (7, "본문 확인"), (8, "본문 확인")]

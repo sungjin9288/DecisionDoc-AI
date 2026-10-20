@@ -129,3 +129,28 @@ def test_trace_reads_hwpx_written_by_the_exporter(tmp_path: Path) -> None:
     assert report["passed"] is True
     # The exporter's cover summary repeats body text, so the body heading is one of the locations.
     assert any(location["heading_path"].endswith("보안 대책") for location in report["rows"][0]["locations"])
+
+
+def test_scan_strips_cell_labels_from_flattened_table_rows(tmp_path: Path) -> None:
+    rows = (
+        "# RFP\n\n## 요구사항 총괄표\n"
+        "• 구분: 기능 / 요구사항 고유번호: SFR-001 / 요구사항 명칭: 통합 검색 / 우선순위: 상\n"
+        "• 구분: 보안 / 요구사항 고유번호: SER-001 / 요구사항 명칭: 개인정보 암호화\n"
+    )
+    candidates = {c["id"]: c["name_candidate"] for c in scan_requirements(read_document(_write(tmp_path, "rfp.md", rows)))["candidates"]}
+
+    assert candidates == {"SFR-001": "통합 검색", "SER-001": "개인정보 암호화"}
+
+
+def test_bundle_parts_are_traced_as_one_document_in_order(tmp_path: Path) -> None:
+    from app.public_sector.readers import read_documents
+
+    first = _write(tmp_path, "part1.md", "# 사업 이해\n\n## 배경\nSFR-001 검색을 다룬다.\n")
+    second = _write(tmp_path, "part2.md", "# 기술 제안\n\n## 보안 대책\nSER-001 암호화를 적용한다.\n")
+
+    document = read_documents([first, second])
+    report = trace_requirements(_profile("SFR-001", "SER-001"), document)
+
+    assert report["passed"] is True
+    assert document.path == f"{first}, {second}"
+    assert report["rows"][1]["locations"][0]["heading_path"] == "기술 제안 > 보안 대책"

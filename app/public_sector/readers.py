@@ -260,3 +260,15 @@ def metadata_text(path: str | Path) -> str:
         ]
         return " ".join(archive.read(name).decode("utf-8", "ignore") for name in parts)
     return ""
+
+
+def read_documents(paths: list[str | Path]) -> SourceDocument:
+    """Read several drafts as one document in the given order (e.g. a proposal bundle's four parts)."""
+    documents = [read_document(path) for path in paths]
+    if len(documents) == 1:
+        return documents[0]
+    return SourceDocument(
+        path=", ".join(document.path for document in documents),
+        format="+".join(document.format for document in documents),
+        blocks=tuple(block for document in documents for block in document.blocks),
+    )

@@ -32,6 +32,7 @@ DEFAULT_SERVER = "http://127.0.0.1:8000"
 DEFAULT_KEY_FILE = _PROJECT_ROOT / "data" / "free-local" / ".agent-api-key"
 API_KEY_HEADER = "X-DecisionDoc-Api-Key"
 EXIT_INVALID_BUNDLE = 2
+EXIT_EXPORT_FAILED = 3
 # CLI name -> (export-edited format, file extension)
 FORMATS = {
     "docx": ("docx", ".docx"),
@@ -127,6 +128,7 @@ def submit(client: Any, work_dir: Path, formats: list[str]) -> dict[str, Any]:
         }
         for doc in result["docs"]
     ]
+    failed_exports = []
     for name in formats:
         export_format, extension = FORMATS[name]
         exported = client.post(
@@ -141,7 +143,10 @@ def submit(client: Any, work_dir: Path, formats: list[str]) -> dict[str, Any]:
                 "generate_missing_visuals": False,
             },
         )
-        exported.raise_for_status()
+        if exported.status_code >= 400:
+            # Keep the other formats; the document itself is already stored.
+            failed_exports.append({"format": name, "status": exported.status_code, **_error_detail(exported)})
+            continue
         path = out_dir / f"{_safe_name(result['title'])}{extension}"
         path.write_bytes(exported.content)
         files.append(str(path))
@@ -151,7 +156,17 @@ def submit(client: Any, work_dir: Path, formats: list[str]) -> dict[str, Any]:
         "provider": result["provider"],
         "project_document_id": result.get("project_document_id"),
         "files": files,
+        "failed_exports": failed_exports,
     }
+
+
+def _error_detail(response: Any) -> dict[str, str]:
+    try:
+        body = response.json()
+    except ValueError:
+        return {"code": "", "message": response.text[:300]}
+    body = body.get("detail", body) if isinstance(body, dict) else {}
+    return {"code": str(body.get("code", "")), "message": str(body.get("message", ""))[:300]}
 
 
 def list_bundles() -> list[dict[str, Any]]:
@@ -235,7 +250,9 @@ def main(argv: list[str] | None = None) -> int:
             print(f"bundle.json was rejected:\n{exc}", file=sys.stderr)
             return EXIT_INVALID_BUNDLE
         print(json.dumps(summary, ensure_ascii=False, indent=2))
-        return 0
+        for failure in summary["failed_exports"]:
+            print(f"{failure['format']} 변환 실패 ({failure['status']} {failure['code']}): {failure['message']}", file=sys.stderr)
+        return EXIT_EXPORT_FAILED if summary["failed_exports"] else 0
 
 
 if __name__ == "__main__":

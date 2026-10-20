@@ -96,3 +96,21 @@ def test_submission_cli_exit_codes(tmp_path: Path, proposal_pdf: bytes, capsys: 
     assert main(["submission", str(ok), str(folder), "--out", str(tmp_path / "r1.json")]) == EXIT_PASSED
     assert main(["submission", str(strict), str(folder), "--out", str(tmp_path / "r2.json")]) == EXIT_FINDINGS
     capsys.readouterr()
+
+
+def test_authoring_residue_is_reported_before_submission(tmp_path: Path) -> None:
+    folder = tmp_path / "제출"
+    folder.mkdir()
+    (folder / "정성제안서.md").write_text(
+        "# 제안서\n\n## PPT 구성 가이드\n권장 슬라이드 수\n\n예산 규모는 확인 필요.\n[작성 필요]\n", encoding="utf-8"
+    )
+
+    findings = check_submission(_profile(blind_evaluation=False), [folder])["findings"]
+    residue = sorted(f["message"] for f in findings if f["code"] == "authoring_residue")
+
+    assert residue == [
+        "작성용 표시 'PPT 구성 가이드'가 1번 남아 있다",
+        "작성용 표시 '[작성 필요]'가 1번 남아 있다",
+        "작성용 표시 '확인 필요'가 1번 남아 있다",
+    ]
+    assert all(f["severity"] == "warning" for f in findings if f["code"] == "authoring_residue")

@@ -36,6 +36,7 @@ python3 scripts/publicdoc.py check-profile work/<과업>/rfp_profile.json
 ## 3. 원고 검사
 
 - 요구사항 추적은 내보내기 전 원고(`.md`·`.docx`·`.hwpx`)로 한다. 내보낸 파일은 표지 요약이 본문을 반복해 위치가 여러 개 잡힐 수 있다.
+- 번들처럼 원고가 여러 파일이면 제출본과 같은 순서로 모두 준다. `trace`·`crosswalk`·`notation`은 여러 파일을 한 문서로 읽는다.
 
   ```bash
   python3 scripts/publicdoc.py trace work/<과업>/rfp_profile.json <원고> --table work/<과업>/요구사항_대비표.md
@@ -75,6 +76,8 @@ python3 scripts/publicdoc.py check-profile work/<과업>/rfp_profile.json
   ```bash
   python3 scripts/publicdoc.py submission work/<과업>/rfp_profile.json work/<과업>/제출/ --identifier "(주)회사명" --identifier "회사 약칭"
   ```
+
+- 작성용 흔적(`[작성 필요]`, "확인 필요", "PPT 구성 가이드", TODO·TBD)이 경고로 나오면 제출 전에 모두 해소하거나 지운다.
 
 종료 코드: 0 통과, 1 고칠 것 있음, 2 입력을 읽을 수 없음.
 

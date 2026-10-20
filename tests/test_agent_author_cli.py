@@ -122,3 +122,22 @@ def test_brief_rejects_incomplete_procurement_binding(argv, tmp_path):
     with pytest.raises(SystemExit) as excinfo:
         cli.main(base + argv)
     assert excinfo.value.code == 2
+
+
+def test_submit_keeps_other_formats_when_one_export_fails(client, tmp_path, monkeypatch):
+    from tests.test_pdf_engine_unavailable import _FakePlaywright
+
+    from app.services import pdf_service
+
+    monkeypatch.setattr(pdf_service, "async_playwright", lambda: _FakePlaywright())
+    work_dir = tmp_path / "doc1"
+    request = _request()
+    cli.write_brief(client, request, work_dir)
+    _write_bundle(work_dir, request)
+
+    summary = cli.submit(client, work_dir, ["pdf", "docx"])
+
+    assert [item["format"] for item in summary["failed_exports"]] == ["pdf"]
+    assert summary["failed_exports"][0]["code"] == "PDF_ENGINE_UNAVAILABLE"
+    assert any(path.endswith(".docx") for path in summary["files"])
+    assert not any(path.endswith(".pdf") for path in summary["files"])

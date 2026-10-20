@@ -12,6 +12,7 @@ from typing import Any
 from app.services.docx_service import build_docx
 from app.services.excel_service import build_excel
 from app.services.hwp_service import build_hwp
+from app.services.pdf_errors import PdfEngineUnavailableError
 from app.services.pptx_service import build_pptx_from_docs
 from app.services.procurement_document_binding import (
     normalize_procurement_document_binding,
@@ -318,7 +319,8 @@ async def _build_export_packet(
                     "size_bytes": len(content),
                 }
             )
-    except GenerationExportPacketError:
+    except (GenerationExportPacketError, PdfEngineUnavailableError):
+        # A missing PDF engine keeps its install hint instead of a generic conversion error.
         raise
     except Exception as exc:
         raise ExportPacketBuildError("artifact conversion failed") from exc
