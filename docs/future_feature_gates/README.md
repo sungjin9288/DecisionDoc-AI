@@ -48,6 +48,10 @@ command listed in that record is not pass evidence without its execution result.
   server validates, stores and exports it without any provider call. Design
   and verification: the
   [2026-10-07 spec](../superpowers/specs/2026-10-07-agent-authored-local-generation-design.md).
+- [Public-sector specialization](./public_sector_specialization.json):
+  `approved`; a server-free package checks proposals and reports against the
+  RFP and official public-sector rules in four stages (all four implemented 2026-10-19). Design: the
+  [2026-10-19 spec](../superpowers/specs/2026-10-19-public-sector-specialization-design.md).
 
 Do not overwrite a prior terminal decision. Create a new record when the
 problem, acceptance criteria, or authority scope changes.

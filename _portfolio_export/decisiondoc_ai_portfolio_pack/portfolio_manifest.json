@@ -15,8 +15,8 @@
     },
     {
       "path": "README.md",
-      "sha256": "f2b8710e445b6f1c2dd4569f5794b8ea51196eab9c6ad6e31691fec155f135cd",
-      "size_bytes": 95673
+      "sha256": "796b8933580f60058e44fa87e8155dc81f1fa5f14591c20579fabb1aadf683d0",
+      "size_bytes": 96320
     },
     {
       "path": "docs/architecture.md",
@@ -40,8 +40,8 @@
     },
     {
       "path": "docs/development-plan.md",
-      "sha256": "269ffe544b04d75bb9f8ed2de51079d61c3b2f54b1782dc5e7e8ce7e9bfc052a",
-      "size_bytes": 138316
+      "sha256": "6a9f4e43ce18c2298abe6d87cadd0c9296c1b4a44f3cdb186d6011e4fb5ed3a9",
+      "size_bytes": 143056
     },
     {
       "path": "docs/evidence-checklist.md",
@@ -242,6 +242,11 @@
       "path": "docs/superpowers/specs/2026-10-07-agent-authored-local-generation-design.md",
       "sha256": "6e96cf604e1bbc1a047ae045e12b297f45eefa25e6b7093bf620581a4be21777",
       "size_bytes": 8341
+    },
+    {
+      "path": "docs/superpowers/specs/2026-10-19-public-sector-specialization-design.md",
+      "sha256": "af74f97c1aa653c9be08f3d3683183800a59cd71653a68b3891defcf58461f8a",
+      "size_bytes": 14945
     },
     {
       "path": "evidence/api-responses/bundles.json",

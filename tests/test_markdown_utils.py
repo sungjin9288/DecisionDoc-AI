@@ -1,6 +1,7 @@
 import pytest
 
 from app.services.markdown_utils import (
+    nest_markdown_headings,
     build_markdown_table,
     build_slide_outline_table,
     parse_markdown_blocks,
@@ -87,3 +88,25 @@ def test_build_slide_outline_table_renders_visual_and_layout_guidance() -> None:
     assert "정책 지표 3개 제시 · 현장 병목 수치 2개 강조" in table
     assert "프로세스 흐름도 — 좌측 현행 프로세스, 우측 개선 후 프로세스 비교" in table
     assert "상단 결론 문장, 좌우 2단 비교, 우측 하단에 KPI 배지 배치" in table
+
+
+def test_nest_markdown_headings_keeps_hierarchy_below_the_section() -> None:
+    text = "# 자료\n본문\n## 결정\n- 항목\n### 세부"
+
+    assert nest_markdown_headings(text) == "### 자료\n본문\n#### 결정\n- 항목\n##### 세부"
+
+
+def test_nest_markdown_headings_leaves_plain_text_code_and_deep_headings() -> None:
+    plain = "맥락 설명 #해시태그\n두 번째 줄"
+    fenced = "```\n# 코드 주석\n```\n#### 이미 깊은 제목"
+
+    assert nest_markdown_headings(plain) == plain
+    assert nest_markdown_headings(fenced) == fenced
+    assert nest_markdown_headings("###### 가장 깊은 제목\n# 얕은 제목") == "###### 가장 깊은 제목\n### 얕은 제목"
+
+
+def test_deep_headings_parse_as_level_three_instead_of_literal_hashes() -> None:
+    blocks = parse_markdown_blocks("#### 배경\n본문\n###### 세부")
+
+    assert blocks[0] == {"type": "heading", "level": 3, "text": "배경"}
+    assert blocks[-1] == {"type": "heading", "level": 3, "text": "세부"}

@@ -410,6 +410,37 @@ PPTX 보완 검증에서 이번 변경과 무관하게 실패하던 3건을 코�
 | `python3 -m pytest -q -p no:cacheprovider tests/test_infrastructure.py` | **179 passed, 1 failed** / `infra-drifts.xml`; 남은 1건은 기존 800줄 검사(6개 파일, 모듈 분할하지 않음) |
 | `tests/test_procurement_review_store.py tests/test_manage_portfolio_pack.py tests/test_count_readme_metrics.py` | **60 passed, 1 failed** / `review-store-and-docs.xml`; 실패는 portfolio pack에 없는 planned-feature spec 링크(기존) |
 
+### 공공 과업 문서 특화 1단계: 요구사항 추적과 조견표 (2026-10-19)
+
+사용자가 공공기관·공기업·지자체·국책과업 특화를 지시했다(승인 기록 `docs/future_feature_gates/public_sector_specialization.json`). 10-08의 "DecisionDoc은 결함 수정만" 결정을 이 기능에 한해 바꿔, 서버 없는 패키지로 DecisionDoc 안에서 만든다. 설계·공식 기준·검증: `docs/superpowers/specs/2026-10-19-public-sector-specialization-design.md`.
+
+- **공식 기준 조사:** law.go.kr 원문 등 13종을 2026-10-19 기준으로 확인했다. 확인 수준이 높은 규칙만 코드에 고정하고, 쪽수·블라인드·배점처럼 RFP마다 다른 조건은 RFP 조건 카드에서 읽는다. SFR 같은 세 글자 약어는 공식 원문에서 찾지 못해 관행으로만 쓴다.
+- **1단계 구현:** `app/public_sector/`(조건 카드, 자르지 않는 위치 보존 reader, 요구사항 추적·대비표, 조견표)와 `scripts/publicdoc.py`, 세션용 skill.
+  - 조견표의 PDF 쪽은 원고에서 제목 다음 본문 앞부분이 PDF에서도 뒤따를 때만 "본문 확인"으로 인정한다. 표지 요약과 목차에 같은 제목이 있어서다.
+- **결함:** 작성 skill들이 안내하는 `work/`가 git 무시 대상이 아니어서 추가하고 테스트로 고정했다.
+- **검증(격리, 합성 자료):** 1단계 새 테스트 17건 통과. 실제 PDF 출력으로 조견표 쪽 확인. 공공 패키지 4개 모듈의 서버·provider 없는 import 확인.
+- **2단계 공공 표기 검사:** `notation`이 항목 기호 순서, 날짜·시각, 금액과 한글 금액의 일치, "끝" 표시를 검사한다. 행정기관 문서는 오류, 제안서·보고서는 경고(금액 불일치는 둘 다 오류). 테스트 9건. 합성 공문으로 찾은 첫 구현 결함 2건(같은 단계 번호 끊김 미검출, 시각 이중 보고)을 고쳤다.
+- **3단계 과업 단계 문서 세트:** 보고서 8종(사업수행계획서는 고시 16개 목차, 나머지는 관행 또는 부처 훈령)의 섹션 검사, 과업지시서 항목과 제안서 약속을 함께 추적하는 과업 이행 대비표 검사, 뼈대 생성. 테스트 12건.
+- **4단계 제출 패키지 검사:** 조건 카드 대비 형식·전체 용량·별도 파일·쪽수 제한, 블라인드 평가 시 본문·파일 이름·메타데이터의 회사 식별 정보. 테스트 4건.
+- **남은 확인:** 실제 RFP와 실제 원고로 쓰는 사용자 확인. 관행 목차와 동의어는 합성 문서로만 확인했다.
+
+### 축소 Human UAT 1건과 ADR·내보내기 제목 결함 수정 (2026-10-11)
+
+2026-10-08 결정대로 Human UAT를 "세션 작성 → HWPX·DOCX 출력" 흐름으로 줄여 시작했다. 기록지는 `output/uat-20261009/UAT-worksheet.md`(gitignore 대상)에 있다.
+
+- **환경:** 새 데이터 폴더의 작성 서버(mock provider, `.env` 미사용, loopback 외 네트워크 차단). 이전 UAT 서버(8787·8789)는 정리했다.
+- **문서 1:** 이 세션이 `tech_decision` 번들로 "DecisionDoc-AI와 DocumentOps 병합 방식 결정"을 작성했다. 자료는 이식 명세·대응표 요약이며 고객 자료는 없다. 첫 제출에서 검증을 통과했다.
+- **결함 1 — ADR 맥락 제목 충돌:** `adr.md.j2`가 요청의 `context`를 그대로 넣어, 자료 파일의 `#`·`##` 제목이 문서 구조에 섞였다(H1 2개, 자료의 `## 결정`과 본문의 `## Decision` 공존).
+  - `nest_markdown_headings` 필터가 맥락·제약 속 제목을 `## Context` 아래 단계로 내린다. 상대 단계와 fenced code는 유지한다.
+  - 자료 전체가 Context에 들어가는 동작 자체는 스키마 변경이 필요해 설계 한계로 남겼다.
+- **결함 2 — 4단계 이상 제목의 기호 노출:** 내보내기 공통 해석기 `parse_markdown_blocks`가 `###`까지만 제목으로 인식해, PDF·DOCX·HWPX에 `####`가 본문 글자로 찍혔다. 4–6단계 제목을 3단계 제목으로 인식하게 했다(HWPX 제목 스타일은 3단계까지 정의돼 있다).
+- **재현과 회귀:** 새 테스트 4건(필터 2, 해석기 1, ADR 렌더 1)은 수정 전 코드에서 실패했다. 수정 후 내보내기·생성·golden snapshot 등 15개 파일 422 passed. 다시 출력한 PDF(12쪽)·DOCX·HWPX에 `#` 기호 노출이 없다.
+- **보류한 관찰:**
+  - `tech_decision` 지침 예시의 근거 없는 수치. 수치 근거 우선 규칙이 우선하며, 새 저장소는 few-shot을 가져가지 않는다.
+  - inline code 백틱 노출(기존 Markdown 부분집합 한계)
+  - ADR 섹션 제목 영어
+- 사용자 판정(내용·문체·한글 열기·저장)은 대기 중이다.
+
 ### DocumentOps 병합 이식 명세와 준비 작업 (2026-10-08)
 
 `proposal-v3-work`의 10-07 대응표(`docs/integration/decisiondoc-documentops-map-20261007.md`)를 기준으로 DecisionDoc 기능의 이식 명세를 썼다(`docs/superpowers/specs/2026-10-08-documentops-merge-port-spec.md`). 두 저장소는 읽기만 했고 `proposal-v3-work`의 고객·작업 폴더는 열지 않았다.

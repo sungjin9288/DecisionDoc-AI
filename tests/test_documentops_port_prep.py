@@ -20,6 +20,14 @@ PORT_MODULES = [
     "app.bundle_catalog.registry",
     "app.eval.lints",
     "app.eval.bundle_eval",
+    # Public-sector package (docs/future_feature_gates/public_sector_specialization.json).
+    "app.public_sector.readers",
+    "app.public_sector.requirements",
+    "app.public_sector.crosswalk",
+    "app.public_sector.profile_check",
+    "app.public_sector.notation",
+    "app.public_sector.reports",
+    "app.public_sector.submission",
 ]
 SERVER_MODULES = ("fastapi", "app.main", "app.providers.base", "app.providers.factory", "app.tenant", "app.auth", "app.storage.state_backend")
 

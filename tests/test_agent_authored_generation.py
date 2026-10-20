@@ -167,3 +167,25 @@ def test_authored_request_rejects_unknown_fields(tmp_path, monkeypatch):
     )
 
     assert response.status_code == 422
+
+
+def test_context_file_headings_stay_inside_the_adr_context_section(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch, {})
+    request = {
+        "title": "[합성] 저장소 병합 결정",
+        "goal": "두 도구를 합치는 방식을 정한다",
+        "bundle_type": "tech_decision",
+        "context": "# 자료 원문\n\n## 결정\n- 새 저장소로 합친다.\n\n### 세부\n본문",
+    }
+    bundle = MockProvider().generate_bundle(
+        request, schema_version=SCHEMA_VERSION, request_id="nest", bundle_spec=get_bundle_spec("tech_decision")
+    )
+
+    response = client.post("/generate/authored", json={"request": request, "bundle": bundle}, headers=_admin_headers())
+
+    assert response.status_code == 200, response.text
+    adr = next(doc["markdown"] for doc in response.json()["docs"] if doc["doc_type"] == "adr")
+    headings = [line for line in adr.splitlines() if line.startswith("#")]
+    assert [line for line in headings if line.startswith("# ")] == ["# ADR: [합성] 저장소 병합 결정"]
+    assert "### 자료 원문" in headings and "#### 결정" in headings and "##### 세부" in headings
+    assert "## 결정" not in headings

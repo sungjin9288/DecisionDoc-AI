@@ -5,12 +5,12 @@
 
 {% if context %}
 ## Context
-{{ context }}
+{{ context | nest_headings }}
 
 {% endif %}
 {% if constraints %}
 ## Constraints
-{{ constraints }}
+{{ constraints | nest_headings }}
 
 {% endif %}
 ## Decision
