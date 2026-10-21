@@ -52,6 +52,10 @@ command listed in that record is not pass evidence without its execution result.
   `approved`; a server-free package checks proposals and reports against the
   RFP and official public-sector rules in four stages (all four implemented 2026-10-19). Design: the
   [2026-10-19 spec](../superpowers/specs/2026-10-19-public-sector-specialization-design.md).
+- [Public-sector proposal outline](./public_sector_proposal_outline.json):
+  `approved`; proposals follow the RFP outline or its evaluation items and are
+  converted to submission formats without the server or a DecisionDoc cover.
+  Design: §10 of the same spec.
 
 Do not overwrite a prior terminal decision. Create a new record when the
 problem, acceptance criteria, or authority scope changes.

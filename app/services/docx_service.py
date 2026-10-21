@@ -21,7 +21,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Mm, Pt, RGBColor
 
-from app.services.export_labels import humanize_doc_type
+from app.services.export_labels import humanize_doc_type, shows_package_matter
 from app.services.export_outline import summarize_export_docs, summarize_export_package
 from app.services.export_reproducibility import normalize_zip_metadata
 from app.services.markdown_utils import parse_markdown_blocks
@@ -746,7 +746,7 @@ def build_docx(
     summaries = summarize_export_docs(docs)
     if opts and opts.is_government_format:
         _add_gov_doc_header_block(doc, title, opts)
-    else:
+    elif shows_package_matter(opts):
         _add_export_cover_page(
             doc,
             title=title,
@@ -760,19 +760,20 @@ def build_docx(
         if i > 0 and opts and opts.is_government_format:
             doc.add_page_break()
         if not (opts and opts.is_government_format):
-            summary = summaries[i]
-            _add_doc_section_intro(
-                doc,
-                doc_type=str(d.get("doc_type", "document")),
-                index=i + 1,
-                total=len(docs),
-                lead=summary["lead"],
-                section_hint=summary["sections"],
-                metrics=summary["metrics"],
-                font_name=font_name,
-                font_size_pt=font_size,
-                line_spacing_pct=spacing,
-            )
+            if shows_package_matter(opts):
+                summary = summaries[i]
+                _add_doc_section_intro(
+                    doc,
+                    doc_type=str(d.get("doc_type", "document")),
+                    index=i + 1,
+                    total=len(docs),
+                    lead=summary["lead"],
+                    section_hint=summary["sections"],
+                    metrics=summary["metrics"],
+                    font_name=font_name,
+                    font_size_pt=font_size,
+                    line_spacing_pct=spacing,
+                )
             _add_visual_asset_block(
                 doc,
                 visual_assets=assets_by_doc_type.get(str(d.get("doc_type", "document")), []),

@@ -28,6 +28,8 @@ PORT_MODULES = [
     "app.public_sector.notation",
     "app.public_sector.reports",
     "app.public_sector.submission",
+    "app.public_sector.proposals",
+    "app.public_sector.export",
 ]
 SERVER_MODULES = ("fastapi", "app.main", "app.providers.base", "app.providers.factory", "app.tenant", "app.auth", "app.storage.state_backend")
 

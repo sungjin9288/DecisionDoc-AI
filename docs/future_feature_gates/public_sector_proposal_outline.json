@@ -1,0 +1,38 @@
+{
+  "schema_version": "decisiondoc.future_feature_gate.v1",
+  "gate_id": "public-sector-proposal-outline",
+  "title": "RFP-driven public proposal outline and server-free submission export",
+  "target_user": "The repository operator who writes public-sector proposals with a subscribed Claude Code or Codex session",
+  "observed_problem": "In the 2026-10-20 integration run the fixed proposal_kr bundle outline had no section for the RFP evaluation item 교육 및 지원, so the cross-reference table had a blank row, and the bundle put a PPT 구성 가이드 section into every submitted document. Converting a draft to HWPX, DOCX or PDF also required bundle JSON and the server, and every converter added a DecisionDoc cover and per-document cards that do not belong in a document submitted to an agency.",
+  "evidence": [
+    {"kind": "repository", "reference": "docs/superpowers/specs/2026-10-19-public-sector-specialization-design.md §9", "observation": "The integration run recorded the missing section for 교육 및 지원, the PPT 구성 가이드 residue and the bundle-only export path."},
+    {"kind": "repository", "reference": "app/services/pdf_service.py, docx_service.py, hwp_service.py", "observation": "Outside agency format every converter adds the DecisionDoc cover ('DecisionDoc AI Export', '완성형 문서 패키지') and 문서 01/04 cards."},
+    {"kind": "external_source", "reference": "조달청 협상에 의한 계약 제안서평가 세부기준 제379호 제6조의2; 계약예규 협상에 의한 계약체결기준 제5조⑤", "observation": "Proposals are evaluated item by item with a page cross-reference table, and the RFP states the proposal format."},
+    {"kind": "user_feedback", "reference": "Conversation 2026-10-21", "observation": "The operator told the session to proceed with the plan, whose next step was building the proposal outline from the RFP evaluation items."}
+  ],
+  "current_workaround": "Map evaluation items to bundle headings by hand in the profile, accept blank cross-reference rows, and remove cover pages and guidance sections manually after export.",
+  "desired_outcome": "The session writes a public proposal in Markdown into a skeleton built from the RFP's prescribed outline or its evaluation items, checks it against the outline and requirements, and converts it to submission formats without the server or any DecisionDoc cover.",
+  "acceptance_criteria": [
+    "The RFP profile can hold the prescribed outline with the evaluation items and requirement IDs each section answers, and the profile check reports outline references to unknown items or requirements and items no section answers.",
+    "proposal-skeleton writes the outline (or one chapter per evaluation item) and puts requirements no section claims under a requirements chapter; placeholder lines are never counted as requirement answers.",
+    "proposal-check reports missing prescribed sections as errors, derived sections as warnings, placeholders left and unanswered requirements.",
+    "The cross-reference table uses outline titles for items that name no headings.",
+    "export converts Markdown drafts to HWPX, DOCX and PDF in-process with package_cover=False, and the existing converters keep their cover by default."
+  ],
+  "affected_boundaries": [
+    "app/public_sector models, proposals, export, crosswalk and profile check",
+    "GovDocOptions.package_cover and the cover branches of the PDF, DOCX and HWPX converters",
+    "scripts/publicdoc.py and the public-sector skill"
+  ],
+  "authority_scope": {
+    "review_only": true,
+    "allowed_effects": ["Write skeletons, check reports and converted files to local paths"],
+    "excluded_effects": ["Call any provider or external service", "Submit proposals or claim evaluation results", "Commit customer material"],
+    "separate_approval_required_for": ["Commit, push, pull request and merge"]
+  },
+  "local_verification": [
+    {"command": "python3 -m pytest -q tests/test_public_sector_proposals.py tests/test_export_package_cover.py", "proves": "Outline planning, skeleton, proposal check, cross-reference fallback, profile outline findings, export and cover option; exact run evidence is recorded in the design spec."},
+    {"command": "git diff --check", "proves": "Patch whitespace integrity only"}
+  ],
+  "decision": {"status": "approved", "rationale": "The operator told the session on 2026-10-21 to proceed with the plan whose next step was the RFP-driven proposal outline found in the integration run. It extends the approved public-sector specialization without external effects.", "decided_by": "repository-operator", "decided_at": "2026-10-21T00:00:00Z"}
+}

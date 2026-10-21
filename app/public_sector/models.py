@@ -11,6 +11,8 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 PROFILE_SCHEMA_VERSION = "publicdoc.rfp_profile.v1"
+# Marks text the writer has not replaced yet; checks treat such lines as unwritten.
+PLACEHOLDER = "[작성 필요]"
 
 
 class _Strict(BaseModel):
@@ -36,6 +38,16 @@ class EvaluationItem(_Strict):
     points: float | None = None
     kind: Literal["정량", "정성", ""] = ""
     headings: list[str] = Field(default_factory=list)  # draft headings that answer this item
+
+
+class OutlineSection(_Strict):
+    """One chapter or section of the proposal outline the RFP prescribes (제안서 작성 요령)."""
+
+    title: str = Field(..., min_length=1)
+    level: int = Field(default=1, ge=1, le=3)
+    evaluation_items: list[str] = Field(default_factory=list)  # evaluation item names this section answers
+    requirement_ids: list[str] = Field(default_factory=list)
+    guidance: str = ""  # what the RFP says to write here
 
 
 class Obligation(_Strict):
@@ -67,6 +79,7 @@ class RfpProfile(_Strict):
     project: ProjectInfo
     requirements: list[Requirement] = Field(default_factory=list)
     evaluation_items: list[EvaluationItem] = Field(default_factory=list)
+    outline: list[OutlineSection] = Field(default_factory=list)  # RFP 지정 목차, if any
     submission: SubmissionRules = Field(default_factory=SubmissionRules)
     scoring: Scoring = Field(default_factory=Scoring)
     tasks: list[Obligation] = Field(default_factory=list)  # 과업지시서 항목

@@ -24,7 +24,7 @@ LLM이 만든 결과를 단발성 텍스트가 아니라 **업무 산출물**로
 |---------|------|
 | 문서 생성 API | `/generate` 계열 — 입력/출력을 Pydantic 모델로 표준화 |
 | 참고 문서 기반 생성 | `/generate/from-documents`, `/generate/from-pdf` — 첨부 자료 반영 |
-| 공공 과업 문서 검사 | `scripts/publicdoc.py` — RFP 조건 카드, 요구사항 고유번호 추적과 요구사항 대비표, 평가항목 조견표(제출 PDF 쪽 확인), 공공 표기 검사(항목 기호·날짜·시각·금액 한글 병기·끝 표시), 과업 단계 보고서 8종의 섹션·과업 이행 대비표 검사, 제출 패키지 검사(형식·용량·별도 파일·쪽수·블라인드 시 본문·메타데이터의 회사 식별 정보). 서버·provider 없이 Markdown·DOCX·HWPX·PDF 원고를 검사. 기준과 출처: [설계](./docs/superpowers/specs/2026-10-19-public-sector-specialization-design.md) |
+| 공공 과업 문서 검사 | `scripts/publicdoc.py` — RFP 조건 카드, 요구사항 고유번호 추적과 요구사항 대비표, 평가항목 조견표(제출 PDF 쪽 확인), 공공 표기 검사(항목 기호·날짜·시각·금액 한글 병기·끝 표시), RFP 목차·평가항목 기반 제안서 뼈대와 검사, 서버 없는 HWPX·DOCX·PDF 변환(DecisionDoc 표지 없음), 과업 단계 보고서 8종의 섹션·과업 이행 대비표 검사, 제출 패키지 검사(형식·용량·별도 파일·쪽수·블라인드 시 본문·메타데이터의 회사 식별 정보). 서버·provider 없이 Markdown·DOCX·HWPX·PDF 원고를 검사. 기준과 출처: [설계](./docs/superpowers/specs/2026-10-19-public-sector-specialization-design.md) |
 | Bundle / Template / Validation | BundleSpec·DocumentSpec + Jinja2 + lint 단계로 문서 유형별 품질 편차 축소 |
 | 멀티 LLM Provider | `mock` / `openai` / `gemini` / `claude` / `local` — factory + fallback chain |
 | 검토·승인 워크플로 | `/approvals` 계열 — submit / review / approve / reject / download |
@@ -360,11 +360,11 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **4,333개**, **337개 파일**입니다 (Python AST `test_` definition 기준 카운트이며 pass 수가 아닙니다). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **4,343개**, **339개 파일**입니다 (Python AST `test_` definition 기준 카운트이며 pass 수가 아닙니다). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 4333
-python3 scripts/count_readme_metrics.py --field test_files      # → 337
+python3 scripts/count_readme_metrics.py --field test_functions  # → 4343
+python3 scripts/count_readme_metrics.py --field test_files      # → 339
 ```
 
 > 위 수치는 Python AST로 확인한 `test_` 함수 정의 개수입니다. 각 테스트의 현재 pass 여부는 환경 구성 후 `pytest`로 재확인하세요. 검증되지 않은 커버리지·통과율 수치는 표기하지 않습니다.
@@ -502,4 +502,4 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 317 · 테스트 4,333 · env 키 95 등)는 소스 코드에서 직접 카운트했으며, 테스트 수는 Python AST `test_` 정의 기준이고 pass 수가 아닙니다. 재현은 `python3 scripts/count_readme_metrics.py --field test_functions`를 사용합니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 317 · 테스트 4,343 · env 키 95 등)는 소스 코드에서 직접 카운트했으며, 테스트 수는 Python AST `test_` 정의 기준이고 pass 수가 아닙니다. 재현은 `python3 scripts/count_readme_metrics.py --field test_functions`를 사용합니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

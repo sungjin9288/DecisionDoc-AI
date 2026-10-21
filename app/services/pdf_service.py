@@ -21,7 +21,7 @@ from playwright.async_api import async_playwright
 
 from app.services.pdf_errors import PdfEngineUnavailableError
 
-from app.services.export_labels import humanize_doc_type
+from app.services.export_labels import humanize_doc_type, shows_package_matter
 from app.services.export_outline import summarize_export_docs, summarize_export_package
 from app.services.export_reproducibility import normalize_pdf_metadata
 from app.services.markdown_utils import parse_markdown_blocks, render_inline_html
@@ -463,7 +463,7 @@ def _render_html(
     if opts and opts.is_government_format:
         parts.append(_gov_header_block_html(title, opts))
         parts.append("<br/>")
-    else:
+    elif shows_package_matter(opts):
         summaries = summarize_export_docs(docs)
         package = summarize_export_package(docs)
         doc_chips = "".join(
@@ -506,16 +506,17 @@ def _render_html(
         if i > 0:
             parts.append('<div class="doc-separator"></div>')
         if not (opts and opts.is_government_format):
-            summary = summarize_export_docs([doc])[0]
-            parts.append(
-                "<section class='doc-section-card'>"
-                f"<div class='section-index'>문서 {i + 1:02d} / {len(docs):02d}</div>"
-                f"<h2>{_html.escape(humanize_doc_type(str(doc.get('doc_type', 'document'))))}</h2>"
-                f"<p>{_html.escape(summary['lead'])}</p>"
-                f"<div class='meta'>검토 초점: {_html.escape(' · '.join(summary.get('section_items') or [summary['sections']]))}</div>"
-                f"<div class='meta'>구성 지표: {_html.escape(' · '.join(summary.get('metric_items') or [summary['metrics']]))}</div>"
-                "</section>"
-            )
+            if shows_package_matter(opts):
+                summary = summarize_export_docs([doc])[0]
+                parts.append(
+                    "<section class='doc-section-card'>"
+                    f"<div class='section-index'>문서 {i + 1:02d} / {len(docs):02d}</div>"
+                    f"<h2>{_html.escape(humanize_doc_type(str(doc.get('doc_type', 'document'))))}</h2>"
+                    f"<p>{_html.escape(summary['lead'])}</p>"
+                    f"<div class='meta'>검토 초점: {_html.escape(' · '.join(summary.get('section_items') or [summary['sections']]))}</div>"
+                    f"<div class='meta'>구성 지표: {_html.escape(' · '.join(summary.get('metric_items') or [summary['metrics']]))}</div>"
+                    "</section>"
+                )
             visual_items = []
             for asset in assets_by_doc_type.get(str(doc.get("doc_type", "document")), [])[:2]:
                 data_uri = visual_asset_data_uri(asset)
