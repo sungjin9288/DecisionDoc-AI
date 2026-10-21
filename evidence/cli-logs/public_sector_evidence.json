@@ -1,0 +1,166 @@
+{
+  "schema_version": "decisiondoc.public_sector_evidence.v1",
+  "scope": "in-process, temporary directory, synthetic RFP and proposals written by the session; nothing leaves the machine",
+  "inputs": {
+    "rfp.md": "docs/samples/public_sector_local/rfp.md",
+    "rfp_profile.json": "docs/samples/public_sector_local/rfp_profile.json",
+    "proposal.md": "docs/samples/public_sector_local/proposal.md",
+    "proposal_flawed.md": "docs/samples/public_sector_local/proposal_flawed.md"
+  },
+  "rfp": {
+    "format": "hwpx",
+    "requirement_candidates": [
+      "PSR-001",
+      "SER-001",
+      "SER-002",
+      "SFR-001",
+      "SFR-002",
+      "SFR-003"
+    ],
+    "prefix_mentions": {
+      "ISO": 1,
+      "PSR": 2,
+      "SER": 4,
+      "SFR": 6
+    }
+  },
+  "profile_check": {
+    "error": 0,
+    "warning": 0,
+    "info": 0
+  },
+  "clean": {
+    "proposal_check": {
+      "passed": true,
+      "counts": {
+        "error": 0,
+        "warning": 0
+      }
+    },
+    "requirements": {
+      "requirements": 6,
+      "covered": 6,
+      "missing": 0,
+      "unknown_ids": 0
+    },
+    "notation": {
+      "error": 0,
+      "warning": 0
+    },
+    "crosswalk": [
+      {
+        "item": "사업 이해도",
+        "points": 10.0,
+        "placements": [
+          {
+            "heading": "사업 이해도",
+            "page": 1,
+            "basis": "본문 확인"
+          }
+        ]
+      },
+      {
+        "item": "기술 및 기능",
+        "points": 40.0,
+        "placements": [
+          {
+            "heading": "기술 및 기능",
+            "page": 1,
+            "basis": "본문 확인"
+          }
+        ]
+      },
+      {
+        "item": "보안",
+        "points": 15.0,
+        "placements": [
+          {
+            "heading": "보안",
+            "page": 1,
+            "basis": "본문 확인"
+          }
+        ]
+      },
+      {
+        "item": "수행 관리",
+        "points": 15.0,
+        "placements": [
+          {
+            "heading": "수행 관리",
+            "page": 2,
+            "basis": "본문 확인"
+          }
+        ]
+      },
+      {
+        "item": "교육 및 지원",
+        "points": 10.0,
+        "placements": [
+          {
+            "heading": "교육 및 지원",
+            "page": 2,
+            "basis": "본문 확인"
+          }
+        ]
+      }
+    ],
+    "submission": {
+      "passed": true,
+      "counts": {
+        "error": 0,
+        "warning": 1,
+        "info": 0
+      },
+      "codes": [
+        "separate_file_not_found"
+      ]
+    },
+    "exports": {
+      "pdf": 235865,
+      "hwpx": 5921,
+      "docx": 39540
+    },
+    "pdf_package_cover": false,
+    "pdf_metadata_names_tool": false
+  },
+  "flawed": {
+    "planted": {
+      "missing_requirement": "PSR-001",
+      "unknown_requirement": "SFR-004",
+      "identifier": "(주)가상솔루션",
+      "date": "2026년 11월 2일"
+    },
+    "detected": {
+      "missing_requirements": [
+        "SFR-002",
+        "PSR-001"
+      ],
+      "unknown_requirements": [
+        "SFR-004"
+      ],
+      "identifier_exposed": true,
+      "date_findings": [
+        "날짜 '2026년 11월 2일'"
+      ]
+    },
+    "proposal_check": {
+      "passed": false,
+      "counts": {
+        "error": 2,
+        "warning": 1
+      }
+    }
+  },
+  "tables": [
+    "evidence/generated-samples/public-sector/requirement-trace-table.md",
+    "evidence/generated-samples/public-sector/crosswalk-table.md"
+  ],
+  "preview": "evidence/screenshots/public-sector-proposal-page1.png",
+  "external_actions_excluded": [
+    "provider API execution",
+    "G2B live API execution",
+    "AWS runtime execution",
+    "proposal submission",
+    "evaluation result claim"
+  ]
+}

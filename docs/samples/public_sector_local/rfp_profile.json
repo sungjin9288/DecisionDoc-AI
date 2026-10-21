@@ -1,0 +1,112 @@
+{
+  "schema_version": "publicdoc.rfp_profile.v1",
+  "project": {
+    "name": "[합성] 가상기관 문서관리시스템 고도화 사업",
+    "issuer": "가상기관",
+    "source_files": [
+      "rfp.md (확인 때 HWPX로 변환해 읽는다)"
+    ]
+  },
+  "requirements": [
+    {
+      "id": "SFR-001",
+      "category": "기능",
+      "name": "전자결재 연계 자동 보관",
+      "source": "제안요청서 Ⅱ.1"
+    },
+    {
+      "id": "SFR-002",
+      "category": "기능",
+      "name": "통합 전문 검색",
+      "source": "제안요청서 Ⅱ.1"
+    },
+    {
+      "id": "SFR-003",
+      "category": "기능",
+      "name": "권한 기반 열람 제어",
+      "source": "제안요청서 Ⅱ.1"
+    },
+    {
+      "id": "SER-001",
+      "category": "보안",
+      "name": "개인정보 암호화",
+      "source": "제안요청서 Ⅱ.1"
+    },
+    {
+      "id": "SER-002",
+      "category": "보안",
+      "name": "접근 이력 1년 보관",
+      "source": "제안요청서 Ⅱ.1"
+    },
+    {
+      "id": "PSR-001",
+      "category": "프로젝트 지원",
+      "name": "관리자·사용자 교육",
+      "source": "제안요청서 Ⅱ.1"
+    }
+  ],
+  "evaluation_items": [
+    {
+      "name": "사업 이해도",
+      "points": 10,
+      "kind": "정성",
+      "headings": []
+    },
+    {
+      "name": "기술 및 기능",
+      "points": 40,
+      "kind": "정성",
+      "headings": []
+    },
+    {
+      "name": "보안",
+      "points": 15,
+      "kind": "정성",
+      "headings": []
+    },
+    {
+      "name": "수행 관리",
+      "points": 15,
+      "kind": "정성",
+      "headings": []
+    },
+    {
+      "name": "교육 및 지원",
+      "points": 10,
+      "kind": "정성",
+      "headings": []
+    }
+  ],
+  "submission": {
+    "formats": [
+      "pdf"
+    ],
+    "max_total_mb": 300,
+    "separate_files": [
+      "정량 제안서",
+      "정성 제안서"
+    ],
+    "page_limit": 50,
+    "blind_evaluation": true,
+    "notes": [
+      "제안서에 제안사 명칭, 로고 등 식별 정보 표기 금지"
+    ]
+  },
+  "scoring": {
+    "technical": 90,
+    "price": 10,
+    "pass_ratio": 0.85
+  },
+  "tasks": [
+    {
+      "id": "SFR-001",
+      "name": "전자결재 연계 자동 보관",
+      "source": "제안요청서 Ⅱ.2"
+    },
+    {
+      "id": "PSR-001",
+      "name": "관리자·사용자 교육",
+      "source": "제안요청서 Ⅱ.2"
+    }
+  ]
+}

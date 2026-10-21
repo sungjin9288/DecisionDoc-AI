@@ -54,6 +54,13 @@
 - 왜 이 기술스택을 선택했는가? FastAPI/Pydantic은 API와 schema 검증에 적합하고, Jinja2는 문서 템플릿 분리에 적합하며, Docker/AWS SAM은 로컬과 서버리스 배포 경로를 제공한다.
 - 현재 구현된 접근: provider abstraction과 bundle schema 기반 생성 파이프라인이 존재한다.
 
+### 공공 과업 특화: 생성이 아니라 대조 (2026-10)
+
+- **배경:** Claude·Codex가 바로 쓰는 초안은 이미 쓸 만하다. 공공 과업에서 시간이 들고 실수가 나는 곳은 RFP·공식 기준과의 대조다. 요구사항 번호 누락, 조견표 쪽 번호, 공문서 표기, 블라인드 조건, 제안서 약속과 이후 보고서의 일치가 여기에 해당한다.
+- **결정:** 세션이 RFP를 읽어 조건 카드를 쓰고, 서버 없는 CLI(`scripts/publicdoc.py`)가 원고를 그 조건과 공식 기준에 대조한다. 공식 기준 13종을 2026-10-19 기준으로 확인했다. 확인 수준이 높은 규칙만 코드에 고정하고, RFP마다 다른 조건은 조건 카드에서 읽는다.
+- **실증:** `scripts/capture_public_sector_evidence.py`가 합성 RFP(HWPX)로 전 과정을 다시 돌린다. 바른 제안서는 모든 검사를 통과했다(조견표 5개 쪽 모두 본문 확인, PDF에 도구 표지·이름 없음). 실수를 넣은 제안서에서는 넣은 실수 4건을 모두 잡았다.
+- 설계 기록: [Public-sector Specialization Design](./superpowers/specs/2026-10-19-public-sector-specialization-design.md)
+
 ### 방향 전환: 로컬 세션 작성 (2026-10)
 
 - 배경: 실제 사용자는 혼자 로컬에서 쓰는 개발자 겸 컨설턴트이고, 이미 Claude Code·Codex를 구독하고 있다. 서버가 별도 API 키로 provider를 호출하면 비용과 키 관리가 중복된다.
@@ -80,6 +87,7 @@
 - usage event log와 monthly summary의 object별 conditional create/CAS, exact one-event gap repair와 uncertain commit reconciliation
 - procurement decision package local evidence path with fixture builder, validator, handoff/sign-off/export boundary, and versioned CLI stdout contract
 - tenant/project/packet SHA-256-bound procurement review record·packet·content-addressed reviewed-package의 selected-backend 결속, authorization-before-read 원본 packet 재다운로드, browser byte/hash 검증과 context-bound URL 폐기, conditional write/CAS, fail-closed semantic integrity, reviewer inbox, downstream freshness, share/approval drift acknowledgement
+- 공공 과업 문서 검사(`app/public_sector/`, `scripts/publicdoc.py`): RFP 조건 카드, 요구사항 대비표, 조견표(PDF 쪽 확인), 공공 표기, RFP 기반 제안서 목차, 보고서 8종, 제출 전 검사, 서버 없는 형식 변환
 - Claude Code·Codex 세션 작성 경로: 작성 지침·처리 API, `scripts/decisiondoc_author.py` CLI, 세션용 skill, 에이전트 키를 켜는 로컬 실행 옵션
 - 모든 번들 프롬프트의 수치 근거 우선 규칙과 주제 중립 품질 보정 문장
 - Markdown 브라우저 다운로드와 `export-edited` 형식 변환의 생성 API 비호출 계약
@@ -138,6 +146,7 @@
 - offline eval evidence: 2026-07-13 `python3 -m app.eval --out-dir reports/eval/v1` 실행 결과 fixture 10건 중 10건이 validator/lint gate를 통과했다. 이 결과는 `reports/eval/v1/eval_report.json`과 `.md`에 있으며 mock provider 결과이지 live provider 품질 증거는 아니다.
 - portfolio evidence: `scripts/manage_portfolio_pack.py`가 tracked allowlist를 pack에 동기화하고 source bytes, membership, generated SHA-256 manifest, deterministic ZIP을 재검증한다. ZIP은 local delivery artifact이며 git에 포함하지 않는다.
 - 배포 여부: 문서상 Docker Compose, AWS SAM, 운영 URL 기준이 존재한다. 현재 접근 가능성은 검증 필요.
+- 공공 과업 evidence: `evidence/cli-logs/public_sector_evidence.json`, `evidence/generated-samples/public-sector/`, `evidence/screenshots/public-sector-proposal-page1.png`. 합성 RFP·제안서이며 외부 호출이 없다.
 - 세션 작성 evidence: `evidence/cli-logs/agent_authored_evidence.json`, `evidence/generated-samples/agent-authored/`, `evidence/screenshots/agent-authored-*.png`. 입력은 합성 RFP이며 외부 호출이 없다.
 - 웹 흐름 evidence: 2026-10-08 `scripts/capture_ui_flow_evidence.py`로 로그인·생성·Markdown 다운로드 화면을 다시 캡처했다. 다운로드 중 생성 API 호출 0건을 receipt에 기록한다.
 - 사용자 피드백: 현재 없음. 임의 생성 금지.
@@ -149,6 +158,7 @@
 - 기술적으로 배운 점: LLM 기능도 provider, schema, validation, storage, export 같은 일반 소프트웨어 경계 안에 넣어야 운영 가능한 기능이 된다.
 - 설계에서 배운 점: router는 얇게, service는 orchestration, provider/storage는 factory로 분리하는 구조가 확장에 유리하다.
 - 사용자 관점에서 배운 점: 사용자는 "생성"보다 "입력 자료 반영, 검토, 공유, export"까지 이어지는 전체 흐름을 필요로 한다.
+- 공공 특화에서 배운 점: 실제 사용 순서대로 돌려 본 통합 검증이 단위 테스트가 놓친 연결 문제를 드러냈다. 예를 들어 LibreOffice PDF의 글머리 문자와 표 칸 때문에 조견표 쪽을 대부분 확인하지 못했고, 고정 번들 목차는 RFP 평가항목과 맞지 않았다. 그래서 검사 기능은 실제 흐름으로 확인한 뒤에야 완료로 본다.
 - 방향 전환에서 배운 점: 모델 호출을 서버 밖으로 옮겨도 검증·렌더링·이력 단계를 그대로 쓸 수 있었던 것은 provider를 처음부터 하나의 교체 지점으로 분리해 두었기 때문이다. 새 경로를 실제로 써 보는 과정에서 품질 보정 문구가 특정 사업에 고정된 기존 결함도 드러났다.
 - 다음 프로젝트에 반영할 점: 초기부터 데모 스크린샷, 사용자 시나리오, 실제 검증 로그, 본인 기여 범위를 함께 관리해야 한다.
 

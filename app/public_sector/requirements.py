@@ -175,18 +175,35 @@ def trace_requirements(profile: RfpProfile, draft: SourceDocument) -> dict[str, 
     }
 
 
-def _where(location: dict[str, Any]) -> str:
-    parts = [location["heading_path"] or "(제목 없음)"]
+_PATH_SEPARATOR = " > "
+
+
+def _shared_root(report: dict[str, Any]) -> str:
+    """The document title every location starts under, if there is exactly one."""
+    roots = {
+        location["heading_path"].split(_PATH_SEPARATOR)[0]
+        for row in report["rows"] for location in row["locations"]
+        if _PATH_SEPARATOR in location["heading_path"]
+    }
+    return roots.pop() if len(roots) == 1 else ""
+
+
+def _where(location: dict[str, Any], root: str) -> str:
+    path = location["heading_path"]
+    if root and path.startswith(root + _PATH_SEPARATOR):
+        path = path[len(root) + len(_PATH_SEPARATOR):]
+    parts = [path or "(제목 없음)"]
     if location["page"] is not None:
         parts.append(f"p.{location['page']}")
     return " / ".join(parts)
 
 
 def trace_table_markdown(report: dict[str, Any]) -> str:
-    """요구사항 대비표 in Markdown."""
+    """요구사항 대비표 in Markdown; a title shared by every location is left out."""
+    root = _shared_root(report)
     lines = ["| 고유번호 | 분류 | 요구사항 명칭 | 제안서 대응 위치 | 상태 |", "|---|---|---|---|---|"]
     for row in report["rows"]:
-        where = "<br>".join(_where(location) for location in row["locations"]) or "-"
+        where = "<br>".join(_where(location, root) for location in row["locations"]) or "-"
         status = "대응" if row["status"] == "covered" else "누락"
         cells = [row["id"], row["category"] or "확인 필요", row["name"] or "확인 필요", where, status]
         lines.append("| " + " | ".join(cell.replace("|", "\\|") for cell in cells) + " |")
