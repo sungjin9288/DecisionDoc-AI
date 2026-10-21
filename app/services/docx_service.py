@@ -16,11 +16,18 @@ from io import BytesIO
 from typing import Any
 
 from docx import Document
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Mm, Pt, RGBColor
 
+from app.services.docx_format import (
+    _add_field_code,
+    _set_default_font,
+    _set_indent,
+    _set_line_spacing,
+    _set_run_font,
+)
 from app.services.export_labels import humanize_doc_type, shows_package_matter
 from app.services.export_outline import summarize_export_docs, summarize_export_package
 from app.services.export_reproducibility import normalize_zip_metadata
@@ -29,61 +36,8 @@ from app.services.visual_asset_service import decode_visual_asset_bytes, group_v
 
 
 # ---------------------------------------------------------------------------
-# Internal helpers
+# Internal helpers (low-level formatting lives in docx_format)
 # ---------------------------------------------------------------------------
-
-def _set_run_font(run: Any, font_name: str, font_size_pt: float | None = None) -> None:
-    """Set both Latin and East-Asian (CJK) font on a run."""
-    run.font.name = font_name
-    if font_size_pt:
-        run.font.size = Pt(font_size_pt)
-    # East-Asian font for Korean characters
-    rpr = run._r.get_or_add_rPr()
-    rfonts = rpr.find(qn("w:rFonts"))
-    if rfonts is None:
-        rfonts = OxmlElement("w:rFonts")
-        rpr.insert(0, rfonts)
-    rfonts.set(qn("w:eastAsia"), font_name)
-    rfonts.set(qn("w:cs"), font_name)
-
-
-def _set_default_font(doc: Document, font_name: str, font_size_pt: float) -> None:
-    """Apply Korean-compatible default font to the Normal paragraph style."""
-    style = doc.styles["Normal"]
-    style.font.name = font_name
-    style.font.size = Pt(font_size_pt)
-    # East-Asian font
-    rpr = style.element.get_or_add_rPr()
-    rfonts = rpr.find(qn("w:rFonts"))
-    if rfonts is None:
-        rfonts = OxmlElement("w:rFonts")
-        rpr.insert(0, rfonts)
-    rfonts.set(qn("w:eastAsia"), font_name)
-    rfonts.set(qn("w:cs"), font_name)
-
-
-def _set_line_spacing(para: Any, spacing_pct: int) -> None:
-    """Set paragraph line spacing as a multiple (percentage / 100)."""
-    fmt = para.paragraph_format
-    fmt.line_spacing_rule = WD_LINE_SPACING.MULTIPLE
-    fmt.line_spacing = spacing_pct / 100.0
-
-
-def _add_field_code(run: Any, field_code: str) -> None:
-    """Insert a Word field code (PAGE, NUMPAGES) into a run."""
-    fld_char_begin = OxmlElement("w:fldChar")
-    fld_char_begin.set(qn("w:fldCharType"), "begin")
-    run._r.append(fld_char_begin)
-
-    instr = OxmlElement("w:instrText")
-    instr.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
-    instr.text = f" {field_code} "
-    run._r.append(instr)
-
-    fld_char_end = OxmlElement("w:fldChar")
-    fld_char_end.set(qn("w:fldCharType"), "end")
-    run._r.append(fld_char_end)
-
 
 def _add_page_number_footer(section: Any, font_name: str = "맑은 고딕") -> None:
     """Add centered 'n / total' page numbers to the section footer."""
@@ -220,6 +174,7 @@ def _add_markdown_content(doc: Document, markdown: str,
             p = doc.add_paragraph(style="List Bullet")
             _add_bold_inline(p, block["text"], font_name, font_size_pt)
             _set_line_spacing(p, line_spacing_pct)
+            _set_indent(p, block, font_size_pt)
             continue
         elif block_type == "table":
             _add_markdown_table(
@@ -239,6 +194,7 @@ def _add_markdown_content(doc: Document, markdown: str,
             p = doc.add_paragraph()
             _add_bold_inline(p, block["text"], font_name, font_size_pt)
             _set_line_spacing(p, line_spacing_pct)
+            _set_indent(p, block, font_size_pt)
             continue
         _set_line_spacing(p, line_spacing_pct)
 

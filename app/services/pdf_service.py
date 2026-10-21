@@ -64,6 +64,12 @@ def _table_cell_html(cell: str, chunk: int = _TABLE_TOKEN_CHUNK) -> str:
     )
 
 
+def _indent_style(block: dict[str, Any]) -> str:
+    # One Hangul character (1em) per sub-item level.
+    indent = int(block.get("indent", 0) or 0)
+    return f" style='margin-left:{indent}em'" if indent else ""
+
+
 def _markdown_to_html(markdown: str) -> str:
     """Very lightweight markdown → HTML converter."""
     lines: list[str] = []
@@ -85,7 +91,7 @@ def _markdown_to_html(markdown: str) -> str:
             if not in_list:
                 lines.append("<ul>")
                 in_list = True
-            lines.append(f"<li>{render_inline_html(block['text'])}</li>")
+            lines.append(f"<li{_indent_style(block)}>{render_inline_html(block['text'])}</li>")
         elif block_type == "table":
             close_list()
             chunk = _table_token_chunk(len(block["headers"]))
@@ -108,7 +114,7 @@ def _markdown_to_html(markdown: str) -> str:
             lines.append("<br/>")
         else:
             close_list()
-            lines.append(f"<p>{render_inline_html(block['text'])}</p>")
+            lines.append(f"<p{_indent_style(block)}>{render_inline_html(block['text'])}</p>")
     close_list()
     return "\n".join(lines)
 

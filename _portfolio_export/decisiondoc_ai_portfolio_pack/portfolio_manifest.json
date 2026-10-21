@@ -15,7 +15,7 @@
     },
     {
       "path": "README.md",
-      "sha256": "7d9997ff6c0005e7378fe620112501463f13dcc6e4c4883d9eb95ac91043437e",
+      "sha256": "ffea6b370c2a776231228de1edf99db7c42119a8167c3f5447fea88d95032680",
       "size_bytes": 96445
     },
     {
@@ -40,8 +40,8 @@
     },
     {
       "path": "docs/development-plan.md",
-      "sha256": "5eaa756658b85a256bec0ad3546b614317389224e1209b2138c588a13fd7cc3d",
-      "size_bytes": 146275
+      "sha256": "9255096ca8ed8b6ba828d03735fc1f08d3fc7e73155d27c9679bc93b1ede2247",
+      "size_bytes": 147109
     },
     {
       "path": "docs/evidence-checklist.md",
@@ -245,8 +245,8 @@
     },
     {
       "path": "docs/superpowers/specs/2026-10-19-public-sector-specialization-design.md",
-      "sha256": "edcf9a0edfc1d3b587f3b498c0f5c3588266b0ff8e6cd218281e454fb66cedcb",
-      "size_bytes": 22337
+      "sha256": "fc3734ac54739de4242f69727966f0af05f2e3680efc5fa8e7ab5db213c28b05",
+      "size_bytes": 23772
     },
     {
       "path": "evidence/api-responses/bundles.json",
