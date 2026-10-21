@@ -15,8 +15,8 @@
     },
     {
       "path": "README.md",
-      "sha256": "ffea6b370c2a776231228de1edf99db7c42119a8167c3f5447fea88d95032680",
-      "size_bytes": 96445
+      "sha256": "a2e469e25230921828972f91c29ae1754b98d8fbccab5a6fc3bcb50f2cd69f0c",
+      "size_bytes": 96543
     },
     {
       "path": "docs/architecture.md",
@@ -25,8 +25,8 @@
     },
     {
       "path": "docs/case-study.md",
-      "sha256": "d2a4f26835c026b829d79a96b0bd5edebcc34222877c240b1d4aa94ef3ceba07",
-      "size_bytes": 14814
+      "sha256": "e02ebe94a124c764a98ead4289548c97f7bed698ce47bb96fcb8221fcc90669f",
+      "size_bytes": 16900
     },
     {
       "path": "docs/completion-readiness-runbook.md",
@@ -35,13 +35,13 @@
     },
     {
       "path": "docs/contribution-note.md",
-      "sha256": "a8e8b2d862f9f4cebd1afccce4e87cc2469196185814f7b0eb9b714838732623",
-      "size_bytes": 32749
+      "sha256": "213d1ef57afbc2bf0dfffbffab160bed18dd7246690bf490005d6374344778fd",
+      "size_bytes": 33816
     },
     {
       "path": "docs/development-plan.md",
-      "sha256": "9255096ca8ed8b6ba828d03735fc1f08d3fc7e73155d27c9679bc93b1ede2247",
-      "size_bytes": 147109
+      "sha256": "974923c7580bfedeb028e576758cff5dd83a2339eb141c2bb0df625fb6aa3488",
+      "size_bytes": 148412
     },
     {
       "path": "docs/evidence-checklist.md",
@@ -50,8 +50,8 @@
     },
     {
       "path": "docs/evidence-gallery.md",
-      "sha256": "028a8abeac8e54ed5188473149f978d8a0cda122002f1059aa1fa1f645abd668",
-      "size_bytes": 11643
+      "sha256": "162a59fda315921f9288a474c54fef8cc0db1d9d95a5713e152dece2e5c00b7b",
+      "size_bytes": 12362
     },
     {
       "path": "docs/future_feature_gate.md",
@@ -70,13 +70,13 @@
     },
     {
       "path": "docs/interview-story.md",
-      "sha256": "607725c69ea00de02f75d12897612f0d2bd7c49193e569947e325aea16b8bf12",
-      "size_bytes": 13908
+      "sha256": "36fcbeac2965759d566cc760c1052a581e7ee167b7f45453527df619461f8e54",
+      "size_bytes": 15158
     },
     {
       "path": "docs/portfolio.md",
-      "sha256": "1cbbfd6af728f7f20a5e51e23dc78be03af8083e0b81ed6084782009632260e3",
-      "size_bytes": 8875
+      "sha256": "8bdf6b7c079487f076c963f34ccee6846dcfb12cf6f7edf29d28f8544b92a922",
+      "size_bytes": 14344
     },
     {
       "path": "docs/product_demo_scenario.md",
@@ -100,13 +100,13 @@
     },
     {
       "path": "docs/project-card.md",
-      "sha256": "2e3481bd24634d94a1788344e148a8f5bb20d8ccb3ab6506445b38f9c3f1ab43",
-      "size_bytes": 19535
+      "sha256": "087df585025726161c9f3b7271b10f93ab94eeb6de0746ec4f0ddd9a6f689063",
+      "size_bytes": 20285
     },
     {
       "path": "docs/resume-bullets.md",
-      "sha256": "6bafd7ae5c86253e8f1a7924151b1468250f5481ebc86d29e858b52612e57658",
-      "size_bytes": 8523
+      "sha256": "64afe8579f8db90554665fd9c51571fc7c72a0134479745ddcb6d92676922c55",
+      "size_bytes": 9418
     },
     {
       "path": "docs/roadmap.md",
@@ -227,6 +227,26 @@
       "path": "docs/samples/procurement_decision_package_local_demo/sample_input.json",
       "sha256": "757beefbdbf7d8980e43fc01c36df2f464bc703d35401a8603537f6d6fd6e42c",
       "size_bytes": 2888
+    },
+    {
+      "path": "docs/samples/public_sector_local/proposal.md",
+      "sha256": "a14b05dcfe9cd4135c3ebdb7f2dcf13245910ad6cb13f1a0f44cce2a470ef196",
+      "size_bytes": 3180
+    },
+    {
+      "path": "docs/samples/public_sector_local/proposal_flawed.md",
+      "sha256": "88ec5415a767c7e64c732316c28c15a070aa5be6905e8a7c3444a3d1d930fc86",
+      "size_bytes": 3225
+    },
+    {
+      "path": "docs/samples/public_sector_local/rfp.md",
+      "sha256": "615e9dc4785f529def2c1d7338300d0915b067436df53e43798a85dfde1d4cac",
+      "size_bytes": 2184
+    },
+    {
+      "path": "docs/samples/public_sector_local/rfp_profile.json",
+      "sha256": "746a951a6dcc51ea2a4054c9e93207e94d8c12c9f2057f6c79f4f848fc9f95f0",
+      "size_bytes": 2424
     },
     {
       "path": "docs/specs/external_repo_integration/ANALYSIS_20260812.md",
@@ -354,6 +374,11 @@
       "size_bytes": 1365
     },
     {
+      "path": "evidence/cli-logs/public_sector_evidence.json",
+      "sha256": "c142f130adc2cac27786502f914ffdcd94817248eee0d119e4bc0f0f0e55fa98",
+      "size_bytes": 3698
+    },
+    {
       "path": "evidence/cli-logs/pytest_generate_auth_storage.exitcode",
       "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
       "size_bytes": 2
@@ -449,6 +474,16 @@
       "size_bytes": 533
     },
     {
+      "path": "evidence/generated-samples/public-sector/crosswalk-table.md",
+      "sha256": "c88682591ca7898c21868f0aefc9db80ecffe98e23865b867419ecf15af81c80",
+      "size_bytes": 292
+    },
+    {
+      "path": "evidence/generated-samples/public-sector/requirement-trace-table.md",
+      "sha256": "b2d5d88203a9a2c2195973f390d0a6adda5e5db57ac60571ae0691ae6888652e",
+      "size_bytes": 834
+    },
+    {
       "path": "evidence/input-samples/generate-export-request.json",
       "sha256": "42001bf54741599024ab6c8ba8e949a6c931f319cffdc8ee791ca627001ad26c",
       "size_bytes": 268
@@ -514,6 +549,11 @@
       "size_bytes": 186173
     },
     {
+      "path": "evidence/screenshots/public-sector-proposal-page1.png",
+      "sha256": "0003b7698d0cf530f51a80b31bd34eba0ab3bd10b036b3c826cb92dd7d62500d",
+      "size_bytes": 29577
+    },
+    {
       "path": "evidence/screenshots/ui-flow-01-after-login.png",
       "sha256": "ccedb50b8ed13bcb91d8900f3f57c14615db29b18577d7198491430dc6a43742",
       "size_bytes": 694536
@@ -560,8 +600,8 @@
     },
     {
       "path": "portfolio_manifest.md",
-      "sha256": "2d40af27942266f5e895a139951cb13235beec3a8dd39bdce10eadac53496fdd",
-      "size_bytes": 2699
+      "sha256": "109352320827779aee26cbaf986ecec767cc689c3f79f68d4b9b2e123d27f0cc",
+      "size_bytes": 2845
     },
     {
       "path": "reports/eval/v1/eval_report.md",

@@ -7,7 +7,7 @@
 - 프로젝트명: DecisionDoc AI
 - 프로젝트 유형: 개인 PoC / MVP 확장 프로젝트로 판단
 - 기간: 확인 필요
-- 현재 상태: 계획한 로컬 기능 구현과 자동 회귀 검증 완료, 사람 사용 검증(UAT) 전. 운영 배포 서비스가 아니라 로컬 문서 작업 도구로 사용
+- 현재 상태: 공공기관·공기업·지자체·국책과업 문서 대조에 특화한 로컬 문서 작업 도구. 계획한 기능 구현과 자동 회귀 검증 완료, 실제 RFP·사람 사용 검증(UAT) 전
 - 내 역할: [contribution-note.md](./contribution-note.md)의 직접 설명 가능 범위를 기준으로 설명한다.
 - GitHub 링크: https://github.com/sungjin9288/DecisionDoc-AI
 - Release evidence: https://github.com/sungjin9288/DecisionDoc-AI/releases/tag/v1.1.77
@@ -142,6 +142,7 @@ User / Team
 | 구현 완료 | local procurement decision package evidence contract | 구현 완료 | `docs/samples/procurement_decision_package_local_demo/cli_contract_manifest.json`, `scripts/validate_procurement_decision_package_cli_contract_manifest.py`, `scripts/check_procurement_decision_package_cli_contract_manifest_result.py` | 가능 |
 | 구현 완료 | procurement review state/freshness/audit와 verified original-packet retrieval boundary | 구현 완료 | `app/storage/procurement_review_store.py`, `app/routers/projects/procurement_reviews.py`, `app/routers/projects/procurement_review_packets.py`, `app/routers/history.py`, `app/routers/approvals.py` | 가능 |
 | 구현 완료 | reproducible portfolio evidence pack | 구현 완료 | `scripts/manage_portfolio_pack.py`, `portfolio_manifest.md` | 가능 |
+| 구현 완료 | 공공 과업 문서 검사(조건 카드, 요구사항 대비표, 조견표, 공공 표기, 제안서 목차, 보고서 8종, 제출 검사, 서버 없는 변환) | 구현 완료 | `app/public_sector/`, `scripts/publicdoc.py`, `tests/test_public_sector_*.py`, `scripts/capture_public_sector_evidence.py` | 가능 |
 | 구현 완료 | Claude Code·Codex 세션 작성 경로(provider 미호출) | 구현 완료 | `app/routers/generate/authoring.py`, `app/providers/authored_provider.py`, `scripts/decisiondoc_author.py`, `tests/test_agent_authored_generation.py` | 가능 |
 | 구현 완료 | 번들 프롬프트 수치 근거 우선 규칙 | 구현 완료 | `app/bundle_catalog/system_prompt.py`, `tests/test_bundle_prompt_rules.py` | 가능 |
 | 검증 필요 | 사람 사용 검증(UAT) | 사전 점검 완료, 실사용 확인 전 | `docs/development-plan.md` §0 | 보류 |
@@ -165,6 +166,7 @@ User / Team
 - Completion readiness 근거: `scripts/check_completion_readiness.py`, `scripts/check_completion_readiness_result.py`, M2/M6 runner-owned proof receipt, gitignored `reports/completion-readiness/` local receipt.
 - Portfolio pack 근거: `scripts/manage_portfolio_pack.py`, tracked `_portfolio_export/decisiondoc_ai_portfolio_pack/portfolio_manifest.json`, local gitignored ZIP.
 - 최신 UI/CSP evidence: `evidence/screenshots/web-ui-home.png`, `evidence/cli-logs/ui_csp_nonce_check.log`, `evidence/cli-logs/playwright_console.log`, `evidence/cli-logs/ui_flow_evidence.json`.
+- 공공 과업 evidence: `scripts/capture_public_sector_evidence.py`, `evidence/cli-logs/public_sector_evidence.json`, `evidence/generated-samples/public-sector/`, `evidence/screenshots/public-sector-proposal-page1.png`. 합성 입력, 외부 호출 없음.
 - 세션 작성 evidence: `scripts/capture_agent_authored_evidence.py`, `evidence/cli-logs/agent_authored_evidence.json`, `evidence/generated-samples/agent-authored/`, `evidence/screenshots/agent-authored-*.png`. 합성 입력, 외부 호출 없음.
 - 최근 git 상태: `main` 브랜치가 `origin/main`과 동기화되어 있고 최신 확인 시점의 worktree는 clean이다. 후속 작업 전에는 항상 `git status --short --branch`와 최신 CI/CD 상태를 다시 확인한다.
 - 실행 방법이 명확한지: 로컬 `pip install -r requirements.txt`, `python -m uvicorn app.main:app --reload`, Docker `docker compose up -d`가 문서와 설정에 존재한다.
@@ -185,6 +187,7 @@ User / Team
 ### 써도 되는 표현
 
 - FastAPI 기반 AI 문서 생성 API와 PWA를 개발
+- 공공 과업 제안서·보고서를 RFP와 공식 기준에 대조하는 서버 없는 검사 도구를 설계·구현
 - 구독형 코딩 에이전트 세션이 문서를 쓰고 서버가 검증·렌더링·형식 변환을 맡는 provider 미호출 작성 경로를 설계·구현
 - LLM provider abstraction과 fallback chain을 적용
 - bundle schema, Jinja2 template, validation/lint 기반 문서 생성 파이프라인 구성

@@ -410,6 +410,18 @@ PPTX 보완 검증에서 이번 변경과 무관하게 실패하던 3건을 코�
 | `python3 -m pytest -q -p no:cacheprovider tests/test_infrastructure.py` | **179 passed, 1 failed** / `infra-drifts.xml`; 남은 1건은 기존 800줄 검사(6개 파일, 모듈 분할하지 않음) |
 | `tests/test_procurement_review_store.py tests/test_manage_portfolio_pack.py tests/test_count_readme_metrics.py` | **60 passed, 1 failed** / `review-store-and-docs.xml`; 실패는 portfolio pack에 없는 planned-feature spec 링크(기존) |
 
+### 포트폴리오에 공공 과업 특화 반영 (2026-10-21)
+
+공공 특화가 이 프로젝트의 핵심이 되어 포트폴리오를 다시 정리했다.
+
+- **재현 가능한 증거:** `scripts/capture_public_sector_evidence.py`가 `docs/samples/public_sector_local/`의 합성 RFP·조건 카드·제안서로 전 과정을 임시 폴더에서 다시 돌린다.
+  - 바른 제안서: 모든 검사 통과, 조견표 5개 쪽 모두 본문 확인, PDF에 DecisionDoc 표지와 도구 이름 없음
+  - 실수를 넣은 제안서: 요구사항 누락, 오타 번호, 블라인드 회사명, 표기와 다른 날짜를 모두 잡았다. 하나라도 놓치면 receipt 검증이 실패한다.
+  - 결과물: `evidence/cli-logs/public_sector_evidence.json`, 요구사항 대비표·조견표, PDF 첫 쪽 미리보기
+- **대비표 정리:** 모든 위치가 같은 문서 제목 아래에 있으면 그 제목을 대비표 위치 칸에서 뺀다. 원고가 여러 파일이면 그대로 둔다.
+- **문서:** `docs/portfolio.md`를 공공 특화 중심으로 다시 썼다. case study, project card, 이력서 문구, 면접 답변, 기여 범위, 증거 목록, README 첫머리, pack 안내를 갱신했다.
+- **검증:** 증거 수집 테스트 7건과 대비표 테스트 1건을 추가했다.
+
 ### 하위 항목 들여쓰기 (2026-10-21)
 
 개조식 공공 문서의 위계를 출력에 남긴다. 내보내기 공통 해석기가 줄 앞 공백을 버려 `가.` 항목이 왼쪽에 붙던 문제다. 승인 기록 `docs/future_feature_gates/export_item_indentation.json`, 설계는 공공 특화 설계 문서 §11.

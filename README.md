@@ -2,7 +2,7 @@
 
 > 의사결정 문서·제안서·보고서를 **생성 → 검증 → 검토·승인 → 내보내기**까지 하나의 워크플로로 관리하는 FastAPI 기반 AI 문서 생성 플랫폼.
 
-LLM이 만든 결과를 단발성 텍스트가 아니라 **업무 산출물**로 다루는 데 초점을 둔 프로젝트입니다. 멀티 LLM provider 추상화, bundle/template/validation 파이프라인, 승인·이력·감사 워크플로, 공공조달(G2B) Go/No-Go 보조 흐름을 포함합니다. 로컬에서는 Claude Code·Codex 세션이 문서 내용을 쓰고 서버가 provider 호출 없이 검증·렌더링·형식 변환을 맡는 작성 경로를 씁니다([Getting Started](#getting-started)).
+LLM이 만든 결과를 단발성 텍스트가 아니라 **업무 산출물**로 다루는 데 초점을 둔 프로젝트입니다. 멀티 LLM provider 추상화, bundle/template/validation 파이프라인, 승인·이력·감사 워크플로, 공공조달(G2B) Go/No-Go 보조 흐름을 포함합니다. 로컬에서는 Claude Code·Codex 세션이 문서 내용을 쓰고, 공공기관·공기업·지자체·국책과업 제안서와 보고서는 서버 없는 `scripts/publicdoc.py`가 RFP와 공식 기준에 대조합니다([한 페이지 요약](./docs/portfolio.md), [Getting Started](#getting-started)).
 
 > ⚠️ 상태: **로컬 기능 구현과 자동 회귀 검증 완료, 사람 사용 검증(UAT) 전**. 운영 플랫폼이 아닌 개인 프로젝트이며, 검증되지 않은 성과 수치는 사용하지 않습니다. 아래 수치는 모두 소스 코드에서 직접 카운트한 값이며 측정 커맨드를 함께 표기합니다.
 >
@@ -360,11 +360,11 @@ pytest tests/ -m "not live"   # 외부 의존 없는 테스트만
 pytest tests/ -m live         # live 마커 테스트
 ```
 
-테스트 함수는 **4,347개**, **340개 파일**입니다 (Python AST `test_` definition 기준 카운트이며 pass 수가 아닙니다). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
+테스트 함수는 **4,353개**, **341개 파일**입니다 (Python AST `test_` definition 기준 카운트이며 pass 수가 아닙니다). 자동생성 phase 영수증 검증 테스트(제품 기능과 무관)는 2026-07-02 정리에서 제거해 수치에서 제외했습니다.
 
 ```bash
-python3 scripts/count_readme_metrics.py --field test_functions  # → 4347
-python3 scripts/count_readme_metrics.py --field test_files      # → 340
+python3 scripts/count_readme_metrics.py --field test_functions  # → 4353
+python3 scripts/count_readme_metrics.py --field test_files      # → 341
 ```
 
 > 위 수치는 Python AST로 확인한 `test_` 함수 정의 개수입니다. 각 테스트의 현재 pass 여부는 환경 구성 후 `pytest`로 재확인하세요. 검증되지 않은 커버리지·통과율 수치는 표기하지 않습니다.
@@ -502,4 +502,4 @@ M1/M2/M6 외부 실증은 현재 보류하고, no-cost local workflow와 evidenc
 
 ---
 
-<sub>이 README의 모든 정량 수치(라우트 317 · 테스트 4,347 · env 키 95 등)는 소스 코드에서 직접 카운트했으며, 테스트 수는 Python AST `test_` 정의 기준이고 pass 수가 아닙니다. 재현은 `python3 scripts/count_readme_metrics.py --field test_functions`를 사용합니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>
+<sub>이 README의 모든 정량 수치(라우트 317 · 테스트 4,353 · env 키 95 등)는 소스 코드에서 직접 카운트했으며, 테스트 수는 Python AST `test_` 정의 기준이고 pass 수가 아닙니다. 재현은 `python3 scripts/count_readme_metrics.py --field test_functions`를 사용합니다. 측정 근거가 없는 비용 절감률·자동화율·정확도 수치는 사용하지 않습니다.</sub>

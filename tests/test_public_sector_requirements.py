@@ -154,3 +154,16 @@ def test_bundle_parts_are_traced_as_one_document_in_order(tmp_path: Path) -> Non
     assert report["passed"] is True
     assert document.path == f"{first}, {second}"
     assert report["rows"][1]["locations"][0]["heading_path"] == "기술 제안 > 보안 대책"
+
+
+def test_trace_table_drops_the_title_every_location_shares(tmp_path: Path) -> None:
+    single = trace_requirements(_profile("SFR-001", "SER-001"), read_document(_write(tmp_path, "d.md", "# 제안서\n\n## 검색\nSFR-001\n\n## 보안\nSER-001\n")))
+    table = trace_table_markdown(single)
+
+    assert "| SFR-001 | 확인 필요 | SFR-001 명칭 | 검색 | 대응 |" in table
+    assert "제안서 >" not in table
+
+    from app.public_sector.readers import read_documents
+
+    parts = read_documents([_write(tmp_path, "a.md", "# 사업 이해\n\n## 배경\nSFR-001\n"), _write(tmp_path, "b.md", "# 기술 제안\n\n## 보안\nSER-001\n")])
+    assert "| 기술 제안 > 보안 | 대응 |" in trace_table_markdown(trace_requirements(_profile("SFR-001", "SER-001"), parts))

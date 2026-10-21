@@ -58,6 +58,7 @@ SOURCE_FILES = (
 )
 SOURCE_DIRS = (
     "docs/samples/agent_authored_local",
+    "docs/samples/public_sector_local",
     "docs/samples/bundle_quality_evidence/current",
     "docs/samples/procurement_decision_package_local_demo",
     "evidence/api-responses",
