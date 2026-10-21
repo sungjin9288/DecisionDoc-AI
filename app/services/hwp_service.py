@@ -346,6 +346,11 @@ def _para_xml(text: str, style: str = "본문") -> str:
     )
 
 
+def _indent_spaces(block: dict[str, Any]) -> str:
+    # 행정업무운영 편람: each lower item level moves two half-width spaces (2타) right.
+    return "  " * int(block.get("indent", 0) or 0)
+
+
 def _clean_hwp_text(text: str) -> str:
     return re.sub(r"\*\*([^*]+)\*\*", r"\1", str(text).strip())
 
@@ -658,9 +663,9 @@ def _section_xml(
                 paras.append(_para_xml(_clean_hwp_text(block.get("text", "")), style))
             elif block_type == "list_item":
                 text = _clean_hwp_text(block.get("text", ""))
-                paras.append(_para_xml(f"• {text}", "본문"))
+                paras.append(_para_xml(f"{_indent_spaces(block)}• {text}", "본문"))
             elif block_type == "paragraph":
-                paras.append(_para_xml(_clean_hwp_text(block.get("text", "")), "본문"))
+                paras.append(_para_xml(_indent_spaces(block) + _clean_hwp_text(block.get("text", "")), "본문"))
             elif block_type == "table":
                 paras.extend(_table_block_paras(block))
             elif block_type in {"blank", "hr"}:

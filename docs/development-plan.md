@@ -410,6 +410,14 @@ PPTX 보완 검증에서 이번 변경과 무관하게 실패하던 3건을 코�
 | `python3 -m pytest -q -p no:cacheprovider tests/test_infrastructure.py` | **179 passed, 1 failed** / `infra-drifts.xml`; 남은 1건은 기존 800줄 검사(6개 파일, 모듈 분할하지 않음) |
 | `tests/test_procurement_review_store.py tests/test_manage_portfolio_pack.py tests/test_count_readme_metrics.py` | **60 passed, 1 failed** / `review-store-and-docs.xml`; 실패는 portfolio pack에 없는 planned-feature spec 링크(기존) |
 
+### 하위 항목 들여쓰기 (2026-10-21)
+
+개조식 공공 문서의 위계를 출력에 남긴다. 내보내기 공통 해석기가 줄 앞 공백을 버려 `가.` 항목이 왼쪽에 붙던 문제다. 승인 기록 `docs/future_feature_gates/export_item_indentation.json`, 설계는 공공 특화 설계 문서 §11.
+
+- 해석기가 들여쓰기 단계를 남기고, 편람의 "단계마다 한글 1자"를 따라 PDF(1em)·DOCX(글자 크기)·HWPX(반각 공백 2칸)로 표시한다. 들여쓰기가 없는 문서의 블록 구조는 그대로다.
+- `docx_service.py`가 800줄을 넘어 저수준 서식 helper를 `docx_format.py`로 옮겼다(동작 불변).
+- 검증: 새 테스트 4건, 내보내기 회귀 668 passed(800줄 검사 포함). 합성 제안서 PDF·DOCX에서 들여쓰기를 눈과 좌표로 확인했다.
+
 ### RFP 기반 제안서 목차와 서버 없는 제출 형식 변환 (2026-10-21)
 
 통합 검증의 관찰(고정 번들 목차가 RFP 평가항목과 맞지 않음, 변환에 번들·서버가 필요하고 DecisionDoc 표지가 붙음)을 해결했다. 승인 기록은 `docs/future_feature_gates/public_sector_proposal_outline.json`, 설계와 검증은 공공 특화 설계 문서 §10.
@@ -1181,7 +1189,7 @@ external effect gap을 닫지 않는다.
 
 ```bash
 python3 scripts/count_readme_metrics.py --field router_files      # → 23 (top-level 라우터 파일)
-python3 scripts/count_readme_metrics.py --field service_files     # → 60 (서비스)
+python3 scripts/count_readme_metrics.py --field service_files     # → 61 (서비스)
 python3 scripts/count_readme_metrics.py --field storage_files     # → 59 (top-level storage modules)
 python3 scripts/count_readme_metrics.py --field middleware_files  # → 14 (미들웨어)
 python3 scripts/count_readme_metrics.py --field route_decorators  # → 317 (라우트)

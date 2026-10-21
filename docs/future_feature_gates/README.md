@@ -56,6 +56,9 @@ command listed in that record is not pass evidence without its execution result.
   `approved`; proposals follow the RFP outline or its evaluation items and are
   converted to submission formats without the server or a DecisionDoc cover.
   Design: §10 of the same spec.
+- [Export item indentation](./export_item_indentation.json): `approved`;
+  indented sub-items keep their level in PDF, DOCX and HWPX. Design: §11 of
+  the same spec.
 
 Do not overwrite a prior terminal decision. Create a new record when the
 problem, acceptance criteria, or authority scope changes.

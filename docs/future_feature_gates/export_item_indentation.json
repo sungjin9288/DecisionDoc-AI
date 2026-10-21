@@ -1,0 +1,32 @@
+{
+  "schema_version": "decisiondoc.future_feature_gate.v1",
+  "gate_id": "export-item-indentation",
+  "title": "Keep indented sub-items indented in PDF, DOCX and HWPX exports",
+  "target_user": "The repository operator who submits 개조식 proposals and reports to public agencies",
+  "observed_problem": "Korean public documents show hierarchy by indenting sub-items (1. → 가. → 1)). The shared Markdown parser strips leading whitespace, so in the 2026-10-21 proposal export every 가. item sat flush left under its 1. item in PDF, DOCX and HWPX, and the hierarchy was lost.",
+  "evidence": [
+    {"kind": "repository", "reference": "docs/superpowers/specs/2026-10-19-public-sector-specialization-design.md §10", "observation": "The export of the synthetic proposal rendered indented 가. items without indentation."},
+    {"kind": "repository", "reference": "app/services/markdown_utils.py parse_markdown_blocks", "observation": "Paragraph and list blocks keep only the stripped text."},
+    {"kind": "external_source", "reference": "행정안전부 행정업무운영 편람 5판(2012년경) p.36", "observation": "Each lower item level moves two half-width spaces (one Hangul character) to the right of its parent."},
+    {"kind": "user_feedback", "reference": "Conversation 2026-10-21", "observation": "The operator told the session to continue with the plan, whose next listed item was this indentation."}
+  ],
+  "current_workaround": "Indent sub-items by hand in Hangul or Word after export.",
+  "desired_outcome": "Paragraphs and list items keep their Markdown indentation level in every export, one Hangul character per level.",
+  "acceptance_criteria": [
+    "parse_markdown_blocks records an indent level for indented paragraphs and list items (two spaces or half a tab per level, at most four) and leaves blocks without indentation unchanged.",
+    "PDF renders each level as a 1em left margin, DOCX as a left indent of one font size, and HWPX as two half-width spaces.",
+    "Existing exports without indentation are byte-for-byte unaffected in their block structure."
+  ],
+  "affected_boundaries": ["app/services/markdown_utils.py", "PDF, DOCX and HWPX converters"],
+  "authority_scope": {
+    "review_only": true,
+    "allowed_effects": ["Change local export rendering"],
+    "excluded_effects": ["Call any provider or external service"],
+    "separate_approval_required_for": ["Commit, push, pull request and merge"]
+  },
+  "local_verification": [
+    {"command": "python3 -m pytest -q tests/test_export_indentation.py tests/test_markdown_utils.py", "proves": "Indent parsing and rendering in the three formats; exact run evidence is recorded in the design spec."},
+    {"command": "git diff --check", "proves": "Patch whitespace integrity only"}
+  ],
+  "decision": {"status": "approved", "rationale": "The operator told the session on 2026-10-21 to continue with the plan whose next item was sub-item indentation found in the proposal export. Rendering only; no external effects.", "decided_by": "repository-operator", "decided_at": "2026-10-21T01:00:00Z"}
+}

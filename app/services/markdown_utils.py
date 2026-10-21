@@ -10,6 +10,8 @@ _TABLE_SEPARATOR_RE = re.compile(r"^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\
 _ATX_HEADING_RE = re.compile(r"^(#{1,6})(\s+\S.*)$")
 _FENCE_RE = re.compile(r"^\s*(```|~~~)")
 _DEEP_HEADING_RE = re.compile(r"^#{4,6}\s+(\S.*)$")
+_SPACES_PER_INDENT = 2
+_MAX_INDENT = 4
 _MAX_HEADING_LEVEL = 6
 
 
@@ -54,6 +56,17 @@ def is_table_separator(line: str) -> bool:
     return bool(_TABLE_SEPARATOR_RE.match(line.strip()))
 
 
+def _indent_level(raw: str) -> int:
+    """Two leading spaces (half a tab) per level, as 개조식 sub-items are written."""
+    expanded = raw.expandtabs(4)
+    return min((len(expanded) - len(expanded.lstrip(" "))) // _SPACES_PER_INDENT, _MAX_INDENT)
+
+
+def _with_indent(block: dict[str, Any], raw: str) -> dict[str, Any]:
+    level = _indent_level(raw)
+    return {**block, "indent": level} if level else block
+
+
 def parse_markdown_blocks(markdown: str) -> list[dict[str, Any]]:
     """Parse a narrow markdown subset used by bundle templates."""
     lines = markdown.splitlines()
@@ -93,13 +106,13 @@ def parse_markdown_blocks(markdown: str) -> list[dict[str, Any]]:
         elif stripped.startswith("# "):
             blocks.append({"type": "heading", "level": 1, "text": stripped[2:]})
         elif stripped.startswith(("- ", "* ")):
-            blocks.append({"type": "list_item", "text": stripped[2:]})
+            blocks.append(_with_indent({"type": "list_item", "text": stripped[2:]}, raw))
         elif stripped == "---":
             blocks.append({"type": "hr"})
         elif stripped == "":
             blocks.append({"type": "blank"})
         else:
-            blocks.append({"type": "paragraph", "text": stripped})
+            blocks.append(_with_indent({"type": "paragraph", "text": stripped}, raw))
         idx += 1
 
     return blocks
