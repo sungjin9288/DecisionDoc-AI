@@ -51,6 +51,7 @@ def test_conditions_from_the_profile_are_checked(tmp_path: Path, proposal_pdf: b
     codes = {(f["code"], f["target"]) for f in report["findings"]}
 
     assert ("format_not_allowed", "가격제안서.hwpx") in codes
+    assert ("unreadable_file", "가격제안서.hwpx") in codes  # a broken file is reported, the rest still checked
     assert ("over_size", "") in codes
     assert ("separate_file_not_found", "정량 제안서") in codes and ("separate_file_not_found", "정성 제안서") not in codes
     assert {("over_page_limit", "정성제안서.pdf"), ("over_page_limit", "요약본.pdf")} <= codes
@@ -96,3 +97,21 @@ def test_submission_cli_exit_codes(tmp_path: Path, proposal_pdf: bytes, capsys: 
     assert main(["submission", str(ok), str(folder), "--out", str(tmp_path / "r1.json")]) == EXIT_PASSED
     assert main(["submission", str(strict), str(folder), "--out", str(tmp_path / "r2.json")]) == EXIT_FINDINGS
     capsys.readouterr()
+
+
+def test_authoring_residue_is_reported_before_submission(tmp_path: Path) -> None:
+    folder = tmp_path / "제출"
+    folder.mkdir()
+    (folder / "정성제안서.md").write_text(
+        "# 제안서\n\n## PPT 구성 가이드\n권장 슬라이드 수\n\n예산 규모는 확인 필요.\n[작성 필요]\n", encoding="utf-8"
+    )
+
+    findings = check_submission(_profile(blind_evaluation=False), [folder])["findings"]
+    residue = sorted(f["message"] for f in findings if f["code"] == "authoring_residue")
+
+    assert residue == [
+        "작성용 표시 'PPT 구성 가이드'가 1번 남아 있다",
+        "작성용 표시 '[작성 필요]'가 1번 남아 있다",
+        "작성용 표시 '확인 필요'가 1번 남아 있다",
+    ]
+    assert all(f["severity"] == "warning" for f in findings if f["code"] == "authoring_residue")

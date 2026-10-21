@@ -26,7 +26,10 @@ _KOREAN_ID_RE = re.compile(
     r"(시스템\s*장비\s*구성|기능|성능|인터페이스|데이터|테스트|보안|품질|제약\s*사항|프로젝트\s*관리|프로젝트\s*지원)"
     r"\s*요구\s*사항\s*-\s*(\d{1,4})(?!\d)"
 )
-_NAME_TRIM = " \t|:-·•ㆍ,"
+_NAME_TRIM = " \t|:-·•ㆍ,/"
+# Table rows flattened to text read "번호: SFR-001 / 요구사항 명칭: 통합 검색 / 우선순위: 상".
+_CELL_LABEL_RE = re.compile(r"^[^:：/|]{1,15}[:：]\s*")
+_NEXT_CELL_RE = re.compile(r"\s+[/|]\s+")
 _NAME_MAX = 80
 _MIN_MENTIONS_FOR_UNKNOWN_PREFIX = 2
 _LOCATIONS_SHOWN = 3
@@ -69,11 +72,16 @@ def _location(document: SourceDocument, paths: list[str], index: int) -> dict[st
     return {"heading_path": paths[index], "page": block.page, "excerpt": block.text[:120]}
 
 
+def _clean_name(text: str) -> str:
+    name = _CELL_LABEL_RE.sub("", text.strip(_NAME_TRIM), count=1)
+    return _NEXT_CELL_RE.split(name, maxsplit=1)[0].strip(_NAME_TRIM)
+
+
 def _name_candidate(document: SourceDocument, index: int, match: IdMatch) -> str:
-    rest = document.blocks[index].text[match.end:].strip(_NAME_TRIM)
+    rest = _clean_name(document.blocks[index].text[match.end:])
     if not rest and index + 1 < len(document.blocks):
         following = document.blocks[index + 1].text
-        rest = "" if find_ids(following) else following.strip(_NAME_TRIM)
+        rest = "" if find_ids(following) else _clean_name(following)
     return rest[:_NAME_MAX]
 
 

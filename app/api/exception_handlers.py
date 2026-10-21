@@ -9,6 +9,7 @@ from app.maintenance.mode import MaintenanceModeError
 from app.ops.service import OpsNotifyFailedError
 from app.schemas import ErrorResponse
 from app.services.attachment_service import AttachmentError
+from app.services.pdf_errors import PdfEngineUnavailableError
 from app.services.generation_service import (
     BundleNotSupportedError,
     EvalLintFailedError,
@@ -81,6 +82,11 @@ def install_exception_handlers(app: FastAPI) -> None:
             message="Usage state could not be verified.",
             status_code=503,
         )
+
+    @app.exception_handler(PdfEngineUnavailableError)
+    async def pdf_engine_unavailable_handler(request: Request, exc: PdfEngineUnavailableError):
+        _log.error("PDF engine unavailable: %s", exc)
+        return _error_response(request, code="PDF_ENGINE_UNAVAILABLE", message=str(exc), status_code=503)
 
     @app.exception_handler(MaintenanceModeError)
     async def maintenance_mode_handler(request: Request, exc: MaintenanceModeError):  # noqa: ARG001

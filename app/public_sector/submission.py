@@ -22,6 +22,9 @@ from app.public_sector.readers import (
 
 _MB = 1024 * 1024
 _SUMMARY_MARKERS = ("요약",)
+# Authoring leftovers that must not reach a submitted file. "확인 필요" is what the writing
+# rules put in place of an unsupported number, so it marks an item still to be settled.
+_RESIDUE_MARKERS = ("[작성 필요]", "확인 필요", "PPT 구성 가이드", "TODO", "TBD")
 
 
 def _finding(severity: str, code: str, message: str, target: str = "") -> dict[str, str]:
@@ -64,11 +67,24 @@ def _format_findings(profile: RfpProfile, files: list[Path]) -> list[dict[str, s
     return findings
 
 
-def _page_findings(profile: RfpProfile, files: list[Path]) -> tuple[list[dict[str, str]], dict[str, int]]:
+def _read_bodies(files: list[Path]) -> tuple[dict[Path, str], list[dict[str, str]]]:
+    """Body text per readable file; a broken file is reported once instead of aborting the check."""
+    bodies, findings = {}, []
+    for path in files:
+        if path.suffix.lower() not in SUPPORTED_SUFFIXES:
+            continue
+        try:
+            bodies[path] = read_document(path).full_text()
+        except ReaderError as exc:
+            findings.append(_finding("error", "unreadable_file", f"파일을 읽지 못해 내용 검사를 하지 못했다: {exc}", path.name))
+    return bodies, findings
+
+
+def _page_findings(profile: RfpProfile, files: list[Path], bodies: dict[Path, str]) -> tuple[list[dict[str, str]], dict[str, int]]:
     rules = profile.submission
     findings, pages = [], {}
     for path in files:
-        if path.suffix.lower() == ".pdf":
+        if path.suffix.lower() == ".pdf" and path in bodies:
             pages[path.name] = pdf_page_count(path.read_bytes())
     for name, count in pages.items():
         is_summary = any(marker in name for marker in _SUMMARY_MARKERS)
@@ -81,7 +97,7 @@ def _page_findings(profile: RfpProfile, files: list[Path]) -> tuple[list[dict[st
     return findings, pages
 
 
-def _blind_findings(profile: RfpProfile, files: list[Path], identifiers: list[str]) -> list[dict[str, str]]:
+def _blind_findings(profile: RfpProfile, files: list[Path], identifiers: list[str], bodies: dict[Path, str]) -> list[dict[str, str]]:
     blind = profile.submission.blind_evaluation
     if blind is None:
         return [_finding("info", "unknown_condition", "블라인드 평가 여부 확인 필요")]
@@ -92,9 +108,11 @@ def _blind_findings(profile: RfpProfile, files: list[Path], identifiers: list[st
         return [_finding("error", "identifiers_missing", "블라인드 평가인데 검사할 회사 식별 정보(회사명, 약칭, 대표자 등)가 주어지지 않았다")]
     findings = []
     for path in files:
-        texts = {"메타데이터": metadata_text(path), "파일 이름": path.name}
-        if path.suffix.lower() in SUPPORTED_SUFFIXES:
-            texts["본문"] = read_document(path).full_text()
+        try:
+            metadata = metadata_text(path)
+        except ReaderError:
+            metadata = ""  # the body read already reported this file as unreadable
+        texts = {"메타데이터": metadata, "파일 이름": path.name, "본문": bodies.get(path, "")}
         for place, text in texts.items():
             for name in names:
                 if _norm(name) in _norm(text):
@@ -102,12 +120,26 @@ def _blind_findings(profile: RfpProfile, files: list[Path], identifiers: list[st
     return findings
 
 
+def _residue_findings(bodies: dict[Path, str]) -> list[dict[str, str]]:
+    findings = []
+    for path, text in bodies.items():
+        for marker in _RESIDUE_MARKERS:
+            count = text.count(marker)
+            if count:
+                findings.append(_finding("warning", "authoring_residue", f"작성용 표시 '{marker}'가 {count}번 남아 있다", path.name))
+    return findings
+
+
 def check_submission(profile: RfpProfile, paths: list[str | Path], identifiers: list[str] | None = None) -> dict[str, Any]:
     files = collect_files(paths)
     if not files:
         raise ReaderError("검사할 제출 파일이 없습니다")
-    page_findings, pages = _page_findings(profile, files)
-    findings = _format_findings(profile, files) + page_findings + _blind_findings(profile, files, identifiers or [])
+    bodies, unreadable = _read_bodies(files)
+    page_findings, pages = _page_findings(profile, files, bodies)
+    findings = (
+        _format_findings(profile, files) + unreadable + page_findings
+        + _blind_findings(profile, files, identifiers or [], bodies) + _residue_findings(bodies)
+    )
     counts = {severity: sum(item["severity"] == severity for item in findings) for severity in ("error", "warning", "info")}
     return {
         "files": [{"name": path.name, "bytes": path.stat().st_size, "pages": pages.get(path.name)} for path in files],

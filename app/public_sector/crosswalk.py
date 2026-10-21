@@ -19,11 +19,17 @@ from app.public_sector.readers import SourceDocument
 
 _TOC_MIN_TARGETS = 3
 _FOLLOW_SNIPPET = 10
-_FOLLOW_WINDOW = 3
+_FOLLOW_WINDOW = 5
+# Markdown marks (-, |, **) become bullets, cell breaks or nothing in a PDF, so compare letters only.
+_NOT_LETTER_RE = re.compile(r"[^0-9A-Za-z\uac00-\ud7a3]")
 
 
 def _norm(text: str) -> str:
     return re.sub(r"\s+", "", text)
+
+
+def _letters(text: str) -> str:
+    return _NOT_LETTER_RE.sub("", text)
 
 
 def _is_heading_line(block_text: str, target: str) -> bool:
@@ -43,13 +49,22 @@ def _follow_snippet(draft: SourceDocument, index: int) -> str:
     for block in draft.blocks[index + 1:]:
         if block.heading_level is not None:
             return ""
-        return _norm(block.text)[:_FOLLOW_SNIPPET]
+        return _letters(block.text)[:_FOLLOW_SNIPPET]
     return ""
 
 
-def _followed_by(pages: SourceDocument, index: int, snippet: str) -> bool:
-    following = "".join(_norm(block.text) for block in pages.blocks[index + 1:index + 1 + _FOLLOW_WINDOW])
-    return bool(snippet) and snippet in following
+def _followed_by(pages: SourceDocument, index: int, snippet: str, headings: list[str]) -> bool:
+    """The draft's body text follows this line before any other draft heading does.
+
+    Stopping at the next heading keeps a table-of-contents line, whose neighbours are
+    other headings, from borrowing body text further down the page.
+    """
+    following = []
+    for block in pages.blocks[index + 1:index + 1 + _FOLLOW_WINDOW]:
+        if any(_is_heading_line(block.text, heading) for heading in headings):
+            break
+        following.append(_letters(block.text))
+    return bool(snippet) and snippet in "".join(following)
 
 
 def _toc_pages(pages: SourceDocument, targets: list[str]) -> set[int]:
@@ -69,7 +84,9 @@ def _place(target: str, draft: SourceDocument, pages: SourceDocument | None, toc
         return placement
     candidates = _heading_indexes(pages, target, headings_only=False)
     snippet = _follow_snippet(draft, in_draft[0]) if in_draft else ""
-    confirmed = [index for index in candidates if _followed_by(pages, index, snippet)]
+    # Other headings only: a table right below may repeat the target as a column name.
+    headings = [block.text for block in draft.blocks if block.heading_level is not None and _norm(block.text) != _norm(target)]
+    confirmed = [index for index in candidates if _followed_by(pages, index, snippet, headings)]
     outside_toc = [index for index in candidates if pages.blocks[index].page not in toc]
     for basis, chosen in (("본문 확인", confirmed), ("목차 제외 추정", outside_toc), ("목차에서만 발견", candidates)):
         if chosen:

@@ -32,7 +32,7 @@ from app.public_sector.crosswalk import build_crosswalk, crosswalk_table_markdow
 from app.public_sector.models import load_profile  # noqa: E402
 from app.public_sector.notation import check_notation  # noqa: E402
 from app.public_sector.profile_check import check_profile  # noqa: E402
-from app.public_sector.readers import ReaderError, read_document  # noqa: E402
+from app.public_sector.readers import ReaderError, read_document, read_documents  # noqa: E402
 from app.public_sector.report_types import REPORT_TYPES  # noqa: E402
 from app.public_sector.reports import check_report, report_skeleton  # noqa: E402
 from app.public_sector.submission import check_submission  # noqa: E402
@@ -83,7 +83,7 @@ def _cmd_check_profile(args: argparse.Namespace) -> int:
 
 
 def _cmd_trace(args: argparse.Namespace) -> int:
-    report = trace_requirements(load_profile(args.profile), read_document(args.draft))
+    report = trace_requirements(load_profile(args.profile), read_documents(args.draft))
     if args.table:
         _emit(trace_table_markdown(report), args.table)
     _emit(report, args.out)
@@ -92,7 +92,7 @@ def _cmd_trace(args: argparse.Namespace) -> int:
 
 def _cmd_crosswalk(args: argparse.Namespace) -> int:
     pdf = read_document(args.pdf) if args.pdf else None
-    report = build_crosswalk(load_profile(args.profile), read_document(args.draft), pdf)
+    report = build_crosswalk(load_profile(args.profile), read_documents(args.draft), pdf)
     if args.table:
         _emit(crosswalk_table_markdown(report), args.table)
     _emit(report, args.out)
@@ -100,7 +100,7 @@ def _cmd_crosswalk(args: argparse.Namespace) -> int:
 
 
 def _cmd_notation(args: argparse.Namespace) -> int:
-    report = check_notation(read_document(args.file), kind=args.kind)
+    report = check_notation(read_documents(args.file), kind=args.kind)
     _emit(report, args.out)
     return EXIT_PASSED if report["passed"] else EXIT_FINDINGS
 
@@ -159,7 +159,7 @@ def _parser() -> argparse.ArgumentParser:
     check.set_defaults(handler=_cmd_check_profile)
 
     notation = commands.add_parser("notation", help="Check official notation: item symbols, dates, times, amounts, end mark.")
-    notation.add_argument("file")
+    notation.add_argument("file", nargs="+", help="One draft, or several parts read in order.")
     notation.add_argument(
         "--kind", choices=("submission", "agency"), default="submission",
         help="agency: a document an administrative agency issues (rules bind); submission: a proposal or report (advice).",
@@ -200,7 +200,7 @@ def _parser() -> argparse.ArgumentParser:
     ):
         command = commands.add_parser(name, help=help_text)
         command.add_argument("profile")
-        command.add_argument("draft", help="Draft as .md, .txt, .docx, .hwpx or .pdf")
+        command.add_argument("draft", nargs="+", help="Draft as .md, .txt, .docx, .hwpx or .pdf; several parts are read in order.")
         command.add_argument("--table", help=table_help)
         command.add_argument("--out", help="Write the JSON report here instead of stdout.")
         command.set_defaults(handler=handler)

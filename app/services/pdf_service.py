@@ -16,7 +16,10 @@ import html as _html
 import re
 from typing import Any
 
+from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import async_playwright
+
+from app.services.pdf_errors import PdfEngineUnavailableError
 
 from app.services.export_labels import humanize_doc_type
 from app.services.export_outline import summarize_export_docs, summarize_export_package
@@ -597,7 +600,11 @@ async def build_pdf(
     html_content = _render_html(docs, title, opts, visual_assets=visual_assets)
 
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch()
+        try:
+            browser = await pw.chromium.launch()
+        except PlaywrightError as exc:
+            # Usually the browser build for this Playwright version is not installed.
+            raise PdfEngineUnavailableError(str(exc)) from exc
         try:
             page = await browser.new_page()
             await page.set_content(html_content, wait_until="domcontentloaded")

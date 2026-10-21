@@ -410,6 +410,20 @@ PPTX 보완 검증에서 이번 변경과 무관하게 실패하던 3건을 코�
 | `python3 -m pytest -q -p no:cacheprovider tests/test_infrastructure.py` | **179 passed, 1 failed** / `infra-drifts.xml`; 남은 1건은 기존 800줄 검사(6개 파일, 모듈 분할하지 않음) |
 | `tests/test_procurement_review_store.py tests/test_manage_portfolio_pack.py tests/test_count_readme_metrics.py` | **60 passed, 1 failed** / `review-store-and-docs.xml`; 실패는 portfolio pack에 없는 planned-feature spec 링크(기존) |
 
+### 공공 과업 문서 검사 통합 검증과 PDF 엔진 오류 처리 (2026-10-20)
+
+PR #79(CI 통과: E2E 제외 5,610 passed, E2E 164 passed, 같은 run의 두 단계) 뒤, 실제 사용 순서대로 전 과정을 합성 자료로 돌렸다. 기록은 설계 문서 9절에 있다.
+
+- **흐름:** HWPX 제안요청서 → 조건 카드 → `proposal_kr` 작성 경로 → DOCX·HWPX 출력과 LibreOffice PDF → `trace`·`crosswalk --pdf`·`notation`·`submission`. 일부러 넣은 실수(요구사항 누락, 오타 번호, 회사명 노출, 표기와 다른 날짜, 불허 형식)를 모두 잡았다.
+- **고친 연결 문제:**
+  - 표 행 라벨이 붙은 요구사항 명칭
+  - 여러 파일 원고 미지원
+  - LibreOffice PDF의 글머리 문자·표 칸 때문에 조견표 쪽 9개 중 7개 미확인. 고치는 중 생긴 목차 오인 퇴행과 표 머리 칸 경우도 테스트로 고정
+  - 제출본의 작성용 흔적(PPT 구성 가이드, 확인 필요) 검사 추가
+- **DecisionDoc 결함:** 이 컴퓨터의 Playwright Chromium 빌드가 지워져 PDF 내보내기가 원인 없는 500으로 실패했다. 엔진 시작 실패를 `503 PDF_ENGINE_UNAVAILABLE`과 설치 명령으로 알리고, 작성 CLI는 실패한 형식만 기록하고 나머지 형식을 만든다(종료 코드 3).
+- **엔진 복구와 추가 결함:** 사용자 승인으로 `python3 -m playwright install chromium`을 실행했다. 복구 뒤 실제 PDF 테스트를 포함한 관련 테스트가 통과했고, DecisionDoc 자체 PDF로도 조견표 쪽이 모두 본문 확인이었다. 이때 처음 실행된 제출 검사 테스트에서 깨진 파일 하나가 검사 전체를 중단하는 결함을 찾아, 읽지 못한 파일을 `unreadable_file`로 보고하고 계속하도록 고쳤다.
+- **제품 관찰:** `proposal_kr`의 고정 목차에 RFP 평가항목 "교육 및 지원"에 해당하는 섹션이 없다. 평가항목에서 제안서 목차를 만드는 기능이 다음 후보다.
+
 ### 공공 과업 문서 특화 1단계: 요구사항 추적과 조견표 (2026-10-19)
 
 사용자가 공공기관·공기업·지자체·국책과업 특화를 지시했다(승인 기록 `docs/future_feature_gates/public_sector_specialization.json`). 10-08의 "DecisionDoc은 결함 수정만" 결정을 이 기능에 한해 바꿔, 서버 없는 패키지로 DecisionDoc 안에서 만든다. 설계·공식 기준·검증: `docs/superpowers/specs/2026-10-19-public-sector-specialization-design.md`.
@@ -1157,7 +1171,7 @@ external effect gap을 닫지 않는다.
 
 ```bash
 python3 scripts/count_readme_metrics.py --field router_files      # → 23 (top-level 라우터 파일)
-python3 scripts/count_readme_metrics.py --field service_files     # → 59 (서비스)
+python3 scripts/count_readme_metrics.py --field service_files     # → 60 (서비스)
 python3 scripts/count_readme_metrics.py --field storage_files     # → 59 (top-level storage modules)
 python3 scripts/count_readme_metrics.py --field middleware_files  # → 14 (미들웨어)
 python3 scripts/count_readme_metrics.py --field route_decorators  # → 317 (라우트)
