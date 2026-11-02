@@ -34,7 +34,9 @@ jobs:
 
   test:
     name: Test (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    # ubuntu-latest moved to 26.04, where Playwright 1.58 cannot install Chromium.
+    # Keep 24.04 until requirements.txt moves to a Playwright release that supports it.
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     strategy:
       matrix:
