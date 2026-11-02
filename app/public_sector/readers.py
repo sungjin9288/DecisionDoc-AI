@@ -156,10 +156,21 @@ def _hwpx_style_names(archive: zipfile.ZipFile) -> dict[str, str]:
     return {el.get("id", ""): el.get("name", "") for el in root.iter() if _local(el.tag) == "style"}
 
 
+# Inline elements inside <hp:t> that stand for a character; the text after each one is its tail.
+_HWPX_INLINE_SPACES = {"fwSpace": " ", "nbSpace": " ", "tab": " ", "lineBreak": " "}
+
+
+def _hwpx_t_text(node) -> str:  # noqa: ANN001 - ElementTree element
+    parts = [node.text or ""]
+    for child in node:
+        parts += [_HWPX_INLINE_SPACES.get(_local(child.tag), ""), child.tail or ""]
+    return "".join(parts)
+
+
 def _hwpx_paragraph_text(paragraph) -> str:  # noqa: ANN001 - ElementTree element
     # Only this paragraph's own runs; table cells hold nested paragraphs read separately.
     parts = [
-        node.text or ""
+        _hwpx_t_text(node)
         for run in paragraph
         if _local(run.tag) == "run"
         for node in run
