@@ -401,3 +401,18 @@ pytest tests/ -m live
 1. README를 고치기 전에 위 규칙을 먼저 적용한다.
 2. 수정 후 **측정 근거 없는 새 수치가 들어가지 않았는지** 스스로 검사한다 (`99.8`, `production-ready` 등 grep).
 3. 큰 변경은 "어디를 왜 바꿨는지"를 커밋 메시지/PR에 남긴다.
+
+<!-- BEGIN dev-env:shared-tools -->
+## 공용 skill·agent (dev-env)
+
+`~/dev/dev-env`에 설치된 공용 도구 중 이 프로젝트에 맞는 것이다. 이 문서의 프로젝트 규칙이 우선한다.
+agent 이름은 Claude가 하이픈(`evidence-qa`), Codex가 밑줄(`evidence_qa`, multi-agent `agent_type`)로 부른다.
+
+- 인증·입력·비밀값·API를 작성할 때: `security-review` skill. 출시 전·정기 감사: `ai-code-security-auditor` agent(읽기 전용). 범위 큰 취약점 감사: `security-audit` skill.
+- "된다"는 결과를 완료로 판정하기 전 재현 가능한 증거 검증: `evidence-qa` agent.
+- 여러 세션·도구가 고친 코드의 파일 간 엇갈림·죽은 코드·낡은 문서 점검: `codebase-archaeologist` agent(읽기 전용).
+- 로그·지표·추적·알림 추가: `observability-and-instrumentation` skill.
+- 스키마·API·저장 형식 교체와 옛 코드 제거: `deprecation-and-migration` skill.
+- 막연한 아이디어를 기능 명세·PRD로: `write-spec` skill.
+- LLM 기능 평가·A/B·지표 수치가 결정을 뒷받침하는지: `statistician` agent.
+<!-- END dev-env:shared-tools -->
