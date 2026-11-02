@@ -282,8 +282,8 @@ jobs:
             echo "Missing DECISIONDOC_OPS_KEY secret"
             exit 1
           fi
-          if [ "${{ inputs.stage }}" = "prod" ] && [ -z "${JWT_SECRET_KEY}" ]; then
-            echo "Missing JWT_SECRET_KEY secret (prod refuses to start without it)"
+          if [ -z "${JWT_SECRET_KEY}" ]; then
+            echo "Missing JWT_SECRET_KEY secret (every deployed stage needs its own signing key)"
             exit 1
           fi
           echo "AWS_ROLE_ARN=${ROLE_ARN}" >> "$GITHUB_ENV"

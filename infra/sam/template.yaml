@@ -34,8 +34,8 @@ Parameters:
   JwtSecretKey:
     Type: String
     NoEcho: true
-    Default: ""
-    Description: JWT signing key (>= 32 chars). Required when Stage=prod; the app refuses to start without it.
+    MinLength: 32
+    Description: JWT signing key (>= 32 chars), required for every stage. Generate with openssl rand -hex 32.
   OpenAIApiKey:
     Type: String
     NoEcho: true
