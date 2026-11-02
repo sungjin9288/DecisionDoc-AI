@@ -31,6 +31,11 @@ Parameters:
   DecisionDocOpsKey:
     Type: String
     NoEcho: true
+  JwtSecretKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: JWT signing key (>= 32 chars). Required when Stage=prod; the app refuses to start without it.
   OpenAIApiKey:
     Type: String
     NoEcho: true
@@ -130,6 +135,7 @@ Resources:
           DECISIONDOC_API_KEY: !Ref DecisionDocApiKey
           DECISIONDOC_API_KEYS: !Ref DecisionDocApiKeys
           DECISIONDOC_OPS_KEY: !Ref DecisionDocOpsKey
+          JWT_SECRET_KEY: !Ref JwtSecretKey
           OPENAI_API_KEY: !Ref OpenAIApiKey
           OPENAI_API_BASE_URL: !Ref OpenAiApiBaseUrl
           MEETING_RECORDING_TRANSCRIPTION_MODEL: !Ref MeetingRecordingTranscriptionModel

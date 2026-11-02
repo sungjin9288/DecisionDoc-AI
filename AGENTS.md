@@ -358,6 +358,7 @@ pytest tests/ -m live
 
 ### Prod 환경
 - `DECISIONDOC_ENV=prod` 시 API 키 없으면 앱 시작 자체가 실패 (`RuntimeError`)
+- 운영 판정은 `app.config.is_production_environment()` 하나로 한다(`DECISIONDOC_ENV`나 `ENVIRONMENT`가 `prod`/`production`). 운영에서 `JWT_SECRET_KEY`(32자 이상)가 없으면 앱 시작이 실패한다. SAM은 `JwtSecretKey` 파라미터, 배포 워크플로는 `JWT_SECRET_KEY` secret으로 넣는다.
 - Swagger UI(`/docs`, `/redoc`)는 prod에서 자동 비활성화
 - CORS는 기본 비활성화 — 필요 시 `DECISIONDOC_CORS_ENABLED=1` + `DECISIONDOC_CORS_ALLOW_ORIGINS` 명시
 

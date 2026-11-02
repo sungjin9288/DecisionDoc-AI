@@ -223,6 +223,7 @@ def test_prod_env_accepts_decisiondoc_api_keys_on_startup(monkeypatch):
     monkeypatch.setenv("DECISIONDOC_ENV", "prod")
     monkeypatch.setenv("DECISIONDOC_API_KEYS", "k1,k2")
     monkeypatch.delenv("DECISIONDOC_API_KEY", raising=False)
+    monkeypatch.setenv("JWT_SECRET_KEY", "prod-test-jwt-secret-key-at-least-32-chars")
     from app.main import create_app
 
     create_app()
@@ -235,6 +236,7 @@ def test_docs_and_openapi_disabled_in_prod(tmp_path, monkeypatch):
     monkeypatch.setenv("DECISIONDOC_PROVIDER", "mock")
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.setenv("DECISIONDOC_TEMPLATE_VERSION", "v1")
+    monkeypatch.setenv("JWT_SECRET_KEY", "prod-test-jwt-secret-key-at-least-32-chars")
     from app.main import create_app
 
     client = TestClient(create_app())

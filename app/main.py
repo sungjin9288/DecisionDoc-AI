@@ -14,7 +14,9 @@ from app.api.exception_handlers import install_exception_handlers
 from app.auth.api_key import API_KEY_HEADER, get_allowed_api_keys
 from app.config import (
     get_app_version,
+    get_jwt_secret_key,
     is_procurement_copilot_enabled,
+    is_production_environment,
     get_voice_brief_api_base_url,
     get_voice_brief_api_bearer_token,
     get_voice_brief_timeout_seconds,
@@ -109,12 +111,14 @@ def create_app(
     load_dotenv()
     setup_logging()
     environment = os.getenv("DECISIONDOC_ENV", "dev").lower()
-    # Also honour the standardized ENVIRONMENT variable (production → treat as prod)
-    _std_env = os.getenv("ENVIRONMENT", "development").lower()
-    if _std_env == "production":
+    if is_production_environment():
         environment = "prod"
     if environment == "prod" and not get_allowed_api_keys():
         raise RuntimeError("An API key is required when DECISIONDOC_ENV=prod.")
+    if environment == "prod":
+        # Fail before serving traffic: without this, requests would sign and
+        # accept JWTs with the public development key.
+        get_jwt_secret_key()
 
     provider_names = configured_provider_names()
     template_version = os.getenv("DECISIONDOC_TEMPLATE_VERSION", "v1")

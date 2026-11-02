@@ -11,6 +11,7 @@ from pathlib import Path
 
 import httpx
 
+from app.config import is_production_environment
 from app.storage.state_backend import StateBackend
 
 _log = logging.getLogger("decisiondoc.billing")
@@ -78,11 +79,7 @@ async def handle_webhook(
     backend: StateBackend | None = None,
 ) -> dict:
     webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET", "").strip()
-    environment_names = {
-        os.getenv("DECISIONDOC_ENV", "").strip().lower(),
-        os.getenv("ENVIRONMENT", "").strip().lower(),
-    }
-    is_production = bool(environment_names & {"prod", "production"})
+    is_production = is_production_environment()
 
     if not webhook_secret:
         if is_production:

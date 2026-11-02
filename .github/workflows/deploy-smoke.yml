@@ -250,6 +250,7 @@ jobs:
           API_KEY="${{ secrets.DECISIONDOC_API_KEY }}"
           API_KEYS="${{ secrets.DECISIONDOC_API_KEYS }}"
           OPS_KEY="${{ secrets.DECISIONDOC_OPS_KEY }}"
+          JWT_SECRET_KEY="${{ secrets.JWT_SECRET_KEY }}"
           STATUSPAGE_PAGE_ID="${{ secrets.STATUSPAGE_PAGE_ID }}"
           STATUSPAGE_API_KEY="${{ secrets.STATUSPAGE_API_KEY }}"
           if [ -z "${VOICE_BRIEF_TIMEOUT_SECONDS}" ]; then
@@ -281,11 +282,16 @@ jobs:
             echo "Missing DECISIONDOC_OPS_KEY secret"
             exit 1
           fi
+          if [ "${{ inputs.stage }}" = "prod" ] && [ -z "${JWT_SECRET_KEY}" ]; then
+            echo "Missing JWT_SECRET_KEY secret (prod refuses to start without it)"
+            exit 1
+          fi
           echo "AWS_ROLE_ARN=${ROLE_ARN}" >> "$GITHUB_ENV"
           echo "DECISIONDOC_S3_BUCKET=${BUCKET}" >> "$GITHUB_ENV"
           echo "DECISIONDOC_API_KEY=${API_KEY}" >> "$GITHUB_ENV"
           echo "DECISIONDOC_API_KEYS=${API_KEYS}" >> "$GITHUB_ENV"
           echo "DECISIONDOC_OPS_KEY=${OPS_KEY}" >> "$GITHUB_ENV"
+          echo "JWT_SECRET_KEY=${JWT_SECRET_KEY}" >> "$GITHUB_ENV"
           echo "OPENAI_API_KEY=${OPENAI_API_KEY}" >> "$GITHUB_ENV"
           echo "OPENAI_API_BASE_URL=${OPENAI_API_BASE_URL}" >> "$GITHUB_ENV"
           echo "MEETING_RECORDING_TRANSCRIPTION_MODEL=${MEETING_RECORDING_TRANSCRIPTION_MODEL}" >> "$GITHUB_ENV"
@@ -382,6 +388,7 @@ jobs:
             "DecisionDocApiKey=${{ secrets.DECISIONDOC_API_KEY }}"
             "DecisionDocApiKeys=${DECISIONDOC_API_KEYS}"
             "DecisionDocOpsKey=${DECISIONDOC_OPS_KEY}"
+            "JwtSecretKey=${JWT_SECRET_KEY}"
             "DecisionDocMaintenance=${{ inputs.maintenance_mode }}"
             "DecisionDocProcurementCopilotEnabled=${PROCUREMENT_COPILOT_ENABLED}"
             "MeetingRecordingTranscriptionModel=${MEETING_RECORDING_TRANSCRIPTION_MODEL:-gpt-4o-mini-transcribe}"

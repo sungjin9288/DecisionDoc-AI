@@ -308,16 +308,33 @@ def get_g2b_max_results() -> int:
 
 # ── JWT / Auth config ───────────────────────────────────────────────────────────
 
+_PRODUCTION_ENV_NAMES = frozenset({"prod", "production"})
+_DEV_JWT_SECRET_KEY = "dev-insecure-default-never-use-in-production-32chars!!"
+
+
+def is_production_environment() -> bool:
+    """Single production check for every security-sensitive default.
+
+    Either variable can mark production: DECISIONDOC_ENV (set by the SAM
+    template) or ENVIRONMENT (set by the Dockerfile), as "prod" or "production".
+    """
+    names = {
+        os.getenv("DECISIONDOC_ENV", "").strip().lower(),
+        os.getenv("ENVIRONMENT", "").strip().lower(),
+    }
+    return bool(names & _PRODUCTION_ENV_NAMES)
+
+
 def get_jwt_secret_key() -> str:
     """Return the JWT signing secret key.
 
     Reads JWT_SECRET_KEY env var.
-    - Production (ENVIRONMENT=production): raises RuntimeError if unset or < 32 chars.
+    - Production (see is_production_environment): raises RuntimeError if unset or < 32 chars.
     - Development: logs a CRITICAL warning and returns a dev-only default.
     Generate a strong key with: openssl rand -hex 32
     """
     key = os.getenv("JWT_SECRET_KEY", "")
-    is_production = os.getenv("ENVIRONMENT", "development").lower() == "production"
+    is_production = is_production_environment()
     if not key:
         if is_production:
             raise RuntimeError(
@@ -328,7 +345,7 @@ def get_jwt_secret_key() -> str:
             "⚠️  JWT_SECRET_KEY not set — using insecure development default. "
             "NEVER deploy this to production!"
         )
-        return "dev-insecure-default-never-use-in-production-32chars!!"
+        return _DEV_JWT_SECRET_KEY
     if len(key) < 32:
         if is_production:
             raise RuntimeError(
