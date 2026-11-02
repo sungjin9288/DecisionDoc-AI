@@ -1,6 +1,7 @@
 """Requirement ID scan and trace on synthetic RFPs and drafts in every supported format."""
 from __future__ import annotations
 
+import zipfile
 from pathlib import Path
 
 from docx import Document
@@ -129,6 +130,19 @@ def test_trace_reads_hwpx_written_by_the_exporter(tmp_path: Path) -> None:
     assert report["passed"] is True
     # The exporter's cover summary repeats body text, so the body heading is one of the locations.
     assert any(location["heading_path"].endswith("보안 대책") for location in report["rows"][0]["locations"])
+
+
+def test_hwpx_text_after_inline_spaces_tabs_and_line_breaks_is_kept(tmp_path: Path) -> None:
+    # 한글 writes "○" + 전각 공백 as <hp:t>○<hp:fwSpace/>제목</hp:t>; the title is the child's tail.
+    section = ('<sec xmlns:hp="urn:hp">'
+               '<hp:p><hp:run><hp:t>○<hp:fwSpace/>버그 발생·기능 오류 시 지원</hp:t></hp:run></hp:p>'
+               '<hp:p><hp:run><hp:t>가<hp:nbSpace/>나<hp:tab/>다<hp:lineBreak/>라<hp:markpenEnd/>마</hp:t></hp:run></hp:p>'
+               '</sec>')
+    path = tmp_path / "rfp.hwpx"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("Contents/section0.xml", section)
+
+    assert [b.text for b in read_document(path).blocks] == ["○ 버그 발생·기능 오류 시 지원", "가 나 다 라마"]
 
 
 def test_scan_strips_cell_labels_from_flattened_table_rows(tmp_path: Path) -> None:
