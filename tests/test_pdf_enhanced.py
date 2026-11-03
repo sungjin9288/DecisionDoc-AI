@@ -13,6 +13,7 @@ import io
 import sys
 from unittest.mock import MagicMock, patch
 
+import pytest
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -43,6 +44,7 @@ def _make_mock_page(
     page.chars = chars if chars is not None else []
     page.extract_text.return_value = text
     page.extract_tables.return_value = tables or []
+    page.dedupe_chars.return_value = page
     return page
 
 
@@ -540,3 +542,16 @@ def test_reconstruct_pdf_line_text_keeps_tight_ascii_without_extra_spaces():
     ]
 
     assert _reconstruct_pdf_line_text(chars) == "Contact"
+
+
+def test_fake_bold_copies_are_extracted_once(fake_bold_pdf):
+    """A heading drawn six times 0.12 pt apart reads once in the flat and structured extractors."""
+    pytest.importorskip("pdfplumber")
+    from app.services.attachment_service import _extract_pdf, extract_pdf_structured
+
+    flat = _extract_pdf(fake_bold_pdf, "notice.pdf")
+    structured = extract_pdf_structured(fake_bold_pdf, "notice.pdf")["raw_text"]
+
+    for text in (flat, structured):
+        assert text.count("Bid void") == 1
+        assert "void void ...." in text

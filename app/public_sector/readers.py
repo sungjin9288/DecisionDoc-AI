@@ -216,10 +216,12 @@ def _pdf_page_texts(raw: bytes) -> list[str]:
         except ImportError as exc:
             raise ReaderError("PDF를 읽으려면 pdfplumber가 필요합니다") from exc
         fitz.TOOLS.mupdf_display_errors(False)
+        # Fake bold redraws each glyph a fraction of a point away; both readers keep one copy.
         with fitz.open(stream=raw, filetype="pdf") as document:
-            return [page.get_text() for page in document]
+            flags = fitz.TEXTFLAGS_TEXT | getattr(fitz, "TEXT_COLLECT_STYLES", 0)  # PyMuPDF 1.25+
+            return [page.get_text(flags=flags) for page in document]
     with pdfplumber.open(BytesIO(raw)) as document:
-        return [page.extract_text() or "" for page in document.pages]
+        return [page.dedupe_chars().extract_text() or "" for page in document.pages]
 
 
 def _read_pdf(raw: bytes) -> list[Block]:
