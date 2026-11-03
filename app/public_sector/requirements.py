@@ -27,6 +27,7 @@ _KOREAN_ID_RE = re.compile(
     r"\s*요구\s*사항\s*-\s*(\d{1,4})(?!\d)"
 )
 _NAME_TRIM = " \t|:-·•ㆍ,/"
+_ID_CLOSERS = ")]】」"  # the bracket an ID was written in, left before its name
 # Table rows flattened to text read "번호: SFR-001 / 요구사항 명칭: 통합 검색 / 우선순위: 상".
 _CELL_LABEL_RE = re.compile(r"^[^:：/|]{1,15}[:：]\s*")
 _NEXT_CELL_RE = re.compile(r"\s+[/|]\s+")
@@ -78,7 +79,7 @@ def _clean_name(text: str) -> str:
 
 
 def _name_candidate(document: SourceDocument, index: int, match: IdMatch) -> str:
-    rest = _clean_name(document.blocks[index].text[match.end:])
+    rest = _clean_name(document.blocks[index].text[match.end:].lstrip(_ID_CLOSERS))  # "[SFR-001] 통합 검색"
     if not rest and index + 1 < len(document.blocks):
         following = document.blocks[index + 1].text
         rest = "" if find_ids(following) else _clean_name(following)
@@ -102,6 +103,8 @@ def scan_requirements(document: SourceDocument, prefixes: list[str] | None = Non
                 }
 
     def keep(key: RequirementKey) -> bool:
+        if key.number == 0:  # fill-in examples such as [SER-000] in a 「보안활동 요구사항(예시)」 table
+            return False
         if wanted:
             return key.prefix in wanted
         # Unlisted prefixes (e.g. ISO-9001) count only when the RFP repeats them.

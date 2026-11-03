@@ -78,6 +78,15 @@ def test_scan_lists_repeated_or_conventional_prefixes_with_names(tmp_path: Path)
     assert report["prefix_mentions"]["ISO"] == 1
 
 
+def test_scan_skips_number_zero_placeholders_and_reads_names_after_brackets(tmp_path: Path) -> None:
+    # A 「보안활동 요구사항(예시)」 table shows [SER-000] and [PMR-000] as fill-in examples, not requirements.
+    rfp = ("# 제안요청서\n\n## 원격개발 보안\n➀ 기술적 보안 요구사항\n[SER-000]\n접근제어 요구사항을 작성\n"
+           "[PMR-000]\n출입통제 요구사항을 작성\n\n## 요구사항\n[SFR-001] 통합 검색\n")
+    report = scan_requirements(read_document(_write(tmp_path, "rfp.md", rfp)))
+
+    assert [(c["id"], c["name_candidate"]) for c in report["candidates"]] == [("SFR-001", "통합 검색")]
+
+
 def test_trace_reports_missing_unknown_and_writes_the_trace_table(tmp_path: Path) -> None:
     report = trace_requirements(
         _profile("SFR-001", "SFR-002", "PER-001", "SER-001"),
