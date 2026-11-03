@@ -36,6 +36,8 @@ def _extract_pdf(raw: bytes, filename: str) -> str:
     with pdfplumber.open(io.BytesIO(raw)) as pdf:
         prev_had_content = False
         for page in pdf.pages:
+            # Fake bold redraws each glyph a fraction of a point away; keep one copy.
+            page = page.dedupe_chars()
             # ── Tables ────────────────────────────────────────────────────────
             for table in page.extract_tables() or []:
                 if not table:
@@ -162,6 +164,7 @@ def extract_pdf_structured(raw: bytes, filename: str) -> dict:
     with pdfplumber.open(io.BytesIO(raw)) as pdf:
         page_count = len(pdf.pages)
         for page_index, page in enumerate(pdf.pages, start=1):
+            page = page.dedupe_chars()  # fake bold copies, as in _extract_pdf
             page_line_texts: list[str] = []
             page_headings: list[str] = []
             # Check for tables

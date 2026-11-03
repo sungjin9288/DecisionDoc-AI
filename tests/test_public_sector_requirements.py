@@ -145,6 +145,14 @@ def test_hwpx_text_after_inline_spaces_tabs_and_line_breaks_is_kept(tmp_path: Pa
     assert [b.text for b in read_document(path).blocks] == ["○ 버그 발생·기능 오류 시 지원", "가 나 다 라마"]
 
 
+def test_pdf_fake_bold_copies_are_read_once(tmp_path: Path, fake_bold_pdf: bytes) -> None:
+    # Without dedupe pdfplumber reads "888888...... BBBBBBiiiiii…" and PyMuPDF repeats the heading six times.
+    path = tmp_path / "notice.pdf"
+    path.write_bytes(fake_bold_pdf)
+
+    assert [b.text for b in read_document(path).blocks] == ["8. Bid void", "void void ...."]
+
+
 def test_scan_strips_cell_labels_from_flattened_table_rows(tmp_path: Path) -> None:
     rows = (
         "# RFP\n\n## 요구사항 총괄표\n"
